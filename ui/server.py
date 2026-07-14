@@ -36,6 +36,7 @@ from engine.apps import load_apps, save_apps, get_running_processes, POPULAR_APP
 from engine.hwid import generate_hwid
 from engine.zapret import ZapretManager
 from engine.paths import data_dir
+from engine.connection_state import ConnectionCoordinator
 
 # ── Traffic stats ────────────────────────────────────────────
 import http.client
@@ -45,20 +46,21 @@ _traffic_thread = None
 _traffic_stop   = threading.Event()
 
 
-def _wait_clash_ready(timeout: float = 8.0) -> bool:
+def _wait_clash_ready(timeout: float = 8.0, cancelled=None) -> bool:
     """Ждём, пока sing-box реально поднимет Clash API на 9090.
-    Без этого — гонка: _connected=True выставлялся раньше,
-    чем движок готов, отсюда «его нету в движке».
+    Ожидание прекращается сразу после отмены текущей попытки.
     """
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if cancelled and cancelled():
+            return False
         try:
             c = http.client.HTTPConnection("127.0.0.1", 9090, timeout=1.0)
             c.request("GET", "/version")
             r = c.getresponse()
             r.read()
             c.close()
-            if r.status == 200:
+            if r.status == 200 and not (cancelled and cancelled()):
                 return True
         except Exception:
             pass
@@ -222,7 +224,7 @@ if not _app_settings.get("hwid"):
 
 _ws_clients  = []
 _ws_lock     = threading.Lock()
-_connected   = False
+_connection  = ConnectionCoordinator()
 _conn_server = ""
 _ping_value  = "—"
 _ping_color  = "dim"
@@ -374,18 +376,86 @@ def _get_routed_exes() -> list:
 
 vpn_engine    = SingBoxManager(log_callback=_log)
 zapret_engine = ZapretManager(log_callback=_log)
+_vpn_engine_lock = threading.RLock()
 _zapret_running  = False
 _zapret_strategy = None
+
+
+def _start_vpn_for_attempt(attempt: int, config: dict) -> bool:
+    """Start only while the same attempt is still current."""
+    result = []
+
+    def start():
+        with _vpn_engine_lock:
+            result.append(vpn_engine.start(config))
+
+    if not _connection.run_if_current(attempt, start):
+        return False
+    return result[0]
+
+
+def _stop_vpn_engine():
+    with _vpn_engine_lock:
+        vpn_engine.stop()
+
+
+def _activate_vpn_attempt(attempt: int, server_name: str) -> bool:
+    def activate():
+        global _conn_server, _ping_thread
+        _conn_server = server_name
+        _log("TUN-интерфейс поднят", "ok")
+        _broadcast({"type": "status", "state": "on", "server": _conn_server})
+        stats_tracker.start()
+        _ping_thread = threading.Thread(target=_ping_loop, daemon=True)
+        _ping_thread.start()
+        _start_traffic_monitor()
+
+    return _connection.complete(attempt, activate)
+
+
+def _finish_vpn_attempt(attempt: int, config: dict, server_name: str):
+    started = _start_vpn_for_attempt(attempt, config)
+    ready = started and _wait_clash_ready(
+        cancelled=lambda: not _connection.is_current(attempt)
+    )
+
+    if ready and _activate_vpn_attempt(attempt, server_name):
+        return
+
+    if started:
+        _stop_vpn_engine()
+
+    if _connection.fail(attempt):
+        _log("sing-box не поднял Clash API за 8с — смотри логи выше", "err")
+        _broadcast({"type": "status", "state": "off"})
+
+
+def _reset_connection_state():
+    global _ping_value, _ping_color, _conn_server
+    stats_tracker.stop()
+    _ping_value = "—"
+    _ping_color = "dim"
+    _conn_server = ""
+    _stop_traffic_monitor()
+
+
+def _cancel_vpn_connection():
+    def cancel():
+        _reset_connection_state()
+        _stop_vpn_engine()
+
+    _connection.cancel(cancel)
 
 # ── WebSocket ────────────────────────────────────────
 @sock.route("/ws")
 def ws_handler(ws):
     with _ws_lock:
         _ws_clients.append(ws)
+    connection_state = _connection.state
     ws.send(json.dumps({
         "type"           : "state",
-        "connected"      : _connected,
-        "status"         : "on" if _connected else "off",
+        "connected"      : connection_state == "on",
+        "status"         : connection_state,
         "server"         : _conn_server,
         "ping"           : _ping_value,
         "pingColor"      : _ping_color,
@@ -419,7 +489,7 @@ def ws_handler(ws):
 # ── Ping loop ──────────────────────────────────────
 def _ping_loop():
     global _ping_value, _ping_color
-    while _connected:
+    while _connection.connected:
         try:
             t0 = time.perf_counter()
             s  = socket.create_connection(("1.1.1.1", 443), timeout=3)
@@ -989,10 +1059,6 @@ def api_wg_ping_all():
 # ── Connect / Disconnect ─────────────────────────────────
 @app.route("/api/connect", methods=["POST"])
 def api_connect():
-    global _connected, _ping_thread, _conn_server, _active_protocol
-    if _connected:
-        return jsonify({"ok": False, "error": "Уже подключено"})
-
     proto = request.json.get("protocol", _active_protocol) if request.json else _active_protocol
 
     if proto == "wg":
@@ -1010,31 +1076,25 @@ def api_connect():
             **_tunnel_kwargs(),
         )
         is_awg = server.get("is_awg", False)
+        attempt = _connection.begin()
+        if attempt is None:
+            error = "Уже подключено" if _connection.connected else "Подключение уже выполняется"
+            return jsonify({"ok": False, "error": error})
 
         def do_connect_wg():
-            global _connected, _ping_thread, _conn_server
-            _broadcast({"type": "status", "state": "connecting"})
-            proto_label = "AmneziaWG→WG" if is_awg else "WireGuard"
-            _log(f"Подключение к {server['remark']} [{proto_label}] ...", "info")
-            if is_awg:
-                _log(
-                    "⚠ AWG-поля игнорируются — подключение как обычный WireGuard без обфускации.",
-                    "warn"
-                )
-            ok = vpn_engine.start(cfg)
-            if ok and _wait_clash_ready():
-                _connected   = True
-                _conn_server = server.get("remark", "")
-                _log("TUN-интерфейс поднят", "ok")
-                _broadcast({"type": "status", "state": "on", "server": _conn_server})
-                stats_tracker.start()
-                _ping_thread = threading.Thread(target=_ping_loop, daemon=True)
-                _ping_thread.start()
-                _start_traffic_monitor()
-            else:
-                vpn_engine.stop()
-                _log("sing-box не поднял Clash API за 8с — смотри логи выше", "err")
-                _broadcast({"type": "status", "state": "off"})
+            def announce():
+                _broadcast({"type": "status", "state": "connecting"})
+                proto_label = "AmneziaWG→WG" if is_awg else "WireGuard"
+                _log(f"Подключение к {server['remark']} [{proto_label}] ...", "info")
+                if is_awg:
+                    _log(
+                        "⚠ AWG-поля игнорируются — подключение как обычный WireGuard без обфускации.",
+                        "warn"
+                    )
+
+            if not _connection.run_if_current(attempt, announce):
+                return
+            _finish_vpn_attempt(attempt, cfg, server.get("remark", ""))
 
         threading.Thread(target=do_connect_wg, daemon=True).start()
         return jsonify({"ok": True})
@@ -1054,30 +1114,24 @@ def api_connect():
             **_tunnel_kwargs(),
         )
         proto_label = server.get("protocol", "vless").upper()
+        attempt = _connection.begin()
+        if attempt is None:
+            error = "Уже подключено" if _connection.connected else "Подключение уже выполняется"
+            return jsonify({"ok": False, "error": error})
 
         def do_connect_vless():
-            global _connected, _ping_thread, _conn_server
-            _broadcast({"type": "status", "state": "connecting"})
-            _log(f"Подключение к {server['remark']} [{proto_label}] ...", "info")
-            _log(f"Режим: TUN | маршрутизация: {mode} ({len(routed_exes)} приложений)", "info")
-            if mode == "whitelist" and routed_exes:
-                shown = ", ".join(routed_exes[:5]) + ("..." if len(routed_exes) > 5 else "")
-                _log(f"Через VPN: {shown}", "info")
-                _log("⚠ Браузеры и другие приложения работают НАПРЯМУЮ — без VPN", "warn")
-            ok = vpn_engine.start(cfg)
-            if ok and _wait_clash_ready():
-                _connected   = True
-                _conn_server = server.get("remark", "")
-                _log("TUN-интерфейс поднят", "ok")
-                _broadcast({"type": "status", "state": "on", "server": _conn_server})
-                stats_tracker.start()
-                _ping_thread = threading.Thread(target=_ping_loop, daemon=True)
-                _ping_thread.start()
-                _start_traffic_monitor()
-            else:
-                vpn_engine.stop()
-                _log("sing-box не поднял Clash API за 8с — смотри логи выше", "err")
-                _broadcast({"type": "status", "state": "off"})
+            def announce():
+                _broadcast({"type": "status", "state": "connecting"})
+                _log(f"Подключение к {server['remark']} [{proto_label}] ...", "info")
+                _log(f"Режим: TUN | маршрутизация: {mode} ({len(routed_exes)} приложений)", "info")
+                if mode == "whitelist" and routed_exes:
+                    shown = ", ".join(routed_exes[:5]) + ("..." if len(routed_exes) > 5 else "")
+                    _log(f"Через VPN: {shown}", "info")
+                    _log("⚠ Браузеры и другие приложения работают НАПРЯМУЮ — без VPN", "warn")
+
+            if not _connection.run_if_current(attempt, announce):
+                return
+            _finish_vpn_attempt(attempt, cfg, server.get("remark", ""))
 
         threading.Thread(target=do_connect_vless, daemon=True).start()
         return jsonify({"ok": True})
@@ -1085,14 +1139,7 @@ def api_connect():
 
 @app.route("/api/disconnect", methods=["POST"])
 def api_disconnect():
-    global _connected, _ping_value, _ping_color, _conn_server
-    vpn_engine.stop()
-    stats_tracker.stop()
-    _connected   = False
-    _ping_value  = "—"
-    _ping_color  = "dim"
-    _conn_server = ""
-    _stop_traffic_monitor()
+    _cancel_vpn_connection()
     _log("Отключено", "info")
     _broadcast({"type": "status", "state": "off"})
     return jsonify({"ok": True})
@@ -1195,7 +1242,7 @@ def api_win_close():
         import time as _t
         # Корректно останавливаем все дочерние процессы перед выходом
         try:
-            vpn_engine.stop()
+            _cancel_vpn_connection()
         except Exception:
             pass
         try:
