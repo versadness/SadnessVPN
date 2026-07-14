@@ -1,0 +1,43 @@
+# User data and credentials
+data/
+
+# Bundled third-party executables and drivers
+bin/
+
+# Virtual environments
+venv/
+venv*/
+.venv/
+
+# Build artifacts
+build/
+dist/
+*.zip
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+.coverage
+htmlcov/
+
+# Local backups and temporary files
+*.bak
+*.tmp
+*.temp
+*.log
+~$*
+
+# IDE and OS metadata
+.claude/
+.codex/
+.agents/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
