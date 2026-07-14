@@ -94,6 +94,18 @@ class PackagingSafetyTests(unittest.TestCase):
         self.assertNotIn("Tree('data'", spec)
         self.assertNotIn('Tree("data"', spec)
 
+    def test_spec_validates_runtime_architecture(self):
+        project_root = Path(__file__).resolve().parents[1]
+        spec = project_root.joinpath("SadnessVPN.spec").read_text(encoding="utf-8")
+
+        self.assertIn("validate_runtime_binaries", spec)
+
+    def test_spec_excludes_runtime_backups(self):
+        project_root = Path(__file__).resolve().parents[1]
+        spec = project_root.joinpath("SadnessVPN.spec").read_text(encoding="utf-8")
+
+        self.assertIn("excludes=['backups']", spec)
+
 
 if __name__ == "__main__":
     unittest.main()

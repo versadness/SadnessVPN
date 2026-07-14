@@ -1,6 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 
+from engine.runtime_validation import validate_runtime_binaries
+
+
+# Fail before packaging if sing-box and Wintun cannot run in one x64 process.
+validate_runtime_binaries(os.path.join(SPECPATH, 'bin'))
+
 a = Analysis(
     ['main.py'],
     pathex=[],
@@ -46,7 +52,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     # Сторонние движки и драйверы нужны приложению во время выполнения.
-    Tree('bin',  prefix='bin'),
+    Tree('bin', prefix='bin', excludes=['backups']),
     strip=False,
     upx=True,
     upx_exclude=[],
