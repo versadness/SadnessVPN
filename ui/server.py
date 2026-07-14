@@ -68,7 +68,7 @@ def _wait_clash_ready(timeout: float = 8.0, cancelled=None) -> bool:
     return False
 
 
-def _traffic_loop():
+def _traffic_loop(attempt, stop_event):
     """Опрашивает Clash API и транслирует статистику по приложениям.
     HTTP Keep-Alive снижает нагрузку на процессор.
     """
@@ -76,7 +76,7 @@ def _traffic_loop():
     CLASH_PORT = 9090
     conn = None
 
-    while not _traffic_stop.is_set():
+    while not stop_event.is_set():
         try:
             if conn is None:
                 conn = http.client.HTTPConnection(CLASH_HOST, CLASH_PORT, timeout=2.0)
@@ -92,19 +92,24 @@ def _traffic_loop():
                 total_up   = data.get("uploadTotal",   0)
                 total_down = data.get("downloadTotal", 0)
 
-                stats_tracker.update(total_up, total_down)
+                def publish():
+                    stats_tracker.update(total_up, total_down)
+                    _broadcast({
+                        "type":        "traffic_stats",
+                        "connections": conns,
+                        "totalUp":     total_up,
+                        "totalDown":   total_down,
+                    })
+                    _broadcast({
+                        "type":  "stats",
+                        **stats_tracker.get_snapshot(),
+                    })
 
-                _broadcast({
-                    "type":        "traffic_stats",
-                    "connections": conns,
-                    "totalUp":     total_up,
-                    "totalDown":   total_down,
-                })
-
-                _broadcast({
-                    "type":  "stats",
-                    **stats_tracker.get_snapshot(),
-                })
+                if stop_event.is_set() or not _connection.run_if_connected(
+                    attempt,
+                    publish,
+                ):
+                    break
             else:
                 resp.read()
 
@@ -113,17 +118,22 @@ def _traffic_loop():
                 conn.close()
                 conn = None
 
-        _traffic_stop.wait(timeout=2.0)
+        stop_event.wait(timeout=2.0)
 
     if conn:
         conn.close()
 
 
-def _start_traffic_monitor():
+def _start_traffic_monitor(attempt):
     global _traffic_thread, _traffic_stop
     _traffic_stop.set()
-    _traffic_stop = threading.Event()
-    _traffic_thread = threading.Thread(target=_traffic_loop, daemon=True)
+    stop_event = threading.Event()
+    _traffic_stop = stop_event
+    _traffic_thread = threading.Thread(
+        target=_traffic_loop,
+        args=(attempt, stop_event),
+        daemon=True,
+    )
     _traffic_thread.start()
 
 
@@ -229,6 +239,7 @@ _conn_server = ""
 _ping_value  = "—"
 _ping_color  = "dim"
 _ping_thread = None
+_ping_stop   = threading.Event()
 _socks_port  = _app_settings.get("socks", 1080)
 _http_port   = _app_settings.get("http", 8080)
 
@@ -410,14 +421,13 @@ def _stop_vpn_engine():
 
 def _activate_vpn_attempt(attempt: int, server_name: str) -> bool:
     def activate():
-        global _conn_server, _ping_thread
+        global _conn_server
         _conn_server = server_name
         _log("TUN-интерфейс поднят", "ok")
         _broadcast({"type": "status", "state": "on", "server": _conn_server})
         stats_tracker.start()
-        _ping_thread = threading.Thread(target=_ping_loop, daemon=True)
-        _ping_thread.start()
-        _start_traffic_monitor()
+        _start_ping_monitor(attempt)
+        _start_traffic_monitor(attempt)
 
     return _connection.complete(attempt, activate)
 
@@ -441,11 +451,12 @@ def _finish_vpn_attempt(attempt: int, config: dict, server_name: str):
 
 def _reset_connection_state():
     global _ping_value, _ping_color, _conn_server
+    _stop_ping_monitor()
+    _stop_traffic_monitor()
     stats_tracker.stop()
     _ping_value = "—"
     _ping_color = "dim"
     _conn_server = ""
-    _stop_traffic_monitor()
 
 
 def _cancel_vpn_connection():
@@ -496,21 +507,48 @@ def ws_handler(ws):
             _ws_clients.remove(ws)
 
 # ── Ping loop ──────────────────────────────────────
-def _ping_loop():
-    global _ping_value, _ping_color
-    while _connection.connected:
+def _ping_loop(attempt, stop_event):
+    while not stop_event.is_set():
         try:
             t0 = time.perf_counter()
             s  = socket.create_connection(("1.1.1.1", 443), timeout=3)
             ms = (time.perf_counter() - t0) * 1000
             s.close()
-            _ping_value = f"{ms:.0f}ms"
-            _ping_color = "green" if ms < 150 else "yellow" if ms < 400 else "red"
+            value = f"{ms:.0f}ms"
+            color = "green" if ms < 150 else "yellow" if ms < 400 else "red"
         except Exception:
-            _ping_value = "—"
-            _ping_color = "red"
-        _broadcast({"type": "ping", "value": _ping_value, "color": _ping_color})
-        time.sleep(5)
+            value = "—"
+            color = "red"
+
+        def publish():
+            global _ping_value, _ping_color
+            _ping_value = value
+            _ping_color = color
+            _broadcast({"type": "ping", "value": value, "color": color})
+
+        if stop_event.is_set() or not _connection.run_if_connected(
+            attempt,
+            publish,
+        ):
+            break
+        stop_event.wait(timeout=5.0)
+
+
+def _start_ping_monitor(attempt):
+    global _ping_thread, _ping_stop
+    _ping_stop.set()
+    stop_event = threading.Event()
+    _ping_stop = stop_event
+    _ping_thread = threading.Thread(
+        target=_ping_loop,
+        args=(attempt, stop_event),
+        daemon=True,
+    )
+    _ping_thread.start()
+
+
+def _stop_ping_monitor():
+    _ping_stop.set()
 
 # ── API ───────────────────────────────────────────
 @app.route("/")

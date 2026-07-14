@@ -40,6 +40,18 @@ class ConnectionCoordinator:
             callback()
             return True
 
+    def run_if_connected(
+        self,
+        attempt: int,
+        callback: StateCallback,
+    ) -> bool:
+        """Publish background results only for the active VPN session."""
+        with self._lock:
+            if self._state != "on" or attempt != self._generation:
+                return False
+            callback()
+            return True
+
     def complete(self, attempt: int, callback: StateCallback | None = None) -> bool:
         """Activate an attempt only if it has not been cancelled or replaced."""
         with self._lock:

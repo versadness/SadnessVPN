@@ -98,13 +98,36 @@ class ConnectionCoordinatorTests(unittest.TestCase):
         self.assertTrue(cancel_finished.is_set())
         self.assertEqual(coordinator.state, "off")
 
+    def test_old_session_cannot_publish_into_new_connection(self):
+        coordinator = ConnectionCoordinator()
+        old_attempt = coordinator.begin()
+        coordinator.complete(old_attempt)
+        coordinator.cancel()
+        new_attempt = coordinator.begin()
+        coordinator.complete(new_attempt)
+        published = []
+
+        old_ran = coordinator.run_if_connected(
+            old_attempt,
+            lambda: published.append("old"),
+        )
+        new_ran = coordinator.run_if_connected(
+            new_attempt,
+            lambda: published.append("new"),
+        )
+
+        self.assertFalse(old_ran)
+        self.assertTrue(new_ran)
+        self.assertEqual(published, ["new"])
+
 
 class ServerConnectionSafetyTests(unittest.TestCase):
     def test_server_does_not_use_unsynchronised_connected_flag(self):
         path = Path(__file__).resolve().parents[1].joinpath("ui", "server.py")
         source = path.read_text(encoding="utf-8")
 
-        self.assertNotIn("_connected", source)
+        self.assertNotRegex(source, r"(?m)^\s*_connected\s*=")
+        self.assertNotIn("global _connected", source)
         self.assertIn("ConnectionCoordinator", source)
         self.assertIn("_connection.cancel", source)
 
@@ -126,6 +149,29 @@ class ServerConnectionSafetyTests(unittest.TestCase):
 
         self.assertIn("def _handle_vpn_exit", source)
         self.assertIn("exit_callback=_handle_vpn_exit", source)
+
+    def test_monitor_threads_receive_session_and_private_stop_event(self):
+        path = Path(__file__).resolve().parents[1].joinpath("ui", "server.py")
+        source = path.read_text(encoding="utf-8")
+
+        self.assertIn("def _traffic_loop(attempt, stop_event):", source)
+        self.assertIn("def _ping_loop(attempt, stop_event):", source)
+        self.assertIn("args=(attempt, stop_event)", source)
+        self.assertIn("_connection.run_if_connected", source)
+
+        traffic_loop = source.split("def _traffic_loop", 1)[1].split(
+            "def _start_traffic_monitor",
+            1,
+        )[0]
+        ping_loop = source.split("def _ping_loop", 1)[1].split(
+            "def _start_ping_monitor",
+            1,
+        )[0]
+        self.assertNotIn("_traffic_stop", traffic_loop)
+        self.assertNotIn("_ping_stop", ping_loop)
+        self.assertNotIn("time.sleep(5)", ping_loop)
+        self.assertIn("stop_event.wait", traffic_loop)
+        self.assertIn("stop_event.wait", ping_loop)
 
 
 if __name__ == "__main__":
