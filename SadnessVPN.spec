@@ -39,16 +39,14 @@ exe = EXE(
     icon=['app.ico'],
 )
 
-# Tree() размещает папки РЯДОМ с SadnessVPN.exe (не в _internal/)
-# Это критично для paths.py — он ищет bin/ рядом с exe
+# Пользовательские data-файлы намеренно не входят в сборку.
+# Frozen-версия хранит их в %LOCALAPPDATA%\SadnessVPN\data.
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    # bin/ рядом с .exe → dist/SadnessVPN/bin/
+    # Сторонние движки и драйверы нужны приложению во время выполнения.
     Tree('bin',  prefix='bin'),
-    # data/ рядом с .exe → dist/SadnessVPN/data/
-    Tree('data', prefix='data'),
     strip=False,
     upx=True,
     upx_exclude=[],
