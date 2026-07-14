@@ -46,7 +46,7 @@ from engine.connection_state import ConnectionCoordinator
 from engine.json_store import atomic_write_json
 from engine.task_state import BackgroundTaskCoordinator
 
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.3"
 SING_BOX_VERSION = "1.10.x"
 
 # ── Traffic stats ────────────────────────────────────────────
@@ -864,20 +864,66 @@ def api_health():
     })
 
 
+_PUBLIC_IP_SOURCES = (
+    ("ipify", "https://api64.ipify.org?format=json", "json"),
+    ("Cloudflare", "https://www.cloudflare.com/cdn-cgi/trace", "trace"),
+    ("icanhazip", "https://icanhazip.com/", "text"),
+    ("ifconfig.me", "https://ifconfig.me/ip", "text"),
+)
+
+
+def _parse_public_ip(
+    raw: bytes,
+    response_type: str,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    text = raw.decode("utf-8-sig", errors="strict").strip()
+    if response_type == "json":
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid public IP response")
+        value = payload.get("ip", "")
+    elif response_type == "trace":
+        values = {}
+        for line in text.splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                values[key.strip()] = value.strip()
+        value = values.get("ip", "")
+    else:
+        value = text.splitlines()[0].strip() if text else ""
+    return ipaddress.ip_address(str(value).strip())
+
+
+def _fetch_public_ip(source_name: str, url: str, response_type: str):
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": f"SadnessVPN/{APP_VERSION}",
+            "Accept": "application/json,text/plain;q=0.9,*/*;q=0.5",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=3.0) as response:
+        address = _parse_public_ip(response.read(4096), response_type)
+    return address, source_name
+
+
 @app.route("/api/network/ip", methods=["POST"])
 def api_network_ip():
-    try:
-        req = urllib.request.Request(
-            "https://api64.ipify.org?format=json",
-            headers={"User-Agent": f"SadnessVPN/{APP_VERSION}"},
-        )
-        with urllib.request.urlopen(req, timeout=5.0) as response:
-            payload = json.loads(response.read(4096).decode("utf-8"))
-        value = str(payload.get("ip", "")).strip()
-        ipaddress.ip_address(value)
-        return jsonify({"ok": True, "ip": value})
-    except Exception:
-        return jsonify({"ok": False, "error": "Не удалось определить внешний IP"})
+    for source_name, url, response_type in _PUBLIC_IP_SOURCES:
+        try:
+            address, source = _fetch_public_ip(source_name, url, response_type)
+            return jsonify({
+                "ok": True,
+                "ip": str(address),
+                "version": address.version,
+                "source": source,
+            })
+        except Exception:
+            continue
+    return jsonify({
+        "ok": False,
+        "error": "Не удалось определить внешний IP ни через один источник",
+    })
 
 
 @app.route("/api/groups", methods=["GET"])

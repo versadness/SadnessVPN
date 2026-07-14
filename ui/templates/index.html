@@ -86,7 +86,7 @@ body.no-anim .blob { animation:none !important; }
 .home-wrap { display:flex; flex-direction:column; align-items:center; width:100%; max-width:540px; max-height:100%; overflow-y:auto; padding:6px; }
 .home-wrap::-webkit-scrollbar { width:4px; }
 .home-wrap::-webkit-scrollbar-thumb { background:var(--border-2); border-radius:4px; }
-.power-wrap { position:relative; width:176px; height:176px; margin-bottom:var(--sp-4); }
+.power-wrap { position:relative; width:176px; height:176px; flex:0 0 176px; aspect-ratio:1; margin-bottom:var(--sp-4); }
 .power-ring { position:absolute; inset:0; border-radius:50%; border:1px solid var(--border-1); }
 .power-ring.r2 { inset:14px; border-color:oklch(0.4 0.06 345 / 0.2); }
 .power-arc { position:absolute; inset:-4px; border-radius:50%; opacity:0; transition:opacity .4s var(--ease); background:conic-gradient(from 0deg, transparent 0%, var(--purple-h) 25%, transparent 45%); -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px)); mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px)); }
@@ -148,7 +148,7 @@ body.no-anim .blob { animation:none !important; }
 .srv-row { display:flex; align-items:center; gap:12px; padding:12px 14px; transition:all .18s var(--ease); }
 .srv-row:hover { border-color:var(--border-2); background:var(--surface-2); }
 .srv-row.sel { border-color:var(--red); box-shadow:0 0 0 1px var(--red), 0 4px 18px oklch(0.5 0.2 10 / 0.25); background:linear-gradient(145deg, oklch(0.28 0.08 10 / 0.4), var(--surface-1)); }
-.flag-code { width:28px; height:20px; border-radius:5px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; letter-spacing:0.04em; font-family:ui-monospace,Consolas,monospace; color:var(--text-1); background:oklch(0.32 0.06 345 / 0.7); border:1px solid var(--border-1); overflow:hidden; }
+.flag-code { width:30px; height:22px; border-radius:5px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; letter-spacing:0.04em; font-family:ui-monospace,Consolas,monospace; color:var(--text-2); background:oklch(0.24 0.04 345 / 0.8); border:1px solid var(--border-1); overflow:hidden; box-shadow:0 2px 7px oklch(0.08 0.02 345 / .35); }
 .flag-code img { width:100%; height:100%; object-fit:cover; display:block; }
 .srv-meta { flex:1; min-width:0; }
 .srv-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -235,6 +235,7 @@ textarea.inp { resize:vertical; min-height:96px; width:100%; line-height:1.6; }
 .zap-radio { width:18px; height:18px; border-radius:50%; border:2px solid var(--border-2); flex-shrink:0; margin-left:auto; display:flex; align-items:center; justify-content:center; }
 .zap-card.sel .zap-radio::after { content:''; width:8px; height:8px; border-radius:50%; background:var(--green); }
 .set-row { display:flex; align-items:center; gap:14px; padding:14px 18px; margin-bottom:6px; }
+.set-row.dd-open { position:relative; z-index:160; }
 .set-meta { flex:1; min-width:0; }
 .set-name { font-size:13px; font-weight:600; }
 .set-desc { font-size:11px; color:var(--text-3); margin-top:2px; }
@@ -260,6 +261,46 @@ textarea.inp { resize:vertical; min-height:96px; width:100%; line-height:1.6; }
 #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 #toast.err { border-color:var(--danger); color:var(--danger); }
 #toast.ok { border-color:var(--green); color:var(--green); }
+.modal-backdrop { position:fixed; inset:0; z-index:700; display:none; align-items:center; justify-content:center; padding:18px; background:oklch(0.06 0.018 345 / .78); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+.modal-backdrop.open { display:flex; animation:modalFade .18s var(--ease); }
+.modal-backdrop.process-layer { z-index:740; }
+.modal-card { width:min(500px,100%); max-height:calc(100vh - 36px); overflow:auto; padding:24px; border:1px solid var(--border-2); border-radius:22px; background:oklch(0.16 0.035 345 / .98); box-shadow:0 24px 80px oklch(0.04 0.025 345 / .72); }
+.modal-card::-webkit-scrollbar,.process-list::-webkit-scrollbar { width:6px; }
+.modal-card::-webkit-scrollbar-thumb,.process-list::-webkit-scrollbar-thumb { background:var(--border-2); border-radius:8px; }
+.modal-head { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+.modal-icon { width:42px; height:42px; border-radius:13px; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(145deg,var(--purple),var(--magenta)); box-shadow:0 7px 20px oklch(0.5 0.18 320 / .35); }
+.modal-icon svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.modal-title { font-size:21px; font-weight:750; letter-spacing:-.02em; }
+.modal-sub { color:var(--text-3); font-size:11px; margin-top:2px; }
+.modal-close { margin-left:auto; width:36px; height:36px; border:0; border-radius:10px; background:transparent; color:var(--text-3); font-size:24px; line-height:1; }
+.modal-close:hover { color:var(--text-1); background:var(--surface-2); }
+.form-block { margin-top:16px; }
+.form-label { display:block; margin-bottom:7px; color:var(--text-2); font-size:11px; font-weight:700; }
+.form-hint { margin-top:7px; color:var(--text-3); font-size:11px; line-height:1.5; }
+.rule-value { display:flex; gap:8px; }
+.rule-value .inp { min-width:0; }
+.rule-mode { display:flex; align-items:center; gap:12px; margin-top:18px; padding:13px 15px; border:1px solid var(--border-1); border-radius:var(--r-md); background:var(--surface-1); }
+.rule-mode-icon { width:32px; height:32px; border-radius:10px; display:flex; align-items:center; justify-content:center; color:var(--purple-h); background:oklch(0.45 0.15 300 / .18); }
+.rule-mode-meta { flex:1; min-width:0; }
+.rule-mode-title { font-size:12px; font-weight:700; }
+.rule-mode-desc { color:var(--text-3); font-size:10px; margin-top:2px; }
+.rule-mode-action { color:var(--magenta-h); font-size:11px; font-weight:700; white-space:nowrap; }
+.modal-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:22px; }
+.modal-actions .btn { justify-content:center; }
+.process-card { width:min(560px,100%); }
+.process-search { display:flex; align-items:center; gap:10px; margin-bottom:14px; padding:0 13px; border:1px solid var(--border-1); border-radius:var(--r-md); background:oklch(0.13 0.025 345 / .8); }
+.process-search svg { width:16px; height:16px; flex-shrink:0; fill:none; stroke:var(--text-3); stroke-width:1.8; }
+.process-search input { width:100%; padding:12px 0; border:0; outline:0; color:var(--text-1); background:transparent; }
+.process-search input::placeholder { color:var(--text-3); }
+.process-list { max-height:min(440px,58vh); overflow-y:auto; padding-right:5px; }
+.process-row { width:100%; display:flex; align-items:center; gap:12px; padding:10px 11px; border:0; border-radius:12px; color:var(--text-1); background:transparent; text-align:left; }
+.process-row:hover,.process-row:focus-visible { background:var(--surface-2); }
+.process-ico { width:34px; height:34px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:10px; color:var(--magenta-h); background:oklch(0.36 0.08 340 / .42); }
+.process-ico svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.8; }
+.process-name { overflow:hidden; font-size:13px; font-weight:650; text-overflow:ellipsis; white-space:nowrap; }
+.process-state { padding:28px 12px; color:var(--text-3); text-align:center; font-size:12px; }
+body.modal-open { overflow:hidden; }
+@keyframes modalFade { from{opacity:0} to{opacity:1} }
 .notify-stack { position:fixed; top:52px; right:16px; z-index:600; display:flex; flex-direction:column; gap:10px; width:340px; pointer-events:none; }
 .notify { pointer-events:auto; background:var(--surface-3); border:1px solid var(--border-2); border-radius:var(--r-lg); padding:14px 16px; backdrop-filter:blur(24px); animation:noteIn .24s var(--ease); box-shadow:0 10px 30px oklch(0.1 0.02 345 / 0.45); }
 .notify.warn { border-color:oklch(0.75 0.12 90 / 0.5); } .notify.err { border-color:oklch(0.6 0.18 22 / 0.45); } .notify.ok { border-color:oklch(0.65 0.14 155 / 0.45); }
@@ -270,8 +311,6 @@ textarea.inp { resize:vertical; min-height:96px; width:100%; line-height:1.6; }
 @keyframes noteIn { from{opacity:0; transform:translateY(-8px) scale(.98)} to{opacity:1; transform:none} }
 .hidden { display:none !important; }
 @media (max-height:560px) {
-  .power-wrap { width:132px; height:132px; margin-bottom:8px; }
-  .connect-btn { inset:18px; }
   .status-desc { margin-bottom:12px; }
   .hc,.stat,.ip-card { padding-top:9px; padding-bottom:9px; }
 }
@@ -339,16 +378,63 @@ textarea.inp { resize:vertical; min-height:96px; width:100%; line-height:1.6; }
     <div class="page" id="page-zapret"><div class="page-head"><div><div class="page-title">Zapret — обход DPI</div><div class="page-sub">Обход блокировок без VPN</div></div><div class="head-state" id="zapHeadState">Не подключено</div></div><div class="scroll"><div class="zap-status glass" id="zapStatus"><div class="zap-dot"></div><div style="flex:1"><div class="zap-t" id="zapT">Не активен</div><div class="zap-d" id="zapD">Выберите стратегию и нажмите «Запустить»</div></div></div><div class="zap-info">◇ <b>Zapret</b> обходит блокировки на уровне DPI без VPN. Работает независимо от туннеля.<br>⚠ Требует winws.exe + WinDivert64.sys в папке bin/<br>↓ Скачать: github.com/bol-van/zapret</div><div class="sec-lbl" style="letter-spacing:0.2em">Стратегии</div><div class="sec-line" style="margin-bottom:var(--sp-3)"></div><div id="zapList"></div><button class="btn btn-zap" id="zapBtn" onclick="toggleZapret()">▶ Запустить выбранную стратегию</button></div></div>
   </div></div></div>
 </div>
+<div class="modal-backdrop" id="ruleModal" aria-hidden="true" onclick="modalBackdropClose(event,'ruleModal')">
+  <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ruleModalTitle">
+    <div class="modal-head">
+      <div class="modal-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2"/><circle cx="18" cy="17" r="2"/><path d="M8 7h8a2 2 0 012 2v6M16 17H8a2 2 0 01-2-2V9"/></svg></div>
+      <div><div class="modal-title" id="ruleModalTitle">Новое правило</div><div class="modal-sub">Маршрутизация отдельного приложения</div></div>
+      <button type="button" class="modal-close" aria-label="Закрыть" onclick="closeModal('ruleModal')">×</button>
+    </div>
+    <div class="form-block">
+      <label class="form-label" for="ruleExe">Процесс приложения</label>
+      <div class="rule-value">
+        <input class="inp" id="ruleExe" placeholder="Например, Telegram.exe" autocomplete="off" spellcheck="false">
+        <button type="button" class="btn btn-ghost" onclick="openProcessPicker()"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h7"/></svg>Запущенные</button>
+      </div>
+      <div class="form-hint">Введите имя .exe вручную или выберите приложение из списка активных процессов.</div>
+    </div>
+    <div class="form-block">
+      <label class="form-label" for="ruleName">Название правила</label>
+      <input class="inp" id="ruleName" placeholder="Заполнится по имени процесса" autocomplete="off">
+    </div>
+    <div class="rule-mode">
+      <div class="rule-mode-icon">◇</div>
+      <div class="rule-mode-meta"><div class="rule-mode-title">Действие правила</div><div class="rule-mode-desc">Определяется выбранным режимом маршрутизации</div></div>
+      <div class="rule-mode-action" id="ruleModeAction">Список не используется</div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('ruleModal')">Отмена</button>
+      <button type="button" class="btn btn-primary" id="saveRuleBtn" onclick="saveRule()">Сохранить</button>
+    </div>
+  </section>
+</div>
+<div class="modal-backdrop process-layer" id="processModal" aria-hidden="true" onclick="modalBackdropClose(event,'processModal')">
+  <section class="modal-card process-card" role="dialog" aria-modal="true" aria-labelledby="processModalTitle">
+    <div class="modal-head">
+      <div><div class="modal-title" id="processModalTitle">Запущенные процессы</div><div class="modal-sub" id="processCount">Получение списка…</div></div>
+      <button type="button" class="modal-close" aria-label="Закрыть" onclick="closeModal('processModal')">×</button>
+    </div>
+    <div class="process-search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <input id="processSearch" aria-label="Поиск запущенного процесса" placeholder="Поиск по названию" autocomplete="off" oninput="renderProcessList()">
+      <button type="button" class="mini-btn" aria-label="Обновить список процессов" title="Обновить" onclick="loadProcesses(true)"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5"/></svg></button>
+    </div>
+    <div class="process-list" id="processList"><div class="process-state">Получение списка процессов…</div></div>
+  </section>
+</div>
 <div id="toast"></div>
 <script>
 let ST={connected:false,status:'off',backendOnline:false,server:'',proto:'vless',groups:[],selGroup:null,selIndex:null,wgGroups:[],selWgGroup:null,selWgIndex:null,appsConfig:{mode:'all',apps:[]},settings:{},tunnel:{},pings:{},wgPings:{},stars:{},hwid:'',zapStrategies:[],zapSel:null,zapRunning:false,srvSort:'default'};
 let ws=null, wsRetry=0, wsTimer=null, petalsOn=true, autoConnectAttempted=false;
 let sessionStart=null, sessionTimerInt=null, sessionBaseSec=0;
+let runningProcesses=[], modalReturnFocus=null;
 function startSessionTimer(baseSec){ sessionBaseSec=baseSec||0; sessionStart=Date.now(); if(!sessionTimerInt) sessionTimerInt=setInterval(tickSession,1000); tickSession(); }
 function tickSession(){ if(sessionStart==null) return; const el=document.getElementById('stSession'); if(!el) return; el.textContent=fmtTime(sessionBaseSec+(Date.now()-sessionStart)/1000); }
 function stopSessionTimer(){ sessionStart=null; if(sessionTimerInt){ clearInterval(sessionTimerInt); sessionTimerInt=null; } const el=document.getElementById('stSession'); if(el) el.textContent='00:00'; }
 const PRESET_SET=[['telegram.exe','Telegram'],['Discord.exe','Discord'],['chrome.exe','Google Chrome'],['firefox.exe','Mozilla Firefox'],['steam.exe','Steam'],['spotify.exe','Spotify'],['opera.exe','Opera']];
-async function api(path,body,timeoutMs=10000){ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs); try{ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{}),signal:controller.signal}); let data; try{data=await r.json();}catch(_){data={ok:false,error:`HTTP ${r.status}: некорректный ответ`};} if(!r.ok&&data.ok!==false) data={...data,ok:false,error:data.error||`HTTP ${r.status}`}; return data; }catch(e){ return {ok:false,error:e.name==='AbortError'?'Превышено время ожидания ответа':'Нет связи с приложением'}; }finally{clearTimeout(timer);} }
+async function requestJson(path,{method='POST',body=null,timeoutMs=10000}={}){ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),options={method,signal:controller.signal,headers:{}};if(method!=='GET'){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body||{});}try{const r=await fetch(path,options);let data;try{data=await r.json();}catch(_){data={ok:false,error:`HTTP ${r.status}: некорректный ответ`};}if(!r.ok&&data.ok!==false)data={...data,ok:false,error:data.error||`HTTP ${r.status}`};return data;}catch(e){return {ok:false,error:e.name==='AbortError'?'Превышено время ожидания ответа':'Нет связи с приложением'};}finally{clearTimeout(timer);} }
+function api(path,body,timeoutMs=10000){ return requestJson(path,{method:'POST',body,timeoutMs}); }
+function apiGet(path,timeoutMs=10000){ return requestJson(path,{method:'GET',timeoutMs}); }
 async function windowAction(path){ const r=await api(path); if(!r.ok) toast(r.error||'Команда окна не выполнена','err'); return r; }
 function winMin(){ windowAction('/api/window/minimize'); } function winMax(){ windowAction('/api/window/togglemax'); } function winClose(){ windowAction('/api/window/close'); }
 function setBackendOnline(online){ ST.backendOnline=online; if(!online){ const tb=document.getElementById('tbState'); tb.textContent='Нет связи с приложением'; tb.classList.remove('on'); document.getElementById('tbDot').classList.remove('on'); } }
@@ -376,16 +462,20 @@ function selectedServer(){ if(ST.proto==='wg'){ const g=ST.wgGroups.find(g=>g.id
 async function toggleConnect(){ if(ST.connected||ST.status==='on'||ST.status==='connecting'){const r=await api('/api/disconnect');if(!r.ok)toast(r.error||'Не удалось отключиться','err');return;}if(!selectedServer()){toast('Сначала выбери сервер','err');go(ST.proto==='wg'?'wg':'servers');return;}const r=await api('/api/connect',{protocol:ST.proto});if(!r.ok)toast(r.error||'Не удалось подключиться','err');}
 function setProto(p){ if(ST.connected||ST.status==='connecting'){toast('Сначала отключи активный туннель','err');return;}ST.proto=p;applyStatus(); }
 async function toggleSecureDns(){ const next=ST.tunnel.dns_preset==='adguard'?'cf_google':'adguard';const r=await api('/api/tunnel-settings',{dns_preset:next});if(!r.ok){toast(r.error||'Не удалось изменить DNS','err');return;}ST.tunnel.dns_preset=next;syncSettings();toast(next==='adguard'?'DNS-защита включена':'DNS-защита выключена','ok'); }
-async function refreshPublicIp(){ const value=document.getElementById('ipVal'),note=document.getElementById('ipNote');value.textContent='Проверяю…';note.textContent='Запрос к api64.ipify.org';const r=await api('/api/network/ip',{},7000);if(r.ok){value.textContent=r.ip;note.textContent=ST.connected?'Системный IP при работающем туннеле':'Текущий системный внешний IP';}else{value.textContent='Не определён';note.textContent=r.error||'Ошибка проверки';toast(note.textContent,'err');} }
+async function refreshPublicIp(){ const value=document.getElementById('ipVal'),note=document.getElementById('ipNote');value.textContent='Проверяю…';note.textContent='Определение внешнего адреса';const r=await api('/api/network/ip',{},15000);if(r.ok){value.textContent=r.ip;const version=r.version?`IPv${r.version}`:'IP';note.textContent=ST.connected?`${version} при работающем туннеле`:`Текущий внешний ${version}`;}else{value.textContent='Не определён';note.textContent=r.error||'Ошибка проверки';toast(note.textContent,'err');} }
 function maybeAutoConnect(){ if(autoConnectAttempted||!ST.settings.autoconn||ST.connected||ST.status==='connecting')return;autoConnectAttempted=true;if(!selectedServer()){toast('Автоподключение: сервер не выбран','err');return;}setTimeout(toggleConnect,300); }
 function fmtBytes(n){ n=n||0; if(n<1024)return n+' B'; const u=['KB','MB','GB','TB']; let i=-1; do{n/=1024;i++;}while(n>=1024&&i<u.length-1); return n.toFixed(1)+' '+u[i]; }
 function fmtTime(sec){ sec=Math.floor(sec||0); const h=String(Math.floor(sec/3600)).padStart(2,'0'),m=String(Math.floor(sec%3600/60)).padStart(2,'0'),s=String(sec%60).padStart(2,'0'); return h!=='00'?`${h}:${m}:${s}`:`${m}:${s}`; }
 function applyStats(s){ const sess=s.session_time??s.sessionSeconds??s.session;if(sess!==undefined&&(s.connected??ST.connected))startSessionTimer(sess);else if(!(s.connected??ST.connected))stopSessionTimer();const tu=s.today?.up??s.today_up??s.todayUp??0,td=s.today?.down??s.today_down??s.todayDown??0,au=s.total?.up??s.total_up??s.totalUp??0,ad=s.total?.down??s.total_down??s.totalDown??0;document.getElementById('statTodayUp').textContent='↑ '+fmtBytes(tu);document.getElementById('statTodayDn').textContent='↓ '+fmtBytes(td);document.getElementById('statTotalUp').textContent='↑ '+fmtBytes(au);document.getElementById('statTotalDn').textContent='↓ '+fmtBytes(ad); }
 function applyTraffic(d){ const now=Date.now()/1000; if(applyTraffic._t){ const dt=now-applyTraffic._t; if(dt>0){ const dn=(d.totalDown-applyTraffic._d)*8/1e6/dt,up=(d.totalUp-applyTraffic._u)*8/1e6/dt; document.getElementById('stDown').textContent=Math.max(0,dn).toFixed(1); document.getElementById('stUp').textContent=Math.max(0,up).toFixed(1); } } applyTraffic._t=now; applyTraffic._d=d.totalDown; applyTraffic._u=d.totalUp; }
-const CC={Germany:'DE',Finland:'FI',Sweden:'SE',Russia:'RU',Austria:'AT',Greece:'GR',Denmark:'DK',Portugal:'PT',Bulgaria:'BG','United Kingdom':'GB',Hungary:'HU','Bosnia and Herzegovina':'BA','Czech Republic':'CZ',Romania:'RO',Lithuania:'LT',Poland:'PL',Norway:'NO',Italy:'IT',France:'FR',Switzerland:'CH',Serbia:'RS',Netherlands:'NL',USA:'US',Spain:'ES',Turkey:'TR',Japan:'JP',Singapore:'SG',Ukraine:'UA'};
+const FLAG_CODES=new Set('ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bl bm bn bo bq br bs bt bv bw by bz ca cc cd cf cg ch ci ck cl cm cn co cp cr cu cv cw cx cy cz de dg dj dk dm do dz ec ee eg eh er es et eu fi fj fk fm fo fr ga gb gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu ic id ie il im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mf mg mh ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pc pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug um un us uy uz va vc ve vg vi vn vu wf ws xk xx ye yt za zm zw'.split(' '));
+const COUNTRY_ALIASES={usa:'us','u.s.a.':'us','united states of america':'us',uk:'gb','u.k.':'gb',england:'gb',scotland:'gb',wales:'gb',uae:'ae','u.a.e.':'ae','south korea':'kr','north korea':'kp','czech republic':'cz',turkey:'tr','russian federation':'ru','viet nam':'vn'};
+function normalizedCountryName(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[_|,;:()[\]{}]+/g,' ').replace(/\s+/g,' ').trim();}
+function buildCountryNames(){const names=[];for(const [name,code] of Object.entries(COUNTRY_ALIASES))names.push([normalizedCountryName(name),code]);if(typeof Intl.DisplayNames==='function'){for(const locale of ['en','ru']){try{const display=new Intl.DisplayNames([locale],{type:'region'});for(const code of FLAG_CODES){if(code==='xx')continue;const label=display.of(code.toUpperCase());if(label&&label.toUpperCase()!==code.toUpperCase())names.push([normalizedCountryName(label),code]);}}catch(_){}}}return names.filter(([name])=>name).sort((a,b)=>b[0].length-a[0].length);}
+const COUNTRY_NAMES=buildCountryNames();
 function cleanName(name){ return String(name||'').replace(/[\u{1F1E6}-\u{1F1FF}]{1,2}/gu,'').replace(/[\u{1D400}-\u{1D7FF}\u{1F100}-\u{1F1FF}]/gu,'').trim(); }
-function ccFor(name){ if(!name) return '••'; const flag=[...name].filter(c=>c.codePointAt(0)>=0x1F1E6&&c.codePointAt(0)<=0x1F1FF); if(flag.length>=2){ return flag.map(c=>String.fromCharCode(c.codePointAt(0)-0x1F1E6+65)).join(''); } for(const k in CC){ if(name.includes(k)) return CC[k]; } const m=name.match(/\b([A-Z]{2})\b/); return m?m[1]:'••'; }
-function flagImg(code){ if(!code||code==='••'||code.length!==2)return esc(code||'••');const chars=[...code.toUpperCase()].map(char=>String.fromCodePoint(0x1F1E6+char.charCodeAt(0)-65));return chars.join(''); }
+function ccFor(name){if(!name)return'xx';const flag=[...name].filter(c=>c.codePointAt(0)>=0x1F1E6&&c.codePointAt(0)<=0x1F1FF);if(flag.length>=2){const code=flag.slice(0,2).map(c=>String.fromCharCode(c.codePointAt(0)-0x1F1E6+97)).join('');if(FLAG_CODES.has(code))return code;}const normalized=normalizedCountryName(name);for(const [country,code] of COUNTRY_NAMES){if((` ${normalized} `).includes(` ${country} `))return code;}const codeMatch=String(name).match(/(?:^|[^A-Z])([A-Z]{2})(?=$|[^A-Z])/);const code=codeMatch?.[1]?.toLowerCase();return code&&FLAG_CODES.has(code)?code:'xx';}
+function flagImg(code){const safe=FLAG_CODES.has(String(code||'').toLowerCase())?String(code).toLowerCase():'xx';return `<img src="/static/flags/4x3/${safe}.svg" alt="" draggable="false">`;}
 function serverKey(server,gid,idx){ return server&&server.ui_id?server.ui_id:`${gid}:${idx}`; }
 function renderServers(){ const grid=document.getElementById('srvGrid'),q=(document.getElementById('srvSearch').value||'').toLowerCase(),sort=ST.srvSort;let rows=[];ST.groups.forEach(g=>(g.servers||[]).forEach((s,i)=>rows.push({g:g.id,i,s,key:serverKey(s,g.id,i)})));if(q)rows=rows.filter(r=>(r.s.remark||'').toLowerCase().includes(q));if(sort==='name')rows.sort((a,b)=>(a.s.remark||'').localeCompare(b.s.remark||'','ru'));if(sort==='ping')rows.sort((a,b)=>(parseInt(ST.pings[a.key]?.label)||999999)-(parseInt(ST.pings[b.key]?.label)||999999));document.getElementById('srvEmpty').classList.toggle('hidden',rows.length>0);grid.innerHTML=rows.map(r=>{const sel=r.g===ST.selGroup&&r.i===ST.selIndex,p=ST.pings[r.key],star=!!ST.stars[r.key],nm=cleanName(r.s.remark)||'Без имени';return `<div class="srv-row glass ${sel?'sel':''}" role="button" tabindex="0" data-action="select-server" data-gid="${esc(r.g)}" data-index="${r.i}"><span class="flag-code" aria-hidden="true">${flagImg(ccFor(r.s.remark||''))}</span><div class="srv-meta"><div class="srv-name">${esc(nm)}</div><div class="srv-proto">${esc(r.s.protocol||'vless')}</div></div><div class="srv-actions"><span class="ping ${p?p.color:'dim'}" data-ping-id="${esc(r.key)}">${p?p.label:'—'}</span><button class="mini-btn star ${star?'on':''}" aria-label="${star?'Убрать из избранного':'Добавить в избранное'}" data-action="toggle-star" data-sid="${esc(r.key)}"><svg viewBox="0 0 24 24" fill="${star?'currentColor':'none'}"><path d="M12 3l2.5 6 6.5.5-5 4.2 1.6 6.3L12 17l-5.6 3 1.6-6.3-5-4.2 6.5-.5z"/></svg></button><button class="mini-btn del" aria-label="Удалить сервер" data-action="delete-server" data-gid="${esc(r.g)}" data-index="${r.i}"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></div>`;}).join(''); }
 function updatePing(pfx,key){ const el=[...document.querySelectorAll(`[data-ping-id]`)].find(item=>item.dataset.pingId===key),p=(pfx==='ping'?ST.pings:ST.wgPings)[key];if(el&&p){el.textContent=p.label;el.className='ping '+p.color;} }
@@ -401,12 +491,21 @@ async function delWg(gid,idx){ if(!confirm('Удалить выбранный WG
 async function wgAdd(){ const el=document.getElementById('wgConf'); const conf=el.value.trim(); if(!conf){toast('Вставь конфиг','err');return;} const r=await api('/api/wg/servers/add',{conf}); if(r.ok){el.value='';toast(`Добавлено серверов: ${r.added}`,'ok');}else toast(r.error||'Ошибка','err'); }
 async function wgImport(){ const el=document.getElementById('wgSubUrl'); const url=el.value.trim(); if(!url.startsWith('http')){toast('Нужна http(s) ссылка','err');return;} const r=await api('/api/wg/servers/import',{url}); if(r.ok){el.value='';toast('WG подписка добавляется…','ok');}else toast(r.error||'Ошибка','err'); }
 async function wgPingAll(){ const btn=document.getElementById('wgPingBtn');if(btn)btn.classList.add('scanning');const r=await api('/api/wg/ping/all');if(!r.ok){if(btn)btn.classList.remove('scanning');toast(r.error||'Не удалось запустить проверку WG','err');} }
-function renderModeCards(){ const m=ST.appsConfig.mode||'all';[['modeAll','all'],['modeWl','whitelist'],['modeBl','blacklist']].forEach(([id,value])=>{const el=document.getElementById(id),active=m===value;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));});document.getElementById('routeNote').textContent=m==='all'?'Список не используется':(m==='whitelist'?'Через VPN только список':'Через VPN всё, кроме списка'); }
+function renderModeCards(){ const m=ST.appsConfig.mode||'all';[['modeAll','all'],['modeWl','whitelist'],['modeBl','blacklist']].forEach(([id,value])=>{const el=document.getElementById(id),active=m===value;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));});document.getElementById('routeNote').textContent=m==='all'?'Список не используется':(m==='whitelist'?'Через VPN только список':'Через VPN всё, кроме списка');const action=document.getElementById('ruleModeAction');if(action)action.textContent=currentRuleAction(); }
 async function setMode(m){ const previous=ST.appsConfig.mode;ST.appsConfig.mode=m;renderModeCards();renderRules();applyStatus();const r=await api('/api/apps/mode',{mode:m});if(!r.ok){ST.appsConfig.mode=previous;renderModeCards();renderRules();applyStatus();toast(r.error||'Не удалось изменить режим','err');} }
 function renderRules(){ const list=document.getElementById('ruleList'),q=(document.getElementById('ruleSearch')?.value||'').toLowerCase(),mode=ST.appsConfig.mode||'all';let apps=ST.appsConfig.apps||[];document.getElementById('rulesCount').textContent=apps.length;if(q)apps=apps.filter(a=>(a.name||a.exe||'').toLowerCase().includes(q));document.getElementById('ruleEmpty').classList.toggle('hidden',apps.length>0);list.innerHTML=apps.map(a=>{const enabled=a.enabled!==false,badge=!enabled?'Выключено':mode==='blacklist'?'Напрямую':mode==='whitelist'?'Через VPN':'Список не используется',badgeClass=!enabled?'off':mode==='blacklist'?'direct':'';return `<div class="rule-row glass"><div class="rule-ico">💻</div><div class="rule-meta"><div class="rule-name">${esc(a.name||a.exe)}</div><div class="rule-type">${esc(a.exe)}</div></div><span class="rule-badge ${badgeClass}">${badge}</span><button class="toggle ${enabled?'on':''}" aria-label="${enabled?'Отключить':'Включить'} правило" data-action="toggle-app" data-exe="${esc(a.exe)}"></button><button class="mini-btn" aria-label="Переименовать правило" data-action="edit-app" data-exe="${esc(a.exe)}" data-name="${esc(a.name||a.exe)}"><svg viewBox="0 0 24 24"><path d="M17 3l4 4-11 11H6v-4z"/></svg></button><button class="mini-btn del" aria-label="Удалить правило" data-action="remove-app" data-exe="${esc(a.exe)}"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div>`;}).join(''); }
 async function toggleApp(exe,el){ const next=!el.classList.contains('on');el.classList.toggle('on',next);const r=await api('/api/apps/toggle',{exe,enabled:next});if(!r.ok){el.classList.toggle('on',!next);toast(r.error||'Не удалось изменить правило','err');} }
 async function removeApp(exe){ if(!confirm(`Удалить правило для ${exe}?`))return;const r=await api('/api/apps/remove',{exe});if(!r.ok)toast(r.error||'Ошибка удаления','err');else toast('Правило удалено','ok'); }
-async function promptRule(){ const v=prompt('Имя процесса (например: chrome.exe):'); if(!v) return; const exe=v.trim().toLowerCase().endsWith('.exe')?v.trim():v.trim()+'.exe'; const r=await api('/api/apps/add',{exe,name:v.replace(/\.exe$/i,'').trim()}); if(r.ok) toast('Добавлено','ok'); else toast(r.error||'Ошибка','err'); }
+function openModal(id){const modal=document.getElementById(id);if(!modal)return;modal._returnFocus=document.activeElement;modal.classList.add('open');modal.setAttribute('aria-hidden','false');document.body.classList.add('modal-open');requestAnimationFrame(()=>modal.querySelector('input,button')?.focus());}
+function closeModal(id){const modal=document.getElementById(id);if(!modal)return;modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!document.querySelector('.modal-backdrop.open'))document.body.classList.remove('modal-open');const target=modal._returnFocus;if(target&&document.contains(target))target.focus();}
+function modalBackdropClose(event,id){if(event.target===event.currentTarget)closeModal(id);}
+function currentRuleAction(){const mode=ST.appsConfig.mode||'all';return mode==='whitelist'?'Через VPN':mode==='blacklist'?'Без VPN':'Список не используется';}
+function promptRule(){document.getElementById('ruleExe').value='';document.getElementById('ruleName').value='';document.getElementById('ruleModeAction').textContent=currentRuleAction();openModal('ruleModal');requestAnimationFrame(()=>document.getElementById('ruleExe').focus());}
+async function saveRule(){const exeInput=document.getElementById('ruleExe'),nameInput=document.getElementById('ruleName'),button=document.getElementById('saveRuleBtn');let exe=exeInput.value.trim();if(!exe){toast('Укажите процесс приложения','err');exeInput.focus();return;}if(/[\\/:*?"<>|]/.test(exe)){toast('Укажите только имя процесса, без пути','err');exeInput.focus();return;}if(!exe.toLowerCase().endsWith('.exe'))exe+='.exe';const name=nameInput.value.trim()||exe.replace(/\.exe$/i,'');button.disabled=true;try{const r=await api('/api/apps/add',{exe,name});if(r.ok){closeModal('ruleModal');toast('Правило добавлено','ok');}else toast(r.error||'Не удалось добавить правило','err');}finally{button.disabled=false;}}
+async function openProcessPicker(){document.getElementById('processSearch').value='';openModal('processModal');await loadProcesses(true);document.getElementById('processSearch').focus();}
+async function loadProcesses(force=false){const list=document.getElementById('processList'),count=document.getElementById('processCount');if(!force&&runningProcesses.length){renderProcessList();return;}list.innerHTML='<div class="process-state">Получение списка процессов…</div>';count.textContent='Получение списка…';const r=await apiGet('/api/apps/processes',12000);if(!Array.isArray(r.processes)){runningProcesses=[];count.textContent='Список недоступен';list.innerHTML=`<div class="process-state">${esc(r.error||'Не удалось получить процессы')}</div>`;return;}const unique=new Map();for(const value of r.processes){if(typeof value!=='string')continue;const name=value.trim();if(name&&name.toLowerCase().endsWith('.exe'))unique.set(name.toLowerCase(),name);}runningProcesses=[...unique.values()].sort((a,b)=>a.localeCompare(b,'ru',{sensitivity:'base'}));renderProcessList();}
+function renderProcessList(){const list=document.getElementById('processList'),count=document.getElementById('processCount'),query=(document.getElementById('processSearch').value||'').trim().toLowerCase(),visible=query?runningProcesses.filter(name=>name.toLowerCase().includes(query)):runningProcesses;count.textContent=query?`Найдено: ${visible.length} из ${runningProcesses.length}`:`Активных процессов: ${runningProcesses.length}`;if(!visible.length){list.innerHTML=`<div class="process-state">${query?'Ничего не найдено':'Нет доступных процессов'}</div>`;return;}list.innerHTML=visible.map(name=>`<button type="button" class="process-row" data-action="choose-process" data-exe="${esc(name)}"><span class="process-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h7"/></svg></span><span class="process-name">${esc(name)}</span></button>`).join('');}
+function chooseProcess(exe){document.getElementById('ruleExe').value=exe;const name=document.getElementById('ruleName');if(!name.value.trim())name.value=exe.replace(/\.exe$/i,'');closeModal('processModal');name.focus();}
 async function editRule(exe,name){ const nv=prompt('Новое имя правила:',name);if(!nv||nv.trim()===name)return;const r=await api('/api/apps/rename',{exe,name:nv.trim()});toast(r.ok?'Правило переименовано':(r.error||'Не удалось переименовать'),r.ok?'ok':'err'); }
 async function exportRules(){ const r=await api('/api/apps/export');toast(r.ok?`Правила сохранены: ${r.path}`:(r.error||'Не удалось экспортировать'),r.ok?'ok':'err'); }
 async function addPresetSet(){ let n=0; for(const [exe,name] of PRESET_SET){ const r=await api('/api/apps/add',{exe,name}); if(r.ok) n++; } toast(n?`Добавлено правил: ${n}`:'Все уже добавлены','ok'); }
@@ -426,11 +525,12 @@ async function resetStats(which){ if(!confirm(which==='today'?'Сбросить 
 async function tglAnim(el){ await tglSetting(el,'animations'); }
 async function tglPetals(el){ await tglSetting(el,'petals'); }
 /* Custom dropdowns */
-function ddToggle(id){ const el=document.getElementById(id),willOpen=!el.classList.contains('open');document.querySelectorAll('.dd.open').forEach(d=>{d.classList.remove('open');d.querySelector('.dd-trigger')?.setAttribute('aria-expanded','false');});if(willOpen)el.classList.add('open');el.querySelector('.dd-trigger')?.setAttribute('aria-expanded',String(willOpen)); }
-document.addEventListener('click',e=>{ if(!e.target.closest('.dd')) document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open')); });
+function closeDropdowns(){document.querySelectorAll('.dd.open').forEach(d=>{d.classList.remove('open');d.closest('.set-row')?.classList.remove('dd-open');d.querySelector('.dd-trigger')?.setAttribute('aria-expanded','false');});}
+function ddToggle(id){ const el=document.getElementById(id),willOpen=!el.classList.contains('open');closeDropdowns();if(willOpen){el.classList.add('open');el.closest('.set-row')?.classList.add('dd-open');}el.querySelector('.dd-trigger')?.setAttribute('aria-expanded',String(willOpen)); }
+document.addEventListener('click',e=>{ if(!e.target.closest('.dd')) closeDropdowns(); });
 async function setServerSort(v){ if(await updateTunnel({server_sort:v})){ST.srvSort=v;renderServers();renderWg();} }
-async function pickSort(v,_lbl,_el){ document.getElementById('ddSort').classList.remove('open');await setServerSort(v); }
-async function pickDns(v,_lbl,_el){ document.getElementById('ddDns').classList.remove('open');await updateTunnel({dns_preset:v}); }
+async function pickSort(v,_lbl,_el){ closeDropdowns();await setServerSort(v); }
+async function pickDns(v,_lbl,_el){ closeDropdowns();await updateTunnel({dns_preset:v}); }
 function segSet(id,val){ document.querySelectorAll(`#${id} button`).forEach(b=>b.classList.toggle('on',b.dataset.v===val)); }
 function syncSettings(){ const s=ST.settings,t=ST.tunnel;document.querySelectorAll('.toggle[data-sk]').forEach(el=>el.classList.toggle('on',s[el.dataset.sk]!==false));document.querySelectorAll('.toggle[data-tk]').forEach(el=>el.classList.toggle('on',!!t[el.dataset.tk]));if(s.socks)document.getElementById('portSocks').value=s.socks;if(s.http)document.getElementById('portHttp').value=s.http;if(t.socks5_user!==undefined)document.getElementById('s5user').value=t.socks5_user||'';if(t.socks5_pass!==undefined)document.getElementById('s5pass').value=t.socks5_pass||'';if(t.ping_url)document.getElementById('pingUrl').value=t.ping_url;if(t.ping_timeout)document.getElementById('pingTimeout').value=t.ping_timeout;segSet('segPing',t.ping_type||'tcp');segSet('segIp',t.preferred_ip||'auto');ST.srvSort=t.server_sort||'default';segSet('segSort',ST.srvSort);const sortMap={default:'По умолчанию',ping:'По пингу',name:'По имени'};document.getElementById('ddSortLbl').textContent=sortMap[ST.srvSort]||sortMap.default;document.querySelectorAll('#ddSort .dd-item').forEach(i=>i.classList.toggle('on',i.dataset.v===ST.srvSort));const dnsMap={cf_google:'Cloudflare + Google',cloudflare:'Cloudflare (1.1.1.1)',google:'Google (8.8.8.8)',adguard:'AdGuard'};const dv=t.dns_preset||'cf_google';document.getElementById('ddDnsLbl').textContent=dnsMap[dv]||dnsMap.cf_google;document.querySelectorAll('#ddDns .dd-item').forEach(i=>i.classList.toggle('on',i.dataset.v===dv));document.getElementById('tgSecureDns').classList.toggle('on',dv==='adguard');document.getElementById('hwidVal').value=ST.hwid||'';petalsOn=s.petals!==false;document.getElementById('petals').style.display=petalsOn?'block':'none';document.body.classList.toggle('no-anim',s.animations===false); }
 function renderZapret(){ const list=document.getElementById('zapList'),strats=ST.zapStrategies||[];if(!ST.zapSel&&strats[0])ST.zapSel=strats[0].id;list.innerHTML=strats.map(s=>`<div class="zap-card glass ${s.id===ST.zapSel?'sel':''}" role="button" tabindex="0" data-action="select-zapret" data-id="${esc(s.id)}"><div class="zap-ico">${esc(s.icon||'🚀')}</div><div><div class="zap-name">${esc(s.name||s.id)}</div><div class="zap-sub">${esc(s.desc||'Стратегия обхода DPI')}</div><div class="zap-tags">${(s.tags||['Discord','YouTube']).map(t=>`<span class="zap-tag">${esc(t)}</span>`).join('')}</div></div><div class="zap-radio"></div></div>`).join('')||'<div class="empty"><b>Нет стратегий</b><p>Добавь winws.exe и WinDivert64.sys в папку bin/</p></div>';applyZapret(ST.zapRunning?'on':'off'); }
@@ -443,7 +543,8 @@ const BUTTON_LABELS={refreshSubs:'Обновить подписки',copyHwid:'�
 document.querySelectorAll('.toggle:not(button)').forEach(el=>{el.setAttribute('role','switch');el.tabIndex=0;el.setAttribute('aria-checked',String(el.classList.contains('on')));const label=el.closest('.set-row')?.querySelector('.set-name')?.textContent;if(label)el.setAttribute('aria-label',label);});
 const switchObserver=new MutationObserver(records=>records.forEach(({target})=>{if(target.matches('[role="switch"]'))target.setAttribute('aria-checked',String(target.classList.contains('on')));}));document.querySelectorAll('[role="switch"]').forEach(el=>switchObserver.observe(el,{attributes:true,attributeFilter:['class']}));
 document.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&event.target.matches('[role="button"],[role="switch"]')){event.preventDefault();event.target.click();}});
-document.addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(!target)return;event.stopPropagation();const action=target.dataset.action,idx=Number(target.dataset.index);if(action==='select-server')selectServer(target.dataset.gid,idx);else if(action==='toggle-star')toggleStar(target.dataset.sid);else if(action==='delete-server')delServer(target.dataset.gid,idx);else if(action==='select-wg')selectWg(target.dataset.gid,idx);else if(action==='delete-wg')delWg(target.dataset.gid,idx);else if(action==='toggle-app')toggleApp(target.dataset.exe,target);else if(action==='edit-app')editRule(target.dataset.exe,target.dataset.name);else if(action==='remove-app')removeApp(target.dataset.exe);else if(action==='select-zapret'){ST.zapSel=target.dataset.id;renderZapret();}});
+document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(document.getElementById('processModal').classList.contains('open'))closeModal('processModal');else if(document.getElementById('ruleModal').classList.contains('open'))closeModal('ruleModal');else closeDropdowns();});
+document.addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(!target)return;event.stopPropagation();const action=target.dataset.action,idx=Number(target.dataset.index);if(action==='select-server')selectServer(target.dataset.gid,idx);else if(action==='toggle-star')toggleStar(target.dataset.sid);else if(action==='delete-server')delServer(target.dataset.gid,idx);else if(action==='select-wg')selectWg(target.dataset.gid,idx);else if(action==='delete-wg')delWg(target.dataset.gid,idx);else if(action==='toggle-app')toggleApp(target.dataset.exe,target);else if(action==='edit-app')editRule(target.dataset.exe,target.dataset.name);else if(action==='remove-app')removeApp(target.dataset.exe);else if(action==='choose-process')chooseProcess(target.dataset.exe);else if(action==='select-zapret'){ST.zapSel=target.dataset.id;renderZapret();}});
 function go(page){ document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('on',n.dataset.page===page)); document.querySelectorAll('.page').forEach(p=>p.classList.remove('active')); const el=document.getElementById('page-'+page); if(el) el.classList.add('active'); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function addLog(msg,tag){ const body=document.getElementById('logBody'); const t=new Date().toTimeString().slice(0,8); const line=document.createElement('div'); line.className='log-line '+(tag||'log'); line.innerHTML=`<span class="t">${t}</span><span class="m">${esc(msg)}</span>`; body.appendChild(line); body.scrollTop=body.scrollHeight; while(body.children.length>300) body.removeChild(body.firstChild); }

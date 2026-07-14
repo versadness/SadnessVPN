@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / "ui" / "templates" / "index.html"
+FLAGS = ROOT / "ui" / "static" / "flags" / "4x3"
 
 
 class UiContractTests(unittest.TestCase):
@@ -31,6 +32,34 @@ class UiContractTests(unittest.TestCase):
     def test_ping_completion_messages_are_handled(self):
         self.assertIn("case 'ping_done'", self.html)
         self.assertIn("case 'wg_ping_done'", self.html)
+
+    def test_connect_button_keeps_its_round_dimensions_in_short_windows(self):
+        self.assertIn("flex:0 0 176px; aspect-ratio:1", self.html)
+        short_window_css = re.search(
+            r"@media \(max-height:560px\)\s*\{(.*?)\n\}",
+            self.html,
+            re.DOTALL,
+        ).group(1)
+        self.assertNotIn(".power-wrap", short_window_css)
+        self.assertNotIn(".connect-btn", short_window_css)
+
+    def test_all_country_flags_are_local_svg_assets(self):
+        self.assertGreaterEqual(len(list(FLAGS.glob("*.svg"))), 250)
+        self.assertTrue((FLAGS / "de.svg").is_file())
+        self.assertTrue((FLAGS / "fi.svg").is_file())
+        self.assertIn('/static/flags/4x3/${safe}.svg', self.html)
+        self.assertIn("Intl.DisplayNames", self.html)
+
+    def test_rule_dialog_and_searchable_process_picker_are_present(self):
+        self.assertIn('id="ruleModal"', self.html)
+        self.assertIn('id="processModal"', self.html)
+        self.assertIn('id="processSearch"', self.html)
+        self.assertIn("apiGet('/api/apps/processes'", self.html)
+        self.assertIn("function chooseProcess", self.html)
+
+    def test_dns_dropdown_raises_its_settings_row(self):
+        self.assertIn(".set-row.dd-open", self.html)
+        self.assertIn("classList.add('dd-open')", self.html)
 
     def test_every_static_inline_handler_has_a_defined_function(self):
         handlers = set(re.findall(

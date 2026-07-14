@@ -147,7 +147,79 @@ class LocalApiBoundaryTests(unittest.TestCase):
                 base_url="http://127.0.0.1:45678",
             )
 
-        self.assertEqual(response.get_json(), {"ok": True, "ip": "203.0.113.9"})
+        self.assertEqual(response.get_json(), {
+            "ok": True,
+            "ip": "203.0.113.9",
+            "version": 4,
+            "source": "ipify",
+        })
+
+    def test_public_ip_uses_fallback_source(self):
+        invalid = mock.MagicMock()
+        invalid.__enter__.return_value.read.return_value = b"not-json"
+        fallback = mock.MagicMock()
+        fallback.__enter__.return_value.read.return_value = (
+            b"fl=123\nip=2001:db8::9\nts=123\n"
+        )
+        with mock.patch.object(
+            server.urllib.request,
+            "urlopen",
+            side_effect=[invalid, fallback],
+        ):
+            response = self.client.post(
+                "/api/network/ip",
+                json={},
+                base_url="http://127.0.0.1:45678",
+            )
+
+        self.assertEqual(response.get_json(), {
+            "ok": True,
+            "ip": "2001:db8::9",
+            "version": 6,
+            "source": "Cloudflare",
+        })
+
+    def test_public_ip_reports_failure_after_all_sources_fail(self):
+        with mock.patch.object(
+            server.urllib.request,
+            "urlopen",
+            side_effect=OSError("offline"),
+        ) as urlopen:
+            response = self.client.post(
+                "/api/network/ip",
+                json={},
+                base_url="http://127.0.0.1:45678",
+            )
+
+        self.assertFalse(response.get_json()["ok"])
+        self.assertEqual(urlopen.call_count, len(server._PUBLIC_IP_SOURCES))
+
+    def test_process_picker_returns_running_executables(self):
+        with mock.patch.object(
+            server,
+            "get_running_processes",
+            return_value=["ChatGPT.exe", "Telegram.exe"],
+        ):
+            response = self.client.get(
+                "/api/apps/processes",
+                base_url="http://127.0.0.1:45678",
+            )
+
+        self.assertEqual(
+            response.get_json(),
+            {"processes": ["ChatGPT.exe", "Telegram.exe"]},
+        )
+
+    def test_local_country_flag_is_served(self):
+        response = self.client.get(
+            "/static/flags/4x3/de.svg",
+            base_url="http://127.0.0.1:45678",
+        )
+        try:
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"<svg", response.data)
+        finally:
+            response.close()
 
     def test_invalid_favorite_setting_is_rejected(self):
         original = list(server._app_settings.get("favorite_servers", []))

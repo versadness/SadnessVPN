@@ -14,6 +14,8 @@ a = Analysis(
     datas=[
         # Шаблоны Flask — попадают в _internal/ui/templates (там и используются)
         ('ui/templates', 'ui/templates'),
+        # Локальные SVG-флаги работают офлайн и не зависят от внешнего CDN.
+        ('ui/static', 'ui/static'),
     ],
     hiddenimports=[],
     hookspath=[],
