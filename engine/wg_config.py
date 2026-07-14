@@ -192,6 +192,7 @@ def build_wg_tun_config(
     fakedns        : bool = False,
     preferred_ip   : str  = "ipv4",       # ipv4 | ipv6 | auto
     mux            : bool = False,        # WireGuard не поддерживает mux, игнорируется
+    allow_lan      : bool = False,
     **_kwargs,
 ) -> dict:
     if routed_apps is None:
@@ -288,10 +289,11 @@ def build_wg_tun_config(
     if socks5_auth and socks5_auth.get("user") and socks5_auth.get("pass"):
         auth_users = [{"username": socks5_auth["user"], "password": socks5_auth["pass"]}]
 
+    proxy_listen = "0.0.0.0" if allow_lan else "127.0.0.1"
     socks_inbound = {
         "type"       : "socks",
         "tag"        : "socks-in",
-        "listen"     : "127.0.0.1",
+        "listen"     : proxy_listen,
         "listen_port": socks_port,
         "sniff"      : True,
     }
@@ -301,7 +303,7 @@ def build_wg_tun_config(
     http_inbound = {
         "type"       : "http",
         "tag"        : "http-in",
-        "listen"     : "127.0.0.1",
+        "listen"     : proxy_listen,
         "listen_port": http_port,
         "sniff"      : True,
     }

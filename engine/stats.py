@@ -215,6 +215,7 @@ class StatsTracker:
                 })
 
             return {
+                "session_time": elapsed,
                 "today": {
                     "up":   snap_today_up,
                     "down": snap_today_down,

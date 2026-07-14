@@ -3,6 +3,7 @@ ui/server.py — Sadness VPN Flask backend
 """
 import ctypes
 import ctypes.wintypes
+import ipaddress
 import subprocess
 import threading
 import time
@@ -12,6 +13,9 @@ import os
 import secrets
 import sys
 import uuid as _uuid_mod
+import urllib.request
+from datetime import datetime
+from pathlib import Path
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,7 +45,9 @@ from engine.paths import data_dir
 from engine.connection_state import ConnectionCoordinator
 from engine.json_store import atomic_write_json
 from engine.task_state import BackgroundTaskCoordinator
-from engine.server_sort import sort_servers_by_ping
+
+APP_VERSION = "2.0.2"
+SING_BOX_VERSION = "1.10.x"
 
 # ── Traffic stats ────────────────────────────────────────────
 import http.client
@@ -189,6 +195,16 @@ def _protect_local_api():
 @app.after_request
 def _secure_local_response(response):
     response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self' ws://127.0.0.1:* ws://localhost:*; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    )
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     return response
@@ -202,12 +218,20 @@ _TUNNEL_KEYS = (
     "ping_type", "ping_url", "ping_timeout", "server_sort",
 )
 
+_USER_APP_SETTING_KEYS = {
+    "startup", "autoconn", "silent", "lan", "mintray",
+    "animations", "petals", "favorite_servers",
+}
+
 _DEFAULT_SETTINGS = {
     "startup":          False,
     "autoconn":         False,
     "silent":           False,
     "lan":              False,
     "mintray":          False,
+    "animations":       True,
+    "petals":           True,
+    "favorite_servers": [],
     "socks":            1080,
     "http":             8080,
     "selected_group":   None,
@@ -241,7 +265,8 @@ def _load_settings() -> dict:
             raise ValueError("Invalid settings")
         settings = {**_DEFAULT_SETTINGS, **loaded}
         for key in (
-            "startup", "autoconn", "silent", "lan", "mintray", "kill_switch",
+            "startup", "autoconn", "silent", "lan", "mintray", "animations",
+            "petals", "kill_switch",
             "block_udp", "socks5_auth", "mux", "fakedns",
         ):
             if not isinstance(settings.get(key), bool):
@@ -249,6 +274,12 @@ def _load_settings() -> dict:
         for key in ("socks5_user", "socks5_pass", "custom_dns", "ping_url"):
             if not isinstance(settings.get(key), str):
                 settings[key] = _DEFAULT_SETTINGS[key]
+        if settings.get("lan") and not (
+            settings.get("socks5_auth")
+            and settings.get("socks5_user")
+            and settings.get("socks5_pass")
+        ):
+            settings["lan"] = False
         if settings.get("preferred_ip") not in ("ipv4", "ipv6", "auto"):
             settings["preferred_ip"] = "ipv4"
         if settings.get("dns_preset") not in (
@@ -258,7 +289,15 @@ def _load_settings() -> dict:
             settings["dns_preset"] = "cf_google"
         if settings.get("ping_type") not in ("tcp", "icmp", "http_get", "http_head"):
             settings["ping_type"] = "tcp"
-        if settings.get("server_sort") not in ("default", "ping"):
+        favorites = settings.get("favorite_servers")
+        if not isinstance(favorites, list):
+            settings["favorite_servers"] = []
+        else:
+            settings["favorite_servers"] = [
+                item for item in favorites
+                if isinstance(item, str) and 0 < len(item) <= 128
+            ][:10000]
+        if settings.get("server_sort") not in ("default", "ping", "name"):
             settings["server_sort"] = "default"
         for key in ("selected_index", "selected_wg_index"):
             if settings.get(key) is not None and not isinstance(settings.get(key), int):
@@ -276,8 +315,10 @@ def _load_settings() -> dict:
 def _save_settings(cfg: dict):
     try:
         atomic_write_json(_SETTINGS_PATH, cfg)
+        return True
     except Exception as e:
         print(f"Ошибка сохранения настроек: {e}")
+        return False
 
 
 _app_settings = _load_settings()
@@ -344,7 +385,7 @@ def _normalize_tunnel_setting(key, value):
             raise ValueError("Invalid ping timeout")
         return value
     if key == "server_sort":
-        if value not in ("default", "ping"):
+        if value not in ("default", "ping", "name"):
             raise ValueError("Invalid server sorting mode")
         return value
     raise ValueError("Unknown tunnel setting")
@@ -362,6 +403,13 @@ def _tunnel_kwargs() -> dict:
     custom_dns = [d.strip() for d in custom_dns_raw.split(",") if d.strip()] \
                   if custom_dns_raw else None
 
+    lan_is_secured = bool(
+        _app_settings.get("lan")
+        and socks5_auth
+        and socks5_auth.get("user")
+        and socks5_auth.get("pass")
+    )
+
     return dict(
         kill_switch    = _app_settings.get("kill_switch",    False),
         block_udp      = _app_settings.get("block_udp",      False),
@@ -371,7 +419,48 @@ def _tunnel_kwargs() -> dict:
         fakedns        = _app_settings.get("fakedns",        False),
         mux            = _app_settings.get("mux",            False),
         preferred_ip   = _app_settings.get("preferred_ip",   "ipv4"),
+        allow_lan      = lan_is_secured,
     )
+
+
+def _normalize_app_setting(key, value):
+    if key in {"startup", "autoconn", "silent", "lan", "mintray", "animations", "petals"}:
+        if not isinstance(value, bool):
+            raise ValueError("Значение настройки должно быть true или false")
+        return value
+    if key == "favorite_servers":
+        if not isinstance(value, list):
+            raise ValueError("Некорректный список избранных серверов")
+        cleaned = []
+        for item in value:
+            if not isinstance(item, str) or not 0 < len(item) <= 128:
+                raise ValueError("Некорректный идентификатор сервера")
+            if item not in cleaned:
+                cleaned.append(item)
+        if len(cleaned) > 10000:
+            raise ValueError("Слишком много избранных серверов")
+        return cleaned
+    raise ValueError("Неизвестная настройка")
+
+
+def _ensure_server_ids(groups: list) -> bool:
+    """Give every persisted server a stable UI identity independent of list order."""
+    changed = False
+    seen = set()
+    for group in groups:
+        for server in group.get("servers", []):
+            server_id = server.get("ui_id")
+            if (
+                not isinstance(server_id, str)
+                or not server_id
+                or len(server_id) > 128
+                or server_id in seen
+            ):
+                server_id = _uuid_mod.uuid4().hex
+                server["ui_id"] = server_id
+                changed = True
+            seen.add(server_id)
+    return changed
 
 
 # Автогенерация HWID если не задан
@@ -401,14 +490,28 @@ if (
 
 # ── VLESS state ─────────────────────────────────────────
 _groups: list = load_groups()
+if _ensure_server_ids(_groups):
+    save_groups(_groups)
 _sel_group    = _app_settings.get("selected_group")
 _sel_index    = _app_settings.get("selected_index")
 
 # ── WG state ────────────────────────────────────────
 _wg_groups: list = load_wg_groups()
+if _ensure_server_ids(_wg_groups):
+    save_wg_groups(_wg_groups)
 _sel_wg_group    = _app_settings.get("selected_wg_group")
 _sel_wg_index    = _app_settings.get("selected_wg_index")
 _active_protocol = _app_settings.get("active_protocol", "vless")
+
+
+def _save_proxy_groups():
+    _ensure_server_ids(_groups)
+    save_groups(_groups)
+
+
+def _save_wireguard_groups():
+    _ensure_server_ids(_wg_groups)
+    save_wg_groups(_wg_groups)
 
 # ── App routing state ───────────────────────────────────
 _apps_config  = load_apps()
@@ -448,7 +551,14 @@ def _groups_for_ui():
             "name":    g["name"],
             "url":     g.get("url"),
             "count":   len(g.get("servers", [])),
-            "servers": [{"remark": s.get("remark", ""), "protocol": s.get("protocol", "vless")} for s in g.get("servers", [])],
+            "servers": [
+                {
+                    "ui_id": s.get("ui_id", ""),
+                    "remark": s.get("remark", ""),
+                    "protocol": s.get("protocol", "vless"),
+                }
+                for s in g.get("servers", [])
+            ],
         }
         for g in _groups
     ]
@@ -463,6 +573,7 @@ def _wg_groups_for_ui():
             "count":   len(g.get("servers", [])),
             "servers": [
                 {
+                    "ui_id": s.get("ui_id", ""),
                     "remark": s.get("remark", ""),
                     "is_awg": s.get("is_awg", False),
                 }
@@ -528,76 +639,6 @@ def _broadcast_wg_groups():
         "selWgGroup":  _sel_wg_group,
         "selWgIndex":  _sel_wg_index,
     })
-
-
-def _same_server_sequence(current: list, snapshot: list) -> bool:
-    return len(current) == len(snapshot) and all(
-        left is right for left, right in zip(current, snapshot)
-    )
-
-
-def _apply_proxy_ping_sort(groups_snapshot: list, results: dict) -> None:
-    global _sel_index
-    if _app_settings.get("server_sort") != "ping":
-        return
-    snapshots = {group["id"]: group["servers"] for group in groups_snapshot}
-    changed = False
-    selection_changed = False
-    for group in _groups:
-        current = group.get("servers", [])
-        snapshot = snapshots.get(group["id"])
-        if snapshot is None or not _same_server_sequence(current, snapshot):
-            continue
-        selected = _sel_index if group["id"] == _sel_group else None
-        ordered, new_selected = sort_servers_by_ping(
-            current,
-            {index: results.get((group["id"], index)) for index in range(len(current))},
-            selected,
-        )
-        if any(left is not right for left, right in zip(current, ordered)):
-            group["servers"] = ordered
-            changed = True
-        if selected is not None and new_selected != _sel_index:
-            _sel_index = new_selected
-            _app_settings["selected_index"] = new_selected
-            selection_changed = True
-    if changed:
-        save_groups(_groups)
-        _broadcast_groups()
-    if selection_changed:
-        _save_settings(_app_settings)
-
-
-def _apply_wg_ping_sort(groups_snapshot: list, results: dict) -> None:
-    global _sel_wg_index
-    if _app_settings.get("server_sort") != "ping":
-        return
-    snapshots = {group["id"]: group["servers"] for group in groups_snapshot}
-    changed = False
-    selection_changed = False
-    for group in _wg_groups:
-        current = group.get("servers", [])
-        snapshot = snapshots.get(group["id"])
-        if snapshot is None or not _same_server_sequence(current, snapshot):
-            continue
-        selected = _sel_wg_index if group["id"] == _sel_wg_group else None
-        ordered, new_selected = sort_servers_by_ping(
-            current,
-            {index: results.get((group["id"], index)) for index in range(len(current))},
-            selected,
-        )
-        if any(left is not right for left, right in zip(current, ordered)):
-            group["servers"] = ordered
-            changed = True
-        if selected is not None and new_selected != _sel_wg_index:
-            _sel_wg_index = new_selected
-            _app_settings["selected_wg_index"] = new_selected
-            selection_changed = True
-    if changed:
-        save_wg_groups(_wg_groups)
-        _broadcast_wg_groups()
-    if selection_changed:
-        _save_settings(_app_settings)
 
 
 def _get_routed_exes() -> list:
@@ -751,6 +792,8 @@ def ws_handler(ws):
         "zapretRunning"   : _zapret_running,
         "zapretStrategy"  : _zapret_strategy,
         "zapretStrategies": zapret_engine.get_strategies(),
+        "appVersion"       : APP_VERSION,
+        "engineVersion"    : SING_BOX_VERSION,
     }))
     try:
         while True:
@@ -813,7 +856,28 @@ def index():
 
 @app.route("/api/health", methods=["GET"])
 def api_health():
-    return jsonify({"ok": True, "app": "SadnessVPN", "instance": SERVER_INSTANCE_ID})
+    return jsonify({
+        "ok": True,
+        "app": "SadnessVPN",
+        "version": APP_VERSION,
+        "instance": SERVER_INSTANCE_ID,
+    })
+
+
+@app.route("/api/network/ip", methods=["POST"])
+def api_network_ip():
+    try:
+        req = urllib.request.Request(
+            "https://api64.ipify.org?format=json",
+            headers={"User-Agent": f"SadnessVPN/{APP_VERSION}"},
+        )
+        with urllib.request.urlopen(req, timeout=5.0) as response:
+            payload = json.loads(response.read(4096).decode("utf-8"))
+        value = str(payload.get("ip", "")).strip()
+        ipaddress.ip_address(value)
+        return jsonify({"ok": True, "ip": value})
+    except Exception:
+        return jsonify({"ok": False, "error": "Не удалось определить внешний IP"})
 
 
 @app.route("/api/groups", methods=["GET"])
@@ -829,8 +893,11 @@ def api_hwid_get():
 @app.route("/api/hwid/regenerate", methods=["POST"])
 def api_hwid_regenerate():
     global _app_settings
+    previous = _app_settings.get("hwid", "")
     _app_settings["hwid"] = generate_hwid()
-    _save_settings(_app_settings)
+    if not _save_settings(_app_settings):
+        _app_settings["hwid"] = previous
+        return jsonify({"ok": False, "error": "Не удалось сохранить новый HWID"})
     _log(f"HWID перегенерирован: {_app_settings['hwid']}", "info")
     return jsonify({"ok": True, "hwid": _app_settings["hwid"]})
 
@@ -863,6 +930,8 @@ def api_apps_add():
     path = data.get("path", "").strip()
     if not exe:
         return jsonify({"ok": False, "error": "Нет exe"})
+    if len(exe) > 260 or not name or len(name) > 256 or len(path) > 4096:
+        return jsonify({"ok": False, "error": "Слишком длинное имя или путь"})
     for a in _apps_config["apps"]:
         if a["exe"].lower() == exe.lower():
             return jsonify({"ok": False, "error": "Уже добавлено"})
@@ -870,6 +939,41 @@ def api_apps_add():
     save_apps(_apps_config)
     _broadcast({"type": "apps_config", "config": _apps_config})
     return jsonify({"ok": True})
+
+
+@app.route("/api/apps/rename", methods=["POST"])
+def api_apps_rename():
+    data = request.get_json(silent=True) or {}
+    exe = data.get("exe", "")
+    name = data.get("name", "")
+    if not isinstance(exe, str) or not isinstance(name, str):
+        return jsonify({"ok": False, "error": "Некорректные данные правила"})
+    exe = exe.strip()
+    name = name.strip()
+    if not exe or not name:
+        return jsonify({"ok": False, "error": "Имя правила не может быть пустым"})
+    if len(exe) > 260 or len(name) > 256:
+        return jsonify({"ok": False, "error": "Слишком длинное имя правила"})
+    for app_rule in _apps_config.get("apps", []):
+        if app_rule.get("exe", "").lower() == exe.lower():
+            app_rule["name"] = name
+            save_apps(_apps_config)
+            _broadcast({"type": "apps_config", "config": _apps_config})
+            return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Правило не найдено"})
+
+
+@app.route("/api/apps/export", methods=["POST"])
+def api_apps_export():
+    try:
+        destination = Path.home() / "Downloads"
+        destination.mkdir(parents=True, exist_ok=True)
+        filename = f"SadnessVPN-routing-{datetime.now():%Y%m%d-%H%M%S-%f}.json"
+        target = destination / filename
+        atomic_write_json(str(target), _apps_config)
+        return jsonify({"ok": True, "path": str(target)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Не удалось экспортировать правила: {exc}"})
 
 
 @app.route("/api/apps/remove", methods=["POST"])
@@ -922,7 +1026,7 @@ def api_add_server():
         parsed = parse_link(link)
         mg = _ensure_manual_group()
         mg["servers"].append(parsed)
-        save_groups(_groups)
+        _save_proxy_groups()
         _sel_group = "manual"
         _sel_index = len(mg["servers"]) - 1
         _app_settings["selected_group"] = _sel_group
@@ -965,7 +1069,7 @@ def api_import():
             if gid is None:
                 gid = str(_uuid_mod.uuid4())[:8]
                 _groups.append({"id": gid, "name": name, "url": url, "servers": servers})
-            save_groups(_groups)
+            _save_proxy_groups()
             _log(f"Импортировано {len(servers)} серверов в «{name}»!", "ok")
             _broadcast_groups()
         except Exception as e:
@@ -992,7 +1096,7 @@ def api_refresh_group():
                 _log("Серверов не найдено", "warn")
                 return
             target["servers"] = servers
-            save_groups(_groups)
+            _save_proxy_groups()
             _log(f"Обновлено {len(servers)} серверов!", "ok")
             _broadcast_groups()
         except Exception as e:
@@ -1016,7 +1120,7 @@ def api_delete_group():
         _sel_index = None
         _app_settings["selected_group"] = None
         _app_settings["selected_index"] = None
-    save_groups(_groups)
+    _save_proxy_groups()
     _save_settings(_app_settings)
     _broadcast_groups()
     return jsonify({"ok": True})
@@ -1030,7 +1134,7 @@ def api_rename_group():
     for g in _groups:
         if g["id"] == gid:
             g["name"] = name
-            save_groups(_groups)
+            _save_proxy_groups()
             _broadcast_groups()
             return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Не найдено"})
@@ -1074,7 +1178,7 @@ def api_delete_server():
                     _sel_index = None
                     _app_settings["selected_group"] = None
                     _app_settings["selected_index"] = None
-                save_groups(_groups)
+                _save_proxy_groups()
                 _save_settings(_app_settings)
                 _log(f"Удалён: {name}", "warn")
                 _broadcast_groups()
@@ -1093,7 +1197,7 @@ def api_rename_server():
             srvs = g.get("servers", [])
             if idx is not None and 0 <= idx < len(srvs) and name:
                 srvs[idx]["remark"] = name
-                save_groups(_groups)
+                _save_proxy_groups()
                 _broadcast_groups()
                 return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Ошибка"})
@@ -1118,7 +1222,7 @@ def api_wg_add_server():
                 is_awg_warn = True
             mg["servers"].append(s)
             added += 1
-        save_wg_groups(_wg_groups)
+        _save_wireguard_groups()
         _sel_wg_group = "manual-wg"
         _sel_wg_index = len(mg["servers"]) - 1
         _active_protocol = "wg"
@@ -1166,7 +1270,7 @@ def api_wg_import():
             if gid is None:
                 gid = "wg-" + str(_uuid_mod.uuid4())[:8]
                 _wg_groups.append({"id": gid, "name": name, "url": url, "servers": servers})
-            save_wg_groups(_wg_groups)
+            _save_wireguard_groups()
             awg_count = sum(1 for s in servers if s.get("is_awg"))
             _log(f"Импортировано {len(servers)} WG серверов в «{name}»"
                  + (f" (из них {awg_count} AWG — без обфускации)" if awg_count else "") + "!", "ok")
@@ -1200,7 +1304,7 @@ def api_wg_refresh_group():
                 _log("Серверов не найдено", "warn")
                 return
             target["servers"] = servers
-            save_wg_groups(_wg_groups)
+            _save_wireguard_groups()
             _log(f"Обновлено {len(servers)} WG серверов!", "ok")
             _broadcast_wg_groups()
         except Exception as e:
@@ -1224,7 +1328,7 @@ def api_wg_delete_group():
         _sel_wg_index = None
         _app_settings["selected_wg_group"] = None
         _app_settings["selected_wg_index"] = None
-    save_wg_groups(_wg_groups)
+    _save_wireguard_groups()
     _save_settings(_app_settings)
     _broadcast_wg_groups()
     return jsonify({"ok": True})
@@ -1238,7 +1342,7 @@ def api_wg_rename_group():
     for g in _wg_groups:
         if g["id"] == gid:
             g["name"] = name
-            save_wg_groups(_wg_groups)
+            _save_wireguard_groups()
             _broadcast_wg_groups()
             return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Не найдено"})
@@ -1282,7 +1386,7 @@ def api_wg_delete_server():
                     _sel_wg_index = None
                     _app_settings["selected_wg_group"] = None
                     _app_settings["selected_wg_index"] = None
-                save_wg_groups(_wg_groups)
+                _save_wireguard_groups()
                 _save_settings(_app_settings)
                 _log(f"Удалён WG: {name}", "warn")
                 _broadcast_wg_groups()
@@ -1301,7 +1405,7 @@ def api_wg_rename_server():
             srvs = g.get("servers", [])
             if idx is not None and 0 <= idx < len(srvs) and name:
                 srvs[idx]["remark"] = name
-                save_wg_groups(_wg_groups)
+                _save_wireguard_groups()
                 _broadcast_wg_groups()
                 return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Ошибка"})
@@ -1318,8 +1422,17 @@ def api_ping_all():
     def on_result(gid, idx, ms, color):
         def publish():
             results[(gid, idx)] = ms
+            server_id = next(
+                (
+                    group["servers"][idx].get("ui_id", "")
+                    for group in groups_snapshot
+                    if group["id"] == gid and 0 <= idx < len(group["servers"])
+                ),
+                "",
+            )
             _broadcast({"type": "ping_result", "gid": gid, "index": idx,
-                        "ms": ms, "color": color, "label": f"{ms}ms" if ms is not None else "—"})
+                        "sid": server_id, "ms": ms, "color": color,
+                        "label": f"{ms}ms" if ms is not None else "—"})
 
         _ping_scans.run_if_current(
             generation,
@@ -1337,7 +1450,6 @@ def api_ping_all():
             timeout=_ping_timeout_seconds(_app_settings.get("ping_timeout")),
         )
         def finish():
-            _apply_proxy_ping_sort(groups_snapshot, results)
             _broadcast({"type": "ping_done"})
 
         _ping_scans.run_if_current(generation, stop, finish)
@@ -1374,7 +1486,8 @@ def api_wg_ping_all():
         def publish():
             results[(g["id"], i)] = ms
             _broadcast({"type": "wg_ping_result", "gid": g["id"], "index": i,
-                        "ms": ms, "color": color, "label": label})
+                        "sid": srv.get("ui_id", ""), "ms": ms,
+                        "color": color, "label": label})
 
         _wg_ping_scans.run_if_current(
             generation,
@@ -1387,7 +1500,6 @@ def api_wg_ping_all():
                 for i, srv in enumerate(g.get("servers", [])):
                     ex.submit(_ping_one, g, i, srv)
         def finish():
-            _apply_wg_ping_sort(groups_snapshot, results)
             _broadcast({"type": "wg_ping_done"})
 
         _wg_ping_scans.run_if_current(generation, stop, finish)
@@ -1497,11 +1609,16 @@ def api_settings():
         return jsonify({"ok": False, "error": "Порты SOCKS и HTTP должны отличаться"})
     if socks_port in _RESERVED_LOCAL_PORTS or http_port in _RESERVED_LOCAL_PORTS:
         return jsonify({"ok": False, "error": "Этот порт зарезервирован SadnessVPN"})
+    previous_ports = (_socks_port, _http_port)
     _socks_port = socks_port
     _http_port = http_port
     _app_settings["socks"] = _socks_port
     _app_settings["http"]  = _http_port
-    _save_settings(_app_settings)
+    if not _save_settings(_app_settings):
+        _socks_port, _http_port = previous_ports
+        _app_settings["socks"] = _socks_port
+        _app_settings["http"] = _http_port
+        return jsonify({"ok": False, "error": "Не удалось сохранить порты"})
     return jsonify({"ok": True})
 
 
@@ -1511,8 +1628,21 @@ def api_app_settings():
     data  = request.get_json(silent=True) or {}
     key   = data.get("key")
     value = data.get("value")
-    if key not in _DEFAULT_SETTINGS and key != "ai_dns":
+    if key not in _USER_APP_SETTING_KEYS:
         return jsonify({"ok": False, "error": "Неизвестная настройка"})
+    try:
+        value = _normalize_app_setting(key, value)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+    if key == "lan" and value and not (
+        _app_settings.get("socks5_auth")
+        and _app_settings.get("socks5_user")
+        and _app_settings.get("socks5_pass")
+    ):
+        return jsonify({
+            "ok": False,
+            "error": "Сначала включите SOCKS5-аутентификацию и задайте логин с паролем",
+        })
     previous = _app_settings.get(key)
     _app_settings[key] = value
     if key == "startup":
@@ -1573,7 +1703,13 @@ def api_app_settings():
         except Exception as e:
             _app_settings[key] = previous
             return jsonify({"ok": False, "error": str(e)})
-    _save_settings(_app_settings)
+    if not _save_settings(_app_settings):
+        _app_settings[key] = previous
+        return jsonify({"ok": False, "error": "Не удалось сохранить настройку"})
+    _broadcast({
+        "type": "app_settings_updated",
+        "settings": {item: _app_settings.get(item) for item in _USER_APP_SETTING_KEYS},
+    })
     return jsonify({"ok": True})
 
 # ── Window state ─────────────────────────────────────
@@ -1592,6 +1728,14 @@ def api_win_minimize():
 
 @app.route("/api/window/close", methods=["POST"])
 def api_win_close():
+    if _app_settings.get("mintray"):
+        try:
+            hwnd = _get_app_hwnd()
+            ctypes.windll.user32.ShowWindow(hwnd, 6)
+            return jsonify({"ok": True, "minimized": True})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
     def _close():
         import time as _t
         # Корректно останавливаем все дочерние процессы перед выходом
@@ -1713,13 +1857,17 @@ def api_stats():
 @app.route("/api/stats/reset-today", methods=["POST"])
 def api_stats_reset_today():
     stats_tracker.reset_today()
-    return jsonify({"ok": True})
+    snapshot = stats_tracker.get_snapshot()
+    _broadcast({"type": "stats", **snapshot})
+    return jsonify({"ok": True, "stats": snapshot})
 
 
 @app.route("/api/stats/reset-all", methods=["POST"])
 def api_stats_reset_all():
     stats_tracker.reset_all()
-    return jsonify({"ok": True})
+    snapshot = stats_tracker.get_snapshot()
+    _broadcast({"type": "stats", **snapshot})
+    return jsonify({"ok": True, "stats": snapshot})
 
 # ── Advanced settings API ───────────────────────────────
 @app.route("/api/tunnel-settings", methods=["GET"])
@@ -1739,8 +1887,21 @@ def api_tunnel_settings_post():
         }
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)})
+    candidate = {**_app_settings, **updates}
+    if candidate.get("lan") and not (
+        candidate.get("socks5_auth")
+        and candidate.get("socks5_user")
+        and candidate.get("socks5_pass")
+    ):
+        return jsonify({
+            "ok": False,
+            "error": "LAN-прокси требует SOCKS5-аутентификацию, логин и пароль",
+        })
+    previous = {key: _app_settings.get(key) for key in updates}
     _app_settings.update(updates)
-    _save_settings(_app_settings)
+    if not _save_settings(_app_settings):
+        _app_settings.update(previous)
+        return jsonify({"ok": False, "error": "Не удалось сохранить настройки туннеля"})
 
     _broadcast({"type": "settings_updated", "settings": {
         k: _app_settings.get(k) for k in _TUNNEL_KEYS
@@ -1755,9 +1916,12 @@ def api_socks5_regen():
     chars = string.ascii_letters + string.digits
     user  = "vpn_" + "".join(secrets.choice(chars) for _ in range(8))
     pwd   = "".join(secrets.choice(chars) for _ in range(16))
+    previous = (_app_settings.get("socks5_user", ""), _app_settings.get("socks5_pass", ""))
     _app_settings["socks5_user"] = user
     _app_settings["socks5_pass"] = pwd
-    _save_settings(_app_settings)
+    if not _save_settings(_app_settings):
+        _app_settings["socks5_user"], _app_settings["socks5_pass"] = previous
+        return jsonify({"ok": False, "error": "Не удалось сохранить данные SOCKS5"})
     _broadcast({"type": "socks5_creds", "user": user, "pass": pwd})
     return jsonify({"ok": True, "user": user, "pass": pwd})
 
@@ -1774,8 +1938,11 @@ def api_ping_settings():
         }
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)})
+    previous = {key: _app_settings.get(key) for key in updates}
     _app_settings.update(updates)
-    _save_settings(_app_settings)
+    if not _save_settings(_app_settings):
+        _app_settings.update(previous)
+        return jsonify({"ok": False, "error": "Не удалось сохранить настройки пинга"})
     return jsonify({"ok": True})
 
 # ── Zapret API ──────────────────────────────────────

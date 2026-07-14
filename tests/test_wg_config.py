@@ -79,6 +79,17 @@ class WireGuardRoutingConfigTests(unittest.TestCase):
         self.assertEqual(outbound["server"], "198.51.100.30")
         self.assertEqual(outbound["server_port"], 51820)
 
+    def test_lan_mode_exposes_only_proxy_inbounds(self):
+        config = build_wg_tun_config(self.server, allow_lan=True)
+        listens = {
+            inbound["tag"]: inbound.get("listen")
+            for inbound in config["inbounds"]
+        }
+
+        self.assertEqual(listens["socks-in"], "0.0.0.0")
+        self.assertEqual(listens["http-in"], "0.0.0.0")
+        self.assertNotEqual(listens["tun-in"], "0.0.0.0")
+
 
 if __name__ == "__main__":
     unittest.main()

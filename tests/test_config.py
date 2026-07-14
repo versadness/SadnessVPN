@@ -89,12 +89,16 @@ class ProxyRoutingConfigTests(unittest.TestCase):
         )
         self.assertEqual(config["route"]["final"], "proxy")
 
-    def test_adguard_ui_preset_builds_adguard_dns_servers(self):
-        config = build_xray_tun_config(self.server, dns_preset="adguard")
-        addresses = [item["address"] for item in config["dns"]["servers"]]
+    def test_lan_mode_exposes_only_proxy_inbounds(self):
+        config = build_xray_tun_config(self.server, allow_lan=True)
+        listens = {
+            inbound["tag"]: inbound.get("listen")
+            for inbound in config["inbounds"]
+        }
 
-        self.assertIn("tls://94.140.14.14", addresses)
-        self.assertIn("tls://94.140.15.15", addresses)
+        self.assertEqual(listens["socks-in"], "0.0.0.0")
+        self.assertEqual(listens["http-in"], "0.0.0.0")
+        self.assertNotEqual(listens["tun-in"], "0.0.0.0")
 
     def test_adguard_ui_preset_builds_adguard_dns_servers(self):
         config = build_xray_tun_config(self.server, dns_preset="adguard")

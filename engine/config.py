@@ -431,6 +431,7 @@ def build_xray_tun_config(
     fakedns        : bool = False,
     mux            : bool = False,
     preferred_ip   : str  = "ipv4",
+    allow_lan      : bool = False,
 ) -> dict:
     routed_apps = routed_apps or []
 
@@ -574,9 +575,10 @@ def build_xray_tun_config(
     if socks5_auth and socks5_auth.get("user") and socks5_auth.get("pass"):
         auth_users = [{"username": socks5_auth["user"], "password": socks5_auth["pass"]}]
 
+    proxy_listen = "0.0.0.0" if allow_lan else "127.0.0.1"
     socks_inbound = {
         "type": "socks", "tag": "socks-in",
-        "listen": "127.0.0.1", "listen_port": socks_port,
+        "listen": proxy_listen, "listen_port": socks_port,
         "sniff": True,
         "sniff_override_destination": True,
     }
@@ -585,7 +587,7 @@ def build_xray_tun_config(
 
     http_inbound = {
         "type": "http", "tag": "http-in",
-        "listen": "127.0.0.1", "listen_port": http_port,
+        "listen": proxy_listen, "listen_port": http_port,
         "sniff": True,
         "sniff_override_destination": True,
     }

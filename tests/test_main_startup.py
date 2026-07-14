@@ -22,6 +22,13 @@ class _Response:
 
 
 class LocalServerStartupTests(unittest.TestCase):
+    def test_silent_startup_preference_is_loaded_safely(self):
+        with (
+            mock.patch.object(main, "data_dir", return_value=r"C:\data"),
+            mock.patch("builtins.open", mock.mock_open(read_data='{"silent": true}')),
+        ):
+            self.assertEqual(main.load_startup_preferences(), {"silent": True})
+
     def test_wait_accepts_only_the_expected_server_instance(self):
         response = _Response({"app": "SadnessVPN", "instance": "expected"})
 

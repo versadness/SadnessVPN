@@ -2,6 +2,7 @@ import sys, os, threading, time, ctypes, ctypes.wintypes, json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ui.server import SERVER_INSTANCE_ID, run as run_server
+from engine.paths import data_dir
 import webview
 import urllib.request
 
@@ -12,6 +13,19 @@ BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 ICON_PATH = os.path.join(BASE_DIR, "app.ico")
 
 W, H = 920, 620
+
+
+def load_startup_preferences() -> dict:
+    try:
+        with open(os.path.join(data_dir(), "settings.json"), "r", encoding="utf-8") as file:
+            settings = json.load(file)
+        if not isinstance(settings, dict):
+            raise ValueError("Invalid settings")
+    except Exception:
+        settings = {}
+    return {
+        "silent": settings.get("silent") is True,
+    }
 
 def start_server():
     run_server(host="127.0.0.1", port=45678)
@@ -59,7 +73,7 @@ def find_hwnd(title="Sadness VPN", attempts=60, delay=0.1):
         time.sleep(delay)
     return None
 
-def fix_window():
+def fix_window(minimize_after=False):
     hwnd = find_hwnd()
     if not hwnd:
         return
@@ -80,6 +94,8 @@ def fix_window():
         if show_cmd == 3:
             user32.ShowWindow(hwnd, 9)  # SW_RESTORE
         user32.SetWindowPos(hwnd, 0, x, y, W, H, FLAGS)
+    if minimize_after:
+        user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
 
 def set_icon():
     if not os.path.exists(ICON_PATH):
@@ -144,7 +160,12 @@ if __name__ == "__main__":
         show_startup_error(message)
         raise SystemExit(message)
 
-    threading.Thread(target=fix_window, daemon=True).start()
+    startup_preferences = load_startup_preferences()
+    threading.Thread(
+        target=fix_window,
+        kwargs={"minimize_after": startup_preferences["silent"]},
+        daemon=True,
+    ).start()
 
     window = webview.create_window(
         "Sadness VPN",
