@@ -1,3 +1,4 @@
+import threading
 import tempfile
 import unittest
 from pathlib import Path
@@ -80,6 +81,63 @@ class ZapretConflictSafetyTests(unittest.TestCase):
         self.assertFalse(result)
         popen.assert_not_called()
         self.assertTrue(any("winws.exe" in message for message, _tag in messages))
+
+
+class SingBoxExitNotificationTests(unittest.TestCase):
+    def test_unexpected_current_process_exit_notifies_and_cleans_up(self):
+        exit_codes = []
+        manager = SingBoxManager(exit_callback=exit_codes.append)
+        process = mock.Mock()
+        process.stdout = ["fatal: test failure\n"]
+        process.poll.return_value = 17
+        stop_requested = threading.Event()
+        manager.process = process
+        manager.running = True
+
+        with tempfile.NamedTemporaryFile(delete=False) as config_file:
+            manager._config_file = config_file.name
+            config_path = Path(config_file.name)
+
+        manager._read_output(process, stop_requested)
+
+        self.assertEqual(exit_codes, [17])
+        self.assertFalse(manager.running)
+        self.assertIsNone(manager.process)
+        self.assertIsNone(manager._config_file)
+        self.assertFalse(config_path.exists())
+
+    def test_expected_process_exit_does_not_notify(self):
+        exit_codes = []
+        manager = SingBoxManager(exit_callback=exit_codes.append)
+        process = mock.Mock()
+        process.stdout = []
+        process.poll.return_value = 0
+        stop_requested = threading.Event()
+        stop_requested.set()
+        manager.process = process
+        manager.running = True
+
+        manager._read_output(process, stop_requested)
+
+        self.assertEqual(exit_codes, [])
+        self.assertFalse(manager.running)
+        self.assertIsNone(manager.process)
+
+    def test_old_reader_cannot_clear_or_report_new_process(self):
+        exit_codes = []
+        manager = SingBoxManager(exit_callback=exit_codes.append)
+        old_process = mock.Mock()
+        old_process.stdout = []
+        old_process.poll.return_value = 9
+        new_process = mock.Mock()
+        manager.process = new_process
+        manager.running = True
+
+        manager._read_output(old_process, threading.Event())
+
+        self.assertEqual(exit_codes, [])
+        self.assertIs(manager.process, new_process)
+        self.assertTrue(manager.running)
 
 
 if __name__ == "__main__":

@@ -120,6 +120,13 @@ class ServerConnectionSafetyTests(unittest.TestCase):
         )
         self.assertIn("lbl.textContent='Отменить'", source)
 
+    def test_server_handles_unexpected_engine_exit(self):
+        path = Path(__file__).resolve().parents[1].joinpath("ui", "server.py")
+        source = path.read_text(encoding="utf-8")
+
+        self.assertIn("def _handle_vpn_exit", source)
+        self.assertIn("exit_callback=_handle_vpn_exit", source)
+
 
 if __name__ == "__main__":
     unittest.main()

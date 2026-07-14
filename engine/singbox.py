@@ -13,11 +13,13 @@ from engine.paths import bin_path
 
 
 class SingBoxManager:
-    def __init__(self, log_callback=None):
-        self.process      = None
-        self.running      = False
-        self.log_cb       = log_callback or (lambda msg, tag: None)
-        self._config_file = None
+    def __init__(self, log_callback=None, exit_callback=None):
+        self.process         = None
+        self.running         = False
+        self.log_cb          = log_callback or (lambda msg, tag: None)
+        self.exit_cb         = exit_callback or (lambda return_code: None)
+        self._config_file    = None
+        self._stop_requested = None
 
     def _singbox_path(self):
         return bin_path("sing-box.exe" if platform.system() == "Windows" else "sing-box")
@@ -82,7 +84,7 @@ class SingBoxManager:
         self._config_file = path
 
         try:
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 [singbox, "run", "-c", path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -91,22 +93,29 @@ class SingBoxManager:
                 creationflags=subprocess.CREATE_NO_WINDOW
                     if platform.system() == "Windows" else 0
             )
+            stop_requested = threading.Event()
+            self.process = process
+            self._stop_requested = stop_requested
             self.running = True
 
             # ── Диагностика: ловим мгновенное падение ──
             time.sleep(0.8)
-            if self.process.poll() is not None:
-                out = self.process.stdout.read()
+            if process.poll() is not None:
+                out = process.stdout.read()
                 self.log_cb("sing-box упал сразу после запуска!", "err")
                 for line in out.splitlines():
                     if line.strip():
                         self.log_cb(f"  {line}", "err")
-                self._cleanup()
+                self._cleanup(process)
                 self.running = False
                 return False
 
-            threading.Thread(target=self._read_output, daemon=True).start()
-            self.log_cb(f"sing-box запущен (PID {self.process.pid})", "ok")
+            threading.Thread(
+                target=self._read_output,
+                args=(process, stop_requested),
+                daemon=True,
+            ).start()
+            self.log_cb(f"sing-box запущен (PID {process.pid})", "ok")
             return True
 
         except PermissionError:
@@ -127,6 +136,9 @@ class SingBoxManager:
 
     def stop(self):
         process = self.process
+        stop_requested = self._stop_requested
+        if stop_requested:
+            stop_requested.set()
         try:
             if process and process.poll() is None:
                 process.terminate()
@@ -138,13 +150,16 @@ class SingBoxManager:
         except (OSError, ProcessLookupError) as exc:
             self.log_cb(f"Не удалось остановить sing-box: {exc}", "warn")
         finally:
-            self.running = False
-            self._cleanup()
+            if process is None or self.process is process:
+                self.running = False
+                self._cleanup(process)
         # Убеждаемся, что порт освобождён для следующего подключения
         self._wait_port_free(9090, timeout=3.0)
         self.log_cb("sing-box остановлен", "info")
 
-    def _cleanup(self):
+    def _cleanup(self, expected_process=None):
+        if expected_process is not None and self.process is not expected_process:
+            return False
         if self._config_file and os.path.exists(self._config_file):
             try:
                 os.remove(self._config_file)
@@ -152,10 +167,12 @@ class SingBoxManager:
                 pass
             self._config_file = None
         self.process = None
+        self._stop_requested = None
+        return True
 
-    def _read_output(self):
+    def _read_output(self, process, stop_requested):
         try:
-            for line in self.process.stdout:
+            for line in process.stdout:
                 line = line.rstrip()
                 if not line:
                     continue
@@ -171,5 +188,21 @@ class SingBoxManager:
                 self.log_cb(line, tag)
         except Exception:
             pass
+
+        if self.process is not process:
+            return
+
+        unexpected = not stop_requested.is_set()
+        return_code = process.poll()
         self.running = False
-        self.log_cb("sing-box процесс завершён", "info")
+        self._cleanup(process)
+
+        if unexpected:
+            self.log_cb(
+                f"sing-box неожиданно завершился (код {return_code})",
+                "err",
+            )
+            try:
+                self.exit_cb(return_code)
+            except Exception as exc:
+                self.log_cb(f"Ошибка обработки остановки sing-box: {exc}", "err")

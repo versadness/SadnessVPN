@@ -374,7 +374,16 @@ def _get_routed_exes() -> list:
     return exes
 
 
-vpn_engine    = SingBoxManager(log_callback=_log)
+def _handle_vpn_exit(_return_code):
+    previous = _connection.cancel(_reset_connection_state)
+    if previous != "off":
+        _broadcast({"type": "status", "state": "off"})
+
+
+vpn_engine = SingBoxManager(
+    log_callback=_log,
+    exit_callback=_handle_vpn_exit,
+)
 zapret_engine = ZapretManager(log_callback=_log)
 _vpn_engine_lock = threading.RLock()
 _zapret_running  = False
