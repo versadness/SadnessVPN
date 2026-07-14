@@ -31,7 +31,7 @@ class SingBoxManager:
             return s.connect_ex(("127.0.0.1", port)) != 0
 
     def _wait_port_free(self, port: int, timeout: float = 4.0) -> bool:
-        """Ждём, пока порт реально освободится после taskkill."""
+        """Ждём, пока порт освободится после остановки нашего процесса."""
         end = time.time() + timeout
         while time.time() < end:
             if self._port_free(port):
@@ -39,93 +39,12 @@ class SingBoxManager:
             time.sleep(0.2)
         return False
 
-    def _kill_port(self, port: int):
-        """Принудительно завершает процесс, удерживающий TCP-порт (Windows)."""
-        try:
-            result = subprocess.run(
-                ["netstat", "-ano"],
-                capture_output=True, text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            for line in result.stdout.splitlines():
-                if f":{port}" in line and "LISTENING" in line:
-                    parts = line.split()
-                    if parts:
-                        pid = parts[-1]
-                        subprocess.run(
-                            ["taskkill", "/F", "/PID", pid],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            creationflags=subprocess.CREATE_NO_WINDOW
-                        )
-        except Exception:
-            pass
-
-    def _remove_tun_adapter(self):
-        """Удаляет зависший Wintun TUN-адаптер (tun-in) через netsh.
-        Нужно, когда sing-box упал не очистившись — Windows держит
-        виртуальный интерфейс и новый запуск падает с
-        'Cannot create a file when that file already exists'.
-        """
-        if platform.system() != "Windows":
-            return
-        try:
-            # Метод 1: netsh — удаляем интерфейс tun-in
-            subprocess.run(
-                ["netsh", "interface", "delete", "interface", "name=tun-in"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                timeout=5,
-            )
-        except Exception:
-            pass
-        try:
-            # Метод 2: PowerShell — убираем адаптер Wintun через Get-NetAdapter
-            subprocess.run(
-                [
-                    "powershell", "-NonInteractive", "-Command",
-                    "Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*Wintun*' } "
-                    "| Remove-NetAdapter -Confirm:$false -ErrorAction SilentlyContinue",
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                timeout=8,
-            )
-        except Exception:
-            pass
-        # Даём системе время убрать адаптер
-        time.sleep(0.5)
-
-    def _kill_stale(self):
-        """Завершает висящие sing-box, освобождает порт 9090 и удаляет
-        зависший TUN-адаптер Wintun (fix: 'Cannot create a file when
-        that file already exists').
-        """
-        try:
-            if platform.system() == "Windows":
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", "sing-box.exe", "/T"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW
-                )
-                # Ждём, пока процесс отпустит порт Clash API
-                if not self._wait_port_free(9090, timeout=3.0):
-                    # Всё ещё занят — добиваем держателя порта
-                    self._kill_port(9090)
-                    self._wait_port_free(9090, timeout=3.0)
-        except Exception:
-            pass
-        # Всегда чистим Wintun-адаптер — он может зависнуть даже
-        # если процесс уже завершился
-        self._remove_tun_adapter()
-
     def start(self, config: dict) -> bool:
-        if self.running:
-            self.stop()
-        self._kill_stale()
+        if self.process:
+            if self.process.poll() is None:
+                self.stop()
+            else:
+                self._cleanup()
 
         singbox = self._singbox_path()
         if not os.path.exists(singbox):
@@ -148,6 +67,14 @@ class SingBoxManager:
                     "err"
                 )
                 return False
+
+        if not self._port_free(9090):
+            self.log_cb(
+                "Порт 9090 уже занят другим процессом. "
+                "SadnessVPN не будет завершать чужой процесс.",
+                "err",
+            )
+            return False
 
         fd, path = tempfile.mkstemp(suffix=".json", prefix="singbox_cfg_")
         with os.fdopen(fd, "w") as f:
@@ -199,19 +126,22 @@ class SingBoxManager:
             return False
 
     def stop(self):
-        if self.process:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
-        self.running = False
-        self._cleanup()
+        process = self.process
+        try:
+            if process and process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+        except (OSError, ProcessLookupError) as exc:
+            self.log_cb(f"Не удалось остановить sing-box: {exc}", "warn")
+        finally:
+            self.running = False
+            self._cleanup()
         # Убеждаемся, что порт освобождён для следующего подключения
         self._wait_port_free(9090, timeout=3.0)
-        # Удаляем Wintun-адаптер, чтобы следующий старт прошёл чисто
-        self._remove_tun_adapter()
         self.log_cb("sing-box остановлен", "info")
 
     def _cleanup(self):

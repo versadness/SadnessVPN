@@ -22,28 +22,13 @@ class XrayManager:
     def _xray_path(self):
         return bin_path("xray.exe" if platform.system() == "Windows" else "xray")
 
-    # ── убить все висящие xray ───────────────
-    def _kill_stale(self):
-        try:
-            if platform.system() == "Windows":
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", "xray.exe", "/T"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW
-                )
-                time.sleep(0.6)
-        except Exception:
-            pass
-
     # ── запуск ───────────────────────────────
     def start(self, config: dict) -> bool:
-        # Если уже запущен — сначала останавливаем
-        if self.running:
-            self.stop()
-
-        # Убиваем все зависшие xray процессы
-        self._kill_stale()
+        if self.process:
+            if self.process.poll() is None:
+                self.stop()
+            else:
+                self._cleanup()
 
         xray = self._xray_path()
         if not os.path.exists(xray):

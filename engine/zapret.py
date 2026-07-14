@@ -23,6 +23,31 @@ class ZapretManager:
     def _winws_path(self):
         return bin_path("winws.exe")
 
+    def _foreign_winws_running(self) -> bool:
+        """Check for an existing winws process without modifying it."""
+        if platform.system() != "Windows":
+            return False
+        try:
+            import psutil
+
+            return any(
+                (process.info.get("name") or "").lower() == "winws.exe"
+                for process in psutil.process_iter(["name"])
+            )
+        except ImportError:
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", "IMAGENAME eq winws.exe", "/FO", "CSV", "/NH"],
+                    capture_output=True,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                return '"winws.exe"' in result.stdout.lower()
+            except Exception:
+                return False
+        except Exception:
+            return False
+
     def _bin(self, filename: str) -> str:
         return bin_path(filename)
 
@@ -221,22 +246,6 @@ class ZapretManager:
 
         return []
 
-    # ── Kill stale ────────────────────────────────────────────────────────────
-
-    def _kill_stale(self):
-        if platform.system() != "Windows":
-            return
-        try:
-            subprocess.run(
-                ["taskkill", "/F", "/IM", "winws.exe", "/T"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            time.sleep(0.4)
-        except Exception:
-            pass
-
     def _enable_tcp_timestamps(self):
         # Zapret использует --dpi-desync-fooling=ts, которому нужны TCP timestamps
         if platform.system() != "Windows":
@@ -254,9 +263,20 @@ class ZapretManager:
     # ── Start ─────────────────────────────────────────────────────────────────
 
     def start(self, strategy_id: str = "general_alt") -> bool:
-        if self.running:
-            self.stop()
-        self._kill_stale()
+        if self.process:
+            if self.process.poll() is None:
+                self.stop()
+            else:
+                self._cleanup()
+
+        if self._foreign_winws_running():
+            self.log_cb(
+                "winws.exe уже запущен другим приложением. "
+                "SadnessVPN не будет завершать или заменять чужой процесс.",
+                "err",
+            )
+            return False
+
         self._enable_tcp_timestamps()
 
         if not os.path.exists(self._winws_path()):
