@@ -6,15 +6,11 @@ import json
 import os
 import subprocess
 
+from engine.json_store import atomic_write_json
 from engine.paths import data_dir
 
 _DATA_DIR  = data_dir()
 _APPS_PATH = os.path.join(_DATA_DIR, "apps.json")
-
-_DEFAULT = {
-    "mode": "all",
-    "apps": []
-}
 
 POPULAR_APPS = [
     {"name": "Google Chrome",       "exe": "chrome.exe"},
@@ -39,17 +35,29 @@ POPULAR_APPS = [
     {"name": "git",                 "exe": "git.exe"},
 ]
 
+
+def _default_apps() -> dict:
+    return {"mode": "all", "apps": []}
+
 def load_apps() -> dict:
     try:
         with open(_APPS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return {**_DEFAULT, **data}
-    except Exception:
-        return dict(_DEFAULT)
+            if not isinstance(data, dict) or not isinstance(data.get("apps", []), list):
+                return _default_apps()
+            mode = data.get("mode", "all")
+            if mode not in ("all", "whitelist", "blacklist"):
+                mode = "all"
+            valid_apps = [
+                item for item in data["apps"]
+                if isinstance(item, dict) and isinstance(item.get("exe"), str)
+            ]
+            return {"mode": mode, "apps": valid_apps}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return _default_apps()
 
 def save_apps(data: dict):
-    with open(_APPS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    atomic_write_json(_APPS_PATH, data)
 
 def get_running_processes() -> list:
     """Возвращает список уникальных .exe процессов которые сейчас запущены"""

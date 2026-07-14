@@ -136,7 +136,9 @@ def fetch_wg_subscription(url: str) -> list:
         url, headers={"User-Agent": "SadnessVPN/1.0", "Accept": "*/*"}
     )
     with urllib.request.urlopen(req, timeout=20) as resp:
-        raw = resp.read()
+        raw = resp.read(8 * 1024 * 1024 + 1)
+    if len(raw) > 8 * 1024 * 1024:
+        raise ValueError("WireGuard subscription is larger than 8 MiB")
 
     text = None
 

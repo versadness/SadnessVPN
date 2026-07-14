@@ -9,8 +9,10 @@ import time
 import socket
 import json
 import os
+import secrets
 import sys
 import uuid as _uuid_mod
+from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -37,6 +39,9 @@ from engine.hwid import generate_hwid
 from engine.zapret import ZapretManager
 from engine.paths import data_dir
 from engine.connection_state import ConnectionCoordinator
+from engine.json_store import atomic_write_json
+from engine.task_state import BackgroundTaskCoordinator
+from engine.server_sort import sort_servers_by_ping
 
 # ── Traffic stats ────────────────────────────────────────────
 import http.client
@@ -144,6 +149,50 @@ def _stop_traffic_monitor():
 app  = Flask(__name__, template_folder="templates")
 sock = Sock(app)
 
+SERVER_INSTANCE_ID = secrets.token_urlsafe(24)
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+_RESERVED_LOCAL_PORTS = {45678, 9090}
+
+
+def _request_host_port() -> tuple[str | None, int | None]:
+    parsed = urlsplit(f"//{request.host}")
+    try:
+        port = parsed.port
+    except ValueError:
+        return parsed.hostname, None
+    if port is None:
+        port = 443 if request.scheme == "https" else 80
+    return parsed.hostname, port
+
+
+@app.before_request
+def _protect_local_api():
+    host, port = _request_host_port()
+    if request.remote_addr not in ("127.0.0.1", "::1") or host not in _LOOPBACK_HOSTS:
+        return jsonify({"ok": False, "error": "Доступ разрешён только локально"}), 403
+
+    origin = request.headers.get("Origin")
+    if origin:
+        parsed = urlsplit(origin)
+        try:
+            origin_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except ValueError:
+            return jsonify({"ok": False, "error": "Некорректный источник запроса"}), 403
+        if (
+            parsed.scheme not in ("http", "https")
+            or parsed.hostname not in _LOOPBACK_HOSTS
+            or origin_port != port
+        ):
+            return jsonify({"ok": False, "error": "Недоверенный источник запроса"}), 403
+
+
+@app.after_request
+def _secure_local_response(response):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+
 _DATA_DIR      = data_dir()
 _SETTINGS_PATH = os.path.join(_DATA_DIR, "settings.json")
 
@@ -169,7 +218,7 @@ _DEFAULT_SETTINGS = {
     "hwid":             "",
     "ping_type":        "tcp",
     "ping_url":         "https://www.gstatic.com/generate_204",
-    "ping_timeout":     3,
+    "ping_timeout":     3000,
     "kill_switch":      False,
     "block_udp":        False,
     "socks5_auth":      False,
@@ -187,20 +236,118 @@ _DEFAULT_SETTINGS = {
 def _load_settings() -> dict:
     try:
         with open(_SETTINGS_PATH, "r", encoding="utf-8") as f:
-            return {**_DEFAULT_SETTINGS, **json.load(f)}
+            loaded = json.load(f)
+        if not isinstance(loaded, dict):
+            raise ValueError("Invalid settings")
+        settings = {**_DEFAULT_SETTINGS, **loaded}
+        for key in (
+            "startup", "autoconn", "silent", "lan", "mintray", "kill_switch",
+            "block_udp", "socks5_auth", "mux", "fakedns",
+        ):
+            if not isinstance(settings.get(key), bool):
+                settings[key] = _DEFAULT_SETTINGS[key]
+        for key in ("socks5_user", "socks5_pass", "custom_dns", "ping_url"):
+            if not isinstance(settings.get(key), str):
+                settings[key] = _DEFAULT_SETTINGS[key]
+        if settings.get("preferred_ip") not in ("ipv4", "ipv6", "auto"):
+            settings["preferred_ip"] = "ipv4"
+        if settings.get("dns_preset") not in (
+            "cf_google", "google", "cloudflare", "adguard", "quad9",
+            "xbox", "xbox_dot", "custom",
+        ):
+            settings["dns_preset"] = "cf_google"
+        if settings.get("ping_type") not in ("tcp", "icmp", "http_get", "http_head"):
+            settings["ping_type"] = "tcp"
+        if settings.get("server_sort") not in ("default", "ping"):
+            settings["server_sort"] = "default"
+        for key in ("selected_index", "selected_wg_index"):
+            if settings.get(key) is not None and not isinstance(settings.get(key), int):
+                settings[key] = None
+        for key in ("selected_group", "selected_wg_group"):
+            if settings.get(key) is not None and not isinstance(settings.get(key), str):
+                settings[key] = None
+        if settings.get("active_protocol") not in ("vless", "wg"):
+            settings["active_protocol"] = "vless"
+        return settings
     except Exception:
         return dict(_DEFAULT_SETTINGS)
 
 
 def _save_settings(cfg: dict):
     try:
-        with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        atomic_write_json(_SETTINGS_PATH, cfg)
     except Exception as e:
         print(f"Ошибка сохранения настроек: {e}")
 
 
 _app_settings = _load_settings()
+
+
+def _port_number(value, default=None) -> int:
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        if default is not None:
+            return default
+        raise ValueError("Порт должен быть числом")
+    if not 1 <= port <= 65535:
+        if default is not None:
+            return default
+        raise ValueError("Порт должен быть в диапазоне от 1 до 65535")
+    return port
+
+
+def _ping_timeout_seconds(value) -> float:
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError):
+        return 3.0
+    if timeout > 60:
+        timeout /= 1000.0
+    return min(30.0, max(0.2, timeout))
+
+
+def _normalize_tunnel_setting(key, value):
+    if key in ("kill_switch", "block_udp", "socks5_auth", "mux", "fakedns"):
+        if not isinstance(value, bool):
+            raise ValueError(f"{key} must be true or false")
+        return value
+    if key in ("socks5_user", "socks5_pass", "custom_dns"):
+        if not isinstance(value, str) or len(value) > 2048:
+            raise ValueError(f"Invalid {key}")
+        return value
+    if key == "preferred_ip":
+        if value not in ("ipv4", "ipv6", "auto"):
+            raise ValueError("Invalid IP preference")
+        return value
+    if key == "dns_preset":
+        if value not in (
+            "cf_google", "google", "cloudflare", "adguard", "quad9",
+            "xbox", "xbox_dot", "custom",
+        ):
+            raise ValueError("Invalid DNS preset")
+        return value
+    if key == "ping_type":
+        if value not in ("tcp", "icmp", "http_get", "http_head"):
+            raise ValueError("Invalid ping type")
+        return value
+    if key == "ping_url":
+        if not isinstance(value, str) or len(value) > 2048 or not value.startswith(("http://", "https://")):
+            raise ValueError("Invalid ping URL")
+        return value
+    if key == "ping_timeout":
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            raise ValueError("Invalid ping timeout") from None
+        if not 0.2 <= numeric <= 30000:
+            raise ValueError("Invalid ping timeout")
+        return value
+    if key == "server_sort":
+        if value not in ("default", "ping"):
+            raise ValueError("Invalid server sorting mode")
+        return value
+    raise ValueError("Unknown tunnel setting")
 
 
 def _tunnel_kwargs() -> dict:
@@ -240,8 +387,17 @@ _ping_value  = "—"
 _ping_color  = "dim"
 _ping_thread = None
 _ping_stop   = threading.Event()
-_socks_port  = _app_settings.get("socks", 1080)
-_http_port   = _app_settings.get("http", 8080)
+_socks_port  = _port_number(_app_settings.get("socks"), 1080)
+_http_port   = _port_number(_app_settings.get("http"), 8080)
+if (
+    _socks_port == _http_port
+    or _socks_port in _RESERVED_LOCAL_PORTS
+    or _http_port in _RESERVED_LOCAL_PORTS
+):
+    _socks_port, _http_port = 1080, 8080
+    _app_settings["socks"] = _socks_port
+    _app_settings["http"] = _http_port
+    _save_settings(_app_settings)
 
 # ── VLESS state ─────────────────────────────────────────
 _groups: list = load_groups()
@@ -258,7 +414,8 @@ _active_protocol = _app_settings.get("active_protocol", "vless")
 _apps_config  = load_apps()
 
 # ── Ping scan state ───────────────────────────────────
-_ping_scan_stop = threading.Event()
+_ping_scans = BackgroundTaskCoordinator()
+_wg_ping_scans = BackgroundTaskCoordinator()
 
 # ── Helpers ────────────────────────────────────────
 
@@ -373,6 +530,76 @@ def _broadcast_wg_groups():
     })
 
 
+def _same_server_sequence(current: list, snapshot: list) -> bool:
+    return len(current) == len(snapshot) and all(
+        left is right for left, right in zip(current, snapshot)
+    )
+
+
+def _apply_proxy_ping_sort(groups_snapshot: list, results: dict) -> None:
+    global _sel_index
+    if _app_settings.get("server_sort") != "ping":
+        return
+    snapshots = {group["id"]: group["servers"] for group in groups_snapshot}
+    changed = False
+    selection_changed = False
+    for group in _groups:
+        current = group.get("servers", [])
+        snapshot = snapshots.get(group["id"])
+        if snapshot is None or not _same_server_sequence(current, snapshot):
+            continue
+        selected = _sel_index if group["id"] == _sel_group else None
+        ordered, new_selected = sort_servers_by_ping(
+            current,
+            {index: results.get((group["id"], index)) for index in range(len(current))},
+            selected,
+        )
+        if any(left is not right for left, right in zip(current, ordered)):
+            group["servers"] = ordered
+            changed = True
+        if selected is not None and new_selected != _sel_index:
+            _sel_index = new_selected
+            _app_settings["selected_index"] = new_selected
+            selection_changed = True
+    if changed:
+        save_groups(_groups)
+        _broadcast_groups()
+    if selection_changed:
+        _save_settings(_app_settings)
+
+
+def _apply_wg_ping_sort(groups_snapshot: list, results: dict) -> None:
+    global _sel_wg_index
+    if _app_settings.get("server_sort") != "ping":
+        return
+    snapshots = {group["id"]: group["servers"] for group in groups_snapshot}
+    changed = False
+    selection_changed = False
+    for group in _wg_groups:
+        current = group.get("servers", [])
+        snapshot = snapshots.get(group["id"])
+        if snapshot is None or not _same_server_sequence(current, snapshot):
+            continue
+        selected = _sel_wg_index if group["id"] == _sel_wg_group else None
+        ordered, new_selected = sort_servers_by_ping(
+            current,
+            {index: results.get((group["id"], index)) for index in range(len(current))},
+            selected,
+        )
+        if any(left is not right for left, right in zip(current, ordered)):
+            group["servers"] = ordered
+            changed = True
+        if selected is not None and new_selected != _sel_wg_index:
+            _sel_wg_index = new_selected
+            _app_settings["selected_wg_index"] = new_selected
+            selection_changed = True
+    if changed:
+        save_wg_groups(_wg_groups)
+        _broadcast_wg_groups()
+    if selection_changed:
+        _save_settings(_app_settings)
+
+
 def _get_routed_exes() -> list:
     exes = []
     for a in _apps_config.get("apps", []):
@@ -395,10 +622,38 @@ vpn_engine = SingBoxManager(
     log_callback=_log,
     exit_callback=_handle_vpn_exit,
 )
-zapret_engine = ZapretManager(log_callback=_log)
 _vpn_engine_lock = threading.RLock()
+_zapret_engine_lock = threading.RLock()
 _zapret_running  = False
 _zapret_strategy = None
+_zapret_state = "off"
+_zapret_generation = 0
+
+
+def _handle_zapret_exit(_return_code):
+    global _zapret_running, _zapret_strategy, _zapret_state, _zapret_generation
+    with _zapret_engine_lock:
+        _zapret_generation += 1
+        _zapret_running = False
+        _zapret_strategy = None
+        _zapret_state = "off"
+    _broadcast({"type": "zapret_status", "running": False, "strategy": None, "state": "off"})
+
+
+zapret_engine = ZapretManager(
+    log_callback=_log,
+    exit_callback=_handle_zapret_exit,
+)
+
+
+def _stop_zapret_engine():
+    global _zapret_running, _zapret_strategy, _zapret_state, _zapret_generation
+    with _zapret_engine_lock:
+        _zapret_generation += 1
+        zapret_engine.stop()
+        _zapret_running = False
+        _zapret_strategy = None
+        _zapret_state = "off"
 
 
 def _start_vpn_for_attempt(attempt: int, config: dict) -> bool:
@@ -556,6 +811,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/health", methods=["GET"])
+def api_health():
+    return jsonify({"ok": True, "app": "SadnessVPN", "instance": SERVER_INSTANCE_ID})
+
+
 @app.route("/api/groups", methods=["GET"])
 def api_groups():
     return jsonify({"groups": _groups_for_ui(), "selGroup": _sel_group, "selIndex": _sel_index})
@@ -583,7 +843,7 @@ def api_apps_get():
 @app.route("/api/apps/mode", methods=["POST"])
 def api_apps_mode():
     global _apps_config
-    data = request.json
+    data = request.get_json(silent=True) or {}
     mode = data.get("mode", "all")
     if mode not in ("all", "whitelist", "blacklist"):
         return jsonify({"ok": False, "error": "Неверный режим"})
@@ -597,7 +857,7 @@ def api_apps_mode():
 @app.route("/api/apps/add", methods=["POST"])
 def api_apps_add():
     global _apps_config
-    data = request.json
+    data = request.get_json(silent=True) or {}
     exe  = data.get("exe", "").strip()
     name = data.get("name", exe).strip()
     path = data.get("path", "").strip()
@@ -615,7 +875,7 @@ def api_apps_add():
 @app.route("/api/apps/remove", methods=["POST"])
 def api_apps_remove():
     global _apps_config
-    data   = request.json
+    data   = request.get_json(silent=True) or {}
     exe    = data.get("exe", "").strip()
     before = len(_apps_config["apps"])
     _apps_config["apps"] = [a for a in _apps_config["apps"] if a["exe"].lower() != exe.lower()]
@@ -629,7 +889,7 @@ def api_apps_remove():
 @app.route("/api/apps/toggle", methods=["POST"])
 def api_apps_toggle():
     global _apps_config
-    data    = request.json
+    data    = request.get_json(silent=True) or {}
     exe     = data.get("exe", "").strip()
     enabled = data.get("enabled", True)
     for a in _apps_config["apps"]:
@@ -654,7 +914,7 @@ def api_apps_popular():
 @app.route("/api/servers/add", methods=["POST"])
 def api_add_server():
     global _sel_group, _sel_index
-    data = request.json
+    data = request.get_json(silent=True) or {}
     link = data.get("link", "").strip()
     if not link:
         return jsonify({"ok": False, "error": "Пустая ссылка"})
@@ -678,7 +938,7 @@ def api_add_server():
 
 @app.route("/api/servers/import", methods=["POST"])
 def api_import():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     url  = data.get("url", "").strip()
     name = data.get("name", "").strip() or "Подписка"
     if not url.startswith(("http://", "https://")):
@@ -717,7 +977,7 @@ def api_import():
 
 @app.route("/api/groups/refresh", methods=["POST"])
 def api_refresh_group():
-    data   = request.json
+    data   = request.get_json(silent=True) or {}
     gid    = data.get("id")
     target = next((g for g in _groups if g["id"] == gid), None)
     if not target or not target.get("url"):
@@ -745,7 +1005,7 @@ def api_refresh_group():
 @app.route("/api/groups/delete", methods=["POST"])
 def api_delete_group():
     global _groups, _sel_group, _sel_index
-    data   = request.json
+    data   = request.get_json(silent=True) or {}
     gid    = data.get("id")
     before = len(_groups)
     _groups = [g for g in _groups if g["id"] != gid]
@@ -764,7 +1024,7 @@ def api_delete_group():
 
 @app.route("/api/groups/rename", methods=["POST"])
 def api_rename_group():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     gid  = data.get("id")
     name = data.get("name", "").strip()
     for g in _groups:
@@ -779,7 +1039,7 @@ def api_rename_group():
 @app.route("/api/servers/select", methods=["POST"])
 def api_select():
     global _sel_group, _sel_index, _active_protocol
-    data = request.json
+    data = request.get_json(silent=True) or {}
     gid  = data.get("group_id")
     idx  = data.get("index")
     for g in _groups:
@@ -800,7 +1060,7 @@ def api_select():
 @app.route("/api/servers/delete", methods=["POST"])
 def api_delete_server():
     global _sel_group, _sel_index
-    data = request.json
+    data = request.get_json(silent=True) or {}
     gid  = data.get("group_id")
     idx  = data.get("index")
     for g in _groups:
@@ -824,7 +1084,7 @@ def api_delete_server():
 
 @app.route("/api/servers/rename", methods=["POST"])
 def api_rename_server():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     gid  = data.get("group_id")
     idx  = data.get("index")
     name = data.get("name", "").strip()
@@ -842,7 +1102,7 @@ def api_rename_server():
 @app.route("/api/wg/servers/add", methods=["POST"])
 def api_wg_add_server():
     global _sel_wg_group, _sel_wg_index, _active_protocol
-    data    = request.json
+    data    = request.get_json(silent=True) or {}
     conf    = data.get("conf", "").strip()
     if not conf:
         return jsonify({"ok": False, "error": "Пустой конфиг"})
@@ -882,7 +1142,7 @@ def api_wg_add_server():
 
 @app.route("/api/wg/servers/import", methods=["POST"])
 def api_wg_import():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     url  = data.get("url", "").strip()
     name = data.get("name", "").strip() or "WG Подписка"
     if not url.startswith(("http://", "https://")):
@@ -926,7 +1186,7 @@ def api_wg_import():
 
 @app.route("/api/wg/groups/refresh", methods=["POST"])
 def api_wg_refresh_group():
-    data   = request.json
+    data   = request.get_json(silent=True) or {}
     gid    = data.get("id")
     target = next((g for g in _wg_groups if g["id"] == gid), None)
     if not target or not target.get("url"):
@@ -953,7 +1213,7 @@ def api_wg_refresh_group():
 @app.route("/api/wg/groups/delete", methods=["POST"])
 def api_wg_delete_group():
     global _wg_groups, _sel_wg_group, _sel_wg_index
-    data   = request.json
+    data   = request.get_json(silent=True) or {}
     gid    = data.get("id")
     before = len(_wg_groups)
     _wg_groups = [g for g in _wg_groups if g["id"] != gid]
@@ -972,7 +1232,7 @@ def api_wg_delete_group():
 
 @app.route("/api/wg/groups/rename", methods=["POST"])
 def api_wg_rename_group():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     gid  = data.get("id")
     name = data.get("name", "").strip()
     for g in _wg_groups:
@@ -987,7 +1247,7 @@ def api_wg_rename_group():
 @app.route("/api/wg/servers/select", methods=["POST"])
 def api_wg_select():
     global _sel_wg_group, _sel_wg_index, _active_protocol
-    data = request.json
+    data = request.get_json(silent=True) or {}
     gid  = data.get("group_id")
     idx  = data.get("index")
     for g in _wg_groups:
@@ -1008,7 +1268,7 @@ def api_wg_select():
 @app.route("/api/wg/servers/delete", methods=["POST"])
 def api_wg_delete_server():
     global _sel_wg_group, _sel_wg_index
-    data = request.json
+    data = request.get_json(silent=True) or {}
     gid  = data.get("group_id")
     idx  = data.get("index")
     for g in _wg_groups:
@@ -1032,7 +1292,7 @@ def api_wg_delete_server():
 
 @app.route("/api/wg/servers/rename", methods=["POST"])
 def api_wg_rename_server():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     gid  = data.get("group_id")
     idx  = data.get("index")
     name = data.get("name", "").strip()
@@ -1049,30 +1309,45 @@ def api_wg_rename_server():
 # ── Ping all ─────────────────────────────────────────
 @app.route("/api/ping/all", methods=["POST"])
 def api_ping_all():
-    global _ping_scan_stop
-    _ping_scan_stop.set()
-    time.sleep(0.1)
-    _ping_scan_stop = threading.Event()
-    stop            = _ping_scan_stop
+    generation, stop = _ping_scans.begin()
+    results = {}
     groups_snapshot = [
         {"id": g["id"], "servers": list(g.get("servers", []))}
         for g in _groups
     ]
     def on_result(gid, idx, ms, color):
-        _broadcast({"type": "ping_result", "gid": gid, "index": idx,
-                    "ms": ms, "color": color, "label": f"{ms}ms" if ms is not None else "—"})
+        def publish():
+            results[(gid, idx)] = ms
+            _broadcast({"type": "ping_result", "gid": gid, "index": idx,
+                        "ms": ms, "color": color, "label": f"{ms}ms" if ms is not None else "—"})
+
+        _ping_scans.run_if_current(
+            generation,
+            stop,
+            publish,
+        )
     def run_ping():
         ping_type = _app_settings.get("ping_type", "tcp")
-        ping_groups(groups_snapshot, on_result, stop, ping_type=ping_type)
-        if not stop.is_set():
+        ping_groups(
+            groups_snapshot,
+            on_result,
+            stop,
+            ping_type=ping_type,
+            test_url=str(_app_settings.get("ping_url", "")),
+            timeout=_ping_timeout_seconds(_app_settings.get("ping_timeout")),
+        )
+        def finish():
+            _apply_proxy_ping_sort(groups_snapshot, results)
             _broadcast({"type": "ping_done"})
+
+        _ping_scans.run_if_current(generation, stop, finish)
     threading.Thread(target=run_ping, daemon=True).start()
     return jsonify({"ok": True})
 
 
 @app.route("/api/ping/stop", methods=["POST"])
 def api_ping_stop():
-    _ping_scan_stop.set()
+    _ping_scans.cancel()
     _broadcast({"type": "ping_done"})
     return jsonify({"ok": True})
 
@@ -1080,11 +1355,15 @@ def api_ping_stop():
 @app.route("/api/wg/ping/all", methods=["POST"])
 def api_wg_ping_all():
     from concurrent.futures import ThreadPoolExecutor
+    generation, stop = _wg_ping_scans.begin()
+    results = {}
     groups_snapshot = [
         {"id": g["id"], "servers": list(g.get("servers", []))}
         for g in _wg_groups
     ]
     def _ping_one(g, i, srv):
+        if stop.is_set():
+            return
         host = srv.get("endpoint", "")
         port = int(srv.get("port", 51820))
         if not host:
@@ -1092,21 +1371,34 @@ def api_wg_ping_all():
         ms    = wg_ping(host, port)
         color = ping_color(ms)
         label = f"{ms}ms" if ms is not None else "—"
-        _broadcast({"type": "wg_ping_result", "gid": g["id"], "index": i,
-                    "ms": ms, "color": color, "label": label})
+        def publish():
+            results[(g["id"], i)] = ms
+            _broadcast({"type": "wg_ping_result", "gid": g["id"], "index": i,
+                        "ms": ms, "color": color, "label": label})
+
+        _wg_ping_scans.run_if_current(
+            generation,
+            stop,
+            publish,
+        )
     def run():
         with ThreadPoolExecutor(max_workers=30) as ex:
             for g in groups_snapshot:
                 for i, srv in enumerate(g.get("servers", [])):
                     ex.submit(_ping_one, g, i, srv)
-        _broadcast({"type": "wg_ping_done"})
+        def finish():
+            _apply_wg_ping_sort(groups_snapshot, results)
+            _broadcast({"type": "wg_ping_done"})
+
+        _wg_ping_scans.run_if_current(generation, stop, finish)
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"ok": True})
 
 # ── Connect / Disconnect ─────────────────────────────────
 @app.route("/api/connect", methods=["POST"])
 def api_connect():
-    proto = request.json.get("protocol", _active_protocol) if request.json else _active_protocol
+    data = request.get_json(silent=True) or {}
+    proto = data.get("protocol", _active_protocol)
 
     if proto == "wg":
         server = _get_selected_wg_server()
@@ -1195,9 +1487,18 @@ def api_disconnect():
 @app.route("/api/settings", methods=["POST"])
 def api_settings():
     global _socks_port, _http_port
-    data        = request.json
-    _socks_port = int(data.get("socks", _socks_port))
-    _http_port  = int(data.get("http",  _http_port))
+    data        = request.get_json(silent=True) or {}
+    try:
+        socks_port = _port_number(data.get("socks", _socks_port))
+        http_port = _port_number(data.get("http", _http_port))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+    if socks_port == http_port:
+        return jsonify({"ok": False, "error": "Порты SOCKS и HTTP должны отличаться"})
+    if socks_port in _RESERVED_LOCAL_PORTS or http_port in _RESERVED_LOCAL_PORTS:
+        return jsonify({"ok": False, "error": "Этот порт зарезервирован SadnessVPN"})
+    _socks_port = socks_port
+    _http_port = http_port
     _app_settings["socks"] = _socks_port
     _app_settings["http"]  = _http_port
     _save_settings(_app_settings)
@@ -1207,26 +1508,30 @@ def api_settings():
 @app.route("/api/app-settings", methods=["POST"])
 def api_app_settings():
     global _app_settings
-    data  = request.json
+    data  = request.get_json(silent=True) or {}
     key   = data.get("key")
     value = data.get("value")
+    if key not in _DEFAULT_SETTINGS and key != "ai_dns":
+        return jsonify({"ok": False, "error": "Неизвестная настройка"})
+    previous = _app_settings.get(key)
     _app_settings[key] = value
-    _save_settings(_app_settings)
     if key == "startup":
         _TASK_NAME = "SadnessVPN"
         try:
             if getattr(sys, "frozen", False):
                 exe_path = sys.executable
+                task_command = f'"{exe_path}"'
             else:
                 exe_path = os.path.abspath(
                     os.path.join(os.path.dirname(__file__), "..", "main.py")
                 )
+                task_command = f'"{sys.executable}" "{exe_path}"'
             if value:
                 r = subprocess.run(
                     [
                         "schtasks", "/Create", "/F",
                         "/TN", _TASK_NAME,
-                        "/TR", f'"{exe_path}"',
+                        "/TR", task_command,
                         "/SC", "ONLOGON",
                         "/RL", "HIGHEST",
                     ],
@@ -1266,7 +1571,9 @@ def api_app_settings():
                     pass
                 _log("Автозапуск отключён", "info")
         except Exception as e:
+            _app_settings[key] = previous
             return jsonify({"ok": False, "error": str(e)})
+    _save_settings(_app_settings)
     return jsonify({"ok": True})
 
 # ── Window state ─────────────────────────────────────
@@ -1293,7 +1600,7 @@ def api_win_close():
         except Exception:
             pass
         try:
-            zapret_engine.stop()
+            _stop_zapret_engine()
         except Exception:
             pass
         _t.sleep(0.2)
@@ -1377,7 +1684,7 @@ def api_win_info():
 @app.route("/api/window/resize", methods=["POST"])
 def api_win_resize():
     try:
-        data      = request.json
+        data      = request.get_json(silent=True) or {}
         x         = int(data.get("x", 0))
         y         = int(data.get("y", 0))
         w         = int(data.get("w", 920))
@@ -1423,10 +1730,16 @@ def api_tunnel_settings_get():
 @app.route("/api/tunnel-settings", methods=["POST"])
 def api_tunnel_settings_post():
     global _app_settings
-    data = request.json or {}
-    for k, v in data.items():
-        if k in _TUNNEL_KEYS:
-            _app_settings[k] = v
+    data = request.get_json(silent=True) or {}
+    try:
+        updates = {
+            key: _normalize_tunnel_setting(key, value)
+            for key, value in data.items()
+            if key in _TUNNEL_KEYS
+        }
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+    _app_settings.update(updates)
     _save_settings(_app_settings)
 
     _broadcast({"type": "settings_updated", "settings": {
@@ -1452,10 +1765,16 @@ def api_socks5_regen():
 @app.route("/api/ping-settings", methods=["POST"])
 def api_ping_settings():
     global _app_settings
-    data = request.json or {}
-    for k in ("ping_type", "ping_url", "ping_timeout"):
-        if k in data:
-            _app_settings[k] = data[k]
+    data = request.get_json(silent=True) or {}
+    try:
+        updates = {
+            key: _normalize_tunnel_setting(key, data[key])
+            for key in ("ping_type", "ping_url", "ping_timeout")
+            if key in data
+        }
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+    _app_settings.update(updates)
     _save_settings(_app_settings)
     return jsonify({"ok": True})
 
@@ -1467,18 +1786,34 @@ def api_zapret_strategies():
 
 @app.route("/api/zapret/start", methods=["POST"])
 def api_zapret_start():
-    global _zapret_running, _zapret_strategy
-    data        = request.json or {}
-    strategy_id = data.get("strategy_id", "discord_youtube_1")
-    if _zapret_running:
-        zapret_engine.stop()
+    global _zapret_running, _zapret_strategy, _zapret_state, _zapret_generation
+    data        = request.get_json(silent=True) or {}
+    strategy_id = data.get("strategy_id", "general_alt")
+    valid_ids = {item["id"] for item in zapret_engine.get_strategies()}
+    if strategy_id not in valid_ids:
+        return jsonify({"ok": False, "error": "Неизвестная стратегия"})
+
+    with _zapret_engine_lock:
+        if _zapret_state != "off":
+            return jsonify({"ok": False, "error": "Zapret уже запускается или работает"})
+        _zapret_generation += 1
+        generation = _zapret_generation
+        _zapret_state = "starting"
 
     def do_start():
-        global _zapret_running, _zapret_strategy
+        global _zapret_running, _zapret_strategy, _zapret_state
         _broadcast({"type": "zapret_status", "running": False, "strategy": None, "state": "starting"})
-        ok = zapret_engine.start(strategy_id)
-        _zapret_running  = ok
-        _zapret_strategy = strategy_id if ok else None
+        with _zapret_engine_lock:
+            if generation != _zapret_generation:
+                return
+            ok = zapret_engine.start(strategy_id)
+            if generation != _zapret_generation:
+                if ok:
+                    zapret_engine.stop()
+                return
+            _zapret_running  = ok
+            _zapret_strategy = strategy_id if ok else None
+            _zapret_state = "on" if ok else "off"
         _broadcast({
             "type":     "zapret_status",
             "running":  ok,
@@ -1492,17 +1827,18 @@ def api_zapret_start():
 
 @app.route("/api/zapret/stop", methods=["POST"])
 def api_zapret_stop():
-    global _zapret_running, _zapret_strategy
-    zapret_engine.stop()
-    _zapret_running  = False
-    _zapret_strategy = None
+    _stop_zapret_engine()
     _broadcast({"type": "zapret_status", "running": False, "strategy": None, "state": "off"})
     return jsonify({"ok": True})
 
 
 @app.route("/api/zapret/status", methods=["GET"])
 def api_zapret_status():
-    return jsonify({"running": _zapret_running, "strategy": _zapret_strategy})
+    return jsonify({
+        "running": _zapret_running,
+        "strategy": _zapret_strategy,
+        "state": _zapret_state,
+    })
 
 
 def run(host="127.0.0.1", port=45678):

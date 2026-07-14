@@ -12,11 +12,13 @@ from engine.paths import bin_path
 
 
 class ZapretManager:
-    def __init__(self, log_callback=None):
+    def __init__(self, log_callback=None, exit_callback=None):
         self.process   = None
         self.running   = False
         self.log_cb    = log_callback or (lambda msg, tag: None)
+        self.exit_cb   = exit_callback or (lambda return_code: None)
         self._strategy = None
+        self._stop_requested = None
 
     # ── Пути ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +80,7 @@ class ZapretManager:
         ]
         # Файлы которые обязаны существовать
         required_lists = [
+            "ipset-all.txt",
             "list-general.txt",
             "list-google.txt",
             "list-exclude.txt",
@@ -297,7 +300,7 @@ class ZapretManager:
             return False
 
         try:
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -306,21 +309,28 @@ class ZapretManager:
                 creationflags=subprocess.CREATE_NO_WINDOW
                     if platform.system() == "Windows" else 0,
             )
+            stop_requested = threading.Event()
+            self.process = process
+            self._stop_requested = stop_requested
             self.running   = True
             self._strategy = strategy_id
 
             time.sleep(0.8)
-            if self.process.poll() is not None:
-                out = self.process.stdout.read()
+            if process.poll() is not None:
+                out = process.stdout.read()
                 self.log_cb("winws.exe упал сразу после запуска!", "err")
                 for line in out.splitlines():
                     if line.strip():
                         self.log_cb(f"  {line}", "err")
-                self._cleanup()
+                self._cleanup(process)
                 self.running = False
                 return False
 
-            threading.Thread(target=self._read_output, daemon=True).start()
+            threading.Thread(
+                target=self._read_output,
+                args=(process, stop_requested),
+                daemon=True,
+            ).start()
             strategy_name = next(
                 (s["name"] for s in self.get_strategies() if s["id"] == strategy_id),
                 strategy_id
@@ -344,27 +354,40 @@ class ZapretManager:
     # ── Stop ──────────────────────────────────────────────────────────────────
 
     def stop(self):
-        if self.process:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=4)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
-        self.running   = False
-        self._strategy = None
-        self._cleanup()
+        process = self.process
+        stop_requested = self._stop_requested
+        if stop_requested:
+            stop_requested.set()
+        try:
+            if process and process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=4)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+        except (OSError, ProcessLookupError) as exc:
+            self.log_cb(f"Не удалось остановить zapret: {exc}", "warn")
+        finally:
+            if process is None or self.process is process:
+                self.running   = False
+                self._strategy = None
+                self._cleanup(process)
         time.sleep(0.3)
         self.log_cb("zapret остановлен", "info")
 
-    def _cleanup(self):
+    def _cleanup(self, expected_process=None):
+        if expected_process is not None and self.process is not expected_process:
+            return False
         self.process = None
+        self._stop_requested = None
+        return True
 
     # ── Output reader ─────────────────────────────────────────────────────────
 
-    def _read_output(self):
+    def _read_output(self, process, stop_requested):
         try:
-            for line in self.process.stdout:
+            for line in process.stdout:
                 line = line.rstrip()
                 if not line:
                     continue
@@ -380,5 +403,19 @@ class ZapretManager:
                 self.log_cb(f"[zapret] {line}", tag)
         except Exception:
             pass
+
+        if self.process is not process:
+            return
+
+        unexpected = not stop_requested.is_set()
+        return_code = process.poll()
         self.running = False
+        self._strategy = None
+        self._cleanup(process)
+        if unexpected:
+            self.log_cb("Процесс zapret неожиданно завершился", "err")
+            try:
+                self.exit_cb(return_code)
+            except Exception as exc:
+                self.log_cb(f"Ошибка обработки остановки zapret: {exc}", "err")
         self.log_cb("zapret процесс завершён", "info")

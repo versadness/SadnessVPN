@@ -9,6 +9,7 @@ import time
 import threading
 from datetime import date, timedelta
 
+from engine.json_store import atomic_write_json
 from engine.paths import data_dir
 
 _DATA_DIR   = data_dir()
@@ -40,20 +41,35 @@ def load_stats() -> dict:
     try:
         with open(_STATS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
         data = {}
 
     today = _today_str()
-    data.setdefault("total_up",       0)
-    data.setdefault("total_down",     0)
-    data.setdefault("total_secs",     0)
-    data.setdefault("total_sessions", 0)
+    for key in ("total_up", "total_down", "total_secs", "total_sessions"):
+        if not isinstance(data.get(key), (int, float)):
+            data[key] = 0
 
     # Обнуляем "today" если дата не совпадает
-    if data.get("today", {}).get("date") != today:
+    if not isinstance(data.get("today"), dict) or data["today"].get("date") != today:
         data["today"] = {"date": today, "up": 0, "down": 0, "secs": 0}
+    else:
+        for key in ("up", "down", "secs"):
+            if not isinstance(data["today"].get(key), (int, float)):
+                data["today"][key] = 0
 
-    data.setdefault("weekly", {})
+    if not isinstance(data.get("weekly"), dict):
+        data["weekly"] = {}
+    clean_weekly = {}
+    for day, values in data["weekly"].items():
+        if not isinstance(values, dict):
+            continue
+        clean_weekly[day] = {
+            "up": values.get("up", 0) if isinstance(values.get("up", 0), (int, float)) else 0,
+            "down": values.get("down", 0) if isinstance(values.get("down", 0), (int, float)) else 0,
+        }
+    data["weekly"] = clean_weekly
 
     # Чистим недельный буфер — оставляем только 7 последних дней
     cutoff = (date.today() - timedelta(days=6)).isoformat()
@@ -66,9 +82,8 @@ def load_stats() -> dict:
 
 def _save(data: dict):
     try:
-        with open(_STATS_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception:
+        atomic_write_json(_STATS_PATH, data)
+    except OSError:
         pass
 
 
@@ -99,16 +114,16 @@ class StatsTracker:
 
     def update(self, up: int, down: int):
         """Вызывать при каждом тике Clash API с cumulative значениями."""
-        if not self._running:
-            return
         with _lock:
+            if not self._running:
+                return
             self._last_up   = up
             self._last_down = down
 
     def stop(self):
-        if not self._running:
-            return
         with _lock:
+            if not self._running:
+                return
             self._running = False
             elapsed = int(time.time() - self._session_start)
             up      = self._last_up

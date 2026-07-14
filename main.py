@@ -1,7 +1,7 @@
-import sys, os, threading, time, ctypes, ctypes.wintypes
+import sys, os, threading, time, ctypes, ctypes.wintypes, json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ui.server import run as run_server
+from ui.server import SERVER_INSTANCE_ID, run as run_server
 import webview
 import urllib.request
 
@@ -16,15 +16,33 @@ W, H = 920, 620
 def start_server():
     run_server(host="127.0.0.1", port=45678)
 
-def wait_for_server(host="127.0.0.1", port=45678, timeout=10.0) -> bool:
+
+def show_startup_error(message: str) -> None:
+    try:
+        ctypes.windll.user32.MessageBoxW(None, message, "Sadness VPN", 0x10)
+    except Exception:
+        print(message)
+
+def wait_for_server(
+    host="127.0.0.1",
+    port=45678,
+    timeout=10.0,
+    expected_instance=SERVER_INSTANCE_ID,
+) -> bool:
     deadline = time.perf_counter() + timeout
-    url = f"http://{host}:{port}/"
+    url = f"http://{host}:{port}/api/health"
     while time.perf_counter() < deadline:
         try:
-            urllib.request.urlopen(url, timeout=0.3)
-            return True
+            with urllib.request.urlopen(url, timeout=0.3) as response:
+                payload = json.load(response)
+            if (
+                payload.get("app") == "SadnessVPN"
+                and payload.get("instance") == expected_instance
+            ):
+                return True
         except Exception:
-            time.sleep(0.05)
+            pass
+        time.sleep(0.05)
     return False
 
 def get_work_area():
@@ -121,7 +139,10 @@ if __name__ == "__main__":
     print(f"[icon] Существует: {os.path.exists(ICON_PATH)}")
 
     threading.Thread(target=start_server, daemon=True).start()
-    wait_for_server()
+    if not wait_for_server():
+        message = "Не удалось запустить локальный сервер SadnessVPN. Возможно, порт 45678 уже занят."
+        show_startup_error(message)
+        raise SystemExit(message)
 
     threading.Thread(target=fix_window, daemon=True).start()
 

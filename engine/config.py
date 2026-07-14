@@ -28,6 +28,7 @@ DNS_PRESETS = {
     "cf_google":  {"remote": ["tls://1.1.1.1",      "tls://8.8.8.8"],          "local": "8.8.8.8"},
     "google":     {"remote": ["tls://8.8.8.8",      "tls://8.8.4.4"],          "local": "8.8.4.4"},
     "cloudflare": {"remote": ["tls://1.1.1.1",      "tls://1.0.0.1"],          "local": "1.0.0.1"},
+    "adguard":    {"remote": ["tls://94.140.14.14", "tls://94.140.15.15"],    "local": "94.140.14.14"},
     "quad9":      {"remote": ["tls://9.9.9.9",      "tls://149.112.112.112"],  "local": "9.9.9.9"},
     # Xbox Smart DNS (xbox-dns.ru) — разблокирует различные сервисы
     # через подмену DNS ответов. Запросы идут НАПРЯМУЮ (не через VPN туннель).
@@ -655,7 +656,9 @@ def fetch_subscription(url: str, hwid: str = "") -> list:
             "Device-Id":  hwid,
         })
         with urllib.request.urlopen(req, timeout=15) as resp:
-            data = resp.read()
+            data = resp.read(8 * 1024 * 1024 + 1)
+            if len(data) > 8 * 1024 * 1024:
+                raise ValueError("Subscription is larger than 8 MiB")
             raw = data.decode("utf-8", errors="ignore")
 
         if not any(x in raw[:200] for x in ("vless://", "proxies:", "---", "{")):

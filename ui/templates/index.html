@@ -446,13 +446,13 @@ async function removeApp(exe){ const r=await api('/api/apps/remove',{exe}); if(!
 async function promptRule(){ const v=prompt('Имя процесса (например: chrome.exe):'); if(!v) return; const exe=v.trim().toLowerCase().endsWith('.exe')?v.trim():v.trim()+'.exe'; const r=await api('/api/apps/add',{exe,name:v.replace(/\.exe$/i,'').trim()}); if(r.ok) toast('Добавлено','ok'); else toast(r.error||'Ошибка','err'); }
 async function editRule(exe,name){ const nv=prompt('Новое имя правила:',name); if(!nv||nv===name) return; await api('/api/apps/remove',{exe}); await api('/api/apps/add',{exe,name:nv.trim()}); toast('Переименовано','ok'); }
 async function addPresetSet(){ let n=0; for(const [exe,name] of PRESET_SET){ const r=await api('/api/apps/add',{exe,name}); if(r.ok) n++; } toast(n?`Добавлено правил: ${n}`:'Все уже добавлены','ok'); }
-function savePorts(){ api('/api/settings',{socks:parseInt(document.getElementById('portSocks').value)||1080,http:parseInt(document.getElementById('portHttp').value)||8080}); toast('Порты сохранены','ok'); }
+async function savePorts(){ const r=await api('/api/settings',{socks:parseInt(document.getElementById('portSocks').value)||1080,http:parseInt(document.getElementById('portHttp').value)||8080}); toast(r.ok?'Порты сохранены':(r.error||'Не удалось сохранить порты'),r.ok?'ok':'err'); }
 function tglTunnel(el,key){ el.classList.toggle('on'); api('/api/tunnel-settings',{[key]:el.classList.contains('on')}); }
 function saveTunnelField(key,val){ api('/api/tunnel-settings',{[key]:val}); }
 function setPref(key,val,btn){ btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); api('/api/tunnel-settings',{[key]:val}); }
 function setPing(key,val,btn){ btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); api('/api/ping-settings',{[key]:val}); }
 function setPingVal(key,val){ api('/api/ping-settings',{[key]:val}); }
-function tglSetting(el,key){ el.classList.toggle('on'); api('/api/app-settings',{key,value:el.classList.contains('on')}); }
+async function tglSetting(el,key){ el.classList.toggle('on'); const r=await api('/api/app-settings',{key,value:el.classList.contains('on')}); if(!r.ok){el.classList.toggle('on');toast(r.error||'Не удалось сохранить настройку','err');} }
 async function regenSocks5(){ await api('/api/socks5/regenerate'); }
 async function regenHwid(){ const r=await api('/api/hwid/regenerate'); if(r.ok){ ST.hwid=r.hwid; document.getElementById('hwidVal').value=r.hwid; toast('HWID обновлён','ok'); } }
 function copyHwid(){ const v=document.getElementById('hwidVal').value; if(v){ navigator.clipboard&&navigator.clipboard.writeText(v); toast('HWID скопирован','ok'); } }
