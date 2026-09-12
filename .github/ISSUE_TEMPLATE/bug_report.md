@@ -1,7 +1,7 @@
 ---
 name: Ошибка бета-версии
 about: Сообщение об ошибке Sadness VPN Beta
-title: '[Beta 2.0.17] '
+title: '[Beta 2.0.18] '
 labels: bug
 assignees: ''
 ---
