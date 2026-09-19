@@ -4,343 +4,74 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sadness VPN</title>
-<style>
-*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-:root {
-  --bg-0:oklch(0.11 0.018 345); --surface-1:oklch(0.17 0.026 345 / 0.50); --surface-2:oklch(0.21 0.032 345 / 0.60); --surface-3:oklch(0.25 0.040 345 / 0.72);
-  --border-1:oklch(0.42 0.07 340 / 0.24); --border-2:oklch(0.55 0.12 340 / 0.40);
-  --red:oklch(0.62 0.21 10); --red-h:oklch(0.68 0.22 10); --purple:oklch(0.56 0.20 300); --purple-h:oklch(0.66 0.20 300); --magenta:oklch(0.70 0.19 345); --magenta-h:oklch(0.78 0.17 345);
-  --green:oklch(0.78 0.17 155); --yellow:oklch(0.82 0.15 90); --danger:oklch(0.65 0.22 22); --wg:oklch(0.72 0.13 235); --awg:oklch(0.74 0.15 55);
-  --text-1:oklch(0.97 0.006 345); --text-2:oklch(0.78 0.045 345); --text-3:oklch(0.55 0.055 345);
-  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px; --sp-7:48px; --r-sm:8px; --r-md:12px; --r-lg:16px; --ease:cubic-bezier(0.22,1,0.36,1);
-}
-html,body { width:100%; height:100%; background:var(--bg-0); color:var(--text-1); overflow:hidden; user-select:none; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; font-size:13px; -webkit-font-smoothing:antialiased; }
-input,textarea { user-select:text; }
-button { font:inherit; color:inherit; }
-button,.nav,.connect-btn,.win-btn,.toggle,.srv-row,.rule-row,.mode-card,.seg button,.zap-card,.choice,.dd-trigger,.dd-item { cursor:pointer; }
-button:focus-visible,input:focus-visible,textarea:focus-visible,[role="button"]:focus-visible { outline:2px solid var(--purple-h); outline-offset:2px; }
-button:disabled,[aria-disabled="true"] { cursor:not-allowed; opacity:.55; }
-#aurora { position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
-.blob { position:absolute; border-radius:50%; filter:blur(100px); opacity:0.42; will-change:transform; }
-.blob.b1 { width:620px; height:620px; left:-180px; top:-240px; background:radial-gradient(circle, oklch(0.5 0.2 340 / 0.9), transparent 70%); animation:drift1 24s ease-in-out infinite; }
-.blob.b2 { width:520px; height:520px; right:-140px; top:-100px; background:radial-gradient(circle, oklch(0.5 0.18 300 / 0.85), transparent 70%); animation:drift2 28s ease-in-out infinite; }
-.blob.b3 { width:600px; height:600px; left:24%; bottom:-280px; background:radial-gradient(circle, oklch(0.45 0.18 12 / 0.75), transparent 70%); animation:drift3 32s ease-in-out infinite; }
-@keyframes drift1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(70px,50px)} }
-@keyframes drift2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-60px,40px)} }
-@keyframes drift3 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(50px,-60px)} }
-body.no-anim .blob { animation:none !important; }
-#petals { position:fixed; inset:0; z-index:2; pointer-events:none; overflow:hidden; }
-.petal { position:absolute; top:-24px; width:12px; height:12px; opacity:0.5; background:radial-gradient(circle at 30% 30%, oklch(0.82 0.13 350), oklch(0.6 0.16 340)); border-radius:12px 1px 12px 1px; }
-@keyframes fall { to { transform:translateY(102vh) rotate(520deg); } }
-#vignette { position:fixed; inset:0; z-index:1; pointer-events:none; background:radial-gradient(ellipse 115% 115% at 50% 42%, transparent 35%, oklch(0.08 0.02 345 / 0.72) 100%); }
-.shell { position:relative; z-index:10; display:flex; flex-direction:column; width:100%; height:100vh; }
-.titlebar { height:42px; flex-shrink:0; display:flex; align-items:center; padding:0 0 0 var(--sp-4); gap:10px; -webkit-app-region:drag; z-index:200; }
-.tb-logo { width:20px; height:20px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(145deg,var(--magenta),var(--red)); box-shadow:0 2px 8px oklch(0.5 0.2 340 / 0.4); }
-.tb-logo svg { width:13px; height:13px; }
-.tb-name { font-size:12px; font-weight:700; }
-.tb-dot { width:6px; height:6px; border-radius:50%; background:var(--text-3); transition:all .3s; margin-left:6px; }
-.tb-dot.on { background:var(--green); box-shadow:0 0 8px var(--green); }
-.tb-state { font-size:11px; color:var(--text-3); }
-.tb-state.on { color:var(--green); }
-.tb-spacer { flex:1; }
-.tb-ver { font-size:10px; color:var(--text-3); opacity:0.5; margin-right:6px; }
-.win-btns { display:flex; -webkit-app-region:no-drag; }
-.win-btn { width:44px; height:42px; display:flex; align-items:center; justify-content:center; color:var(--text-3); transition:background .15s,color .15s; border:0; background:none; }
-.win-btn:hover { background:oklch(0.3 0.04 345 / 0.5); color:var(--text-1); }
-.win-btn.cls:hover { background:var(--danger); color:#fff; }
-.win-btn svg { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.4; stroke-linecap:round; }
-.body { display:flex; flex:1; min-height:0; }
-.sidebar { width:62px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; padding:var(--sp-2) 0 var(--sp-4); gap:6px; -webkit-app-region:no-drag; }
-.sb-mark { width:38px; height:38px; border-radius:12px; margin-bottom:var(--sp-2); display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(145deg,var(--magenta),var(--red)); box-shadow:0 6px 18px oklch(0.5 0.2 340 / 0.4), inset 0 1px 1px oklch(1 0 0 / 0.15); }
-.sb-mark svg { width:20px; height:20px; }
-.nav { width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--text-3); position:relative; transition:color .2s var(--ease),background .2s var(--ease); }
-.nav svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
-.nav:hover { color:var(--text-1); background:oklch(0.3 0.05 345 / 0.4); }
-.nav.on { color:var(--purple-h); background:linear-gradient(145deg, oklch(0.32 0.10 300 / 0.6), oklch(0.24 0.06 300 / 0.4)); box-shadow:inset 0 0 0 1px var(--border-2), 0 4px 14px oklch(0.4 0.12 300 / 0.3); }
-.nav.on::before { content:''; position:absolute; left:-8px; top:11px; bottom:11px; width:3px; border-radius:0 3px 3px 0; background:var(--purple-h); box-shadow:0 0 10px var(--purple-h); }
-.nav.zap { margin-top:auto; }
-.sb-avatar { width:36px; height:36px; border-radius:50%; margin-top:6px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; color:#fff; background:linear-gradient(145deg,var(--purple),var(--magenta)); }
-.main { flex:1; min-width:0; display:flex; flex-direction:column; padding:0 var(--sp-5) var(--sp-4) var(--sp-2); }
-.pages { position:relative; flex:1; min-height:0; }
-.page { position:absolute; inset:0; display:none; flex-direction:column; }
-.page.active { display:flex; animation:pageIn .38s var(--ease); }
-@keyframes pageIn { from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none} }
-.page-head { flex-shrink:0; display:flex; align-items:flex-end; justify-content:space-between; padding:var(--sp-2) 0 var(--sp-4); }
-.page-title { font-size:24px; font-weight:700; letter-spacing:-0.02em; }
-.page-sub { font-size:12px; color:var(--text-3); margin-top:2px; }
-.head-state { font-size:11px; color:var(--text-3); }
-.head-state.on { color:var(--green); }
-.scroll { flex:1; overflow-y:auto; padding-right:6px; }
-.scroll::-webkit-scrollbar { width:6px; }
-.scroll::-webkit-scrollbar-thumb { background:var(--border-2); border-radius:6px; }
-.glass { background:var(--surface-1); border:1px solid var(--border-1); border-radius:var(--r-lg); backdrop-filter:blur(22px) saturate(1.2); -webkit-backdrop-filter:blur(22px) saturate(1.2); }
-.sec { margin:var(--sp-5) 0 var(--sp-3); }
-.sec:first-child { margin-top:0; }
-.sec-lbl { font-size:11px; font-weight:700; letter-spacing:0.28em; text-transform:uppercase; color:var(--text-3); padding-bottom:8px; }
-.sec-line { height:1px; background:linear-gradient(to right, var(--red), oklch(0.4 0.12 340 / 0.15) 60%, transparent); }
-.proto-badge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:0.1em; padding:3px 10px; border-radius:6px; margin-bottom:var(--sp-3); }
-.proto-badge.vless { background:oklch(0.5 0.16 330 / 0.2); color:var(--magenta-h); }
-.proto-badge.wg { background:oklch(0.6 0.12 235 / 0.2); color:var(--wg); }
-.proto-badge.awg { background:oklch(0.6 0.14 55 / 0.2); color:var(--awg); }
-#page-home { align-items:center; justify-content:center; }
-.home-wrap { display:flex; flex-direction:column; align-items:center; width:100%; max-width:540px; max-height:100%; overflow-y:auto; padding:6px; }
-.home-wrap::-webkit-scrollbar { width:4px; }
-.home-wrap::-webkit-scrollbar-thumb { background:var(--border-2); border-radius:4px; }
-.power-wrap { position:relative; width:176px; height:176px; flex:0 0 176px; aspect-ratio:1; margin-bottom:var(--sp-4); }
-.power-ring { position:absolute; inset:0; border-radius:50%; border:1px solid var(--border-1); }
-.power-ring.r2 { inset:14px; border-color:oklch(0.4 0.06 345 / 0.2); }
-.power-arc { position:absolute; inset:-4px; border-radius:50%; opacity:0; transition:opacity .4s var(--ease); background:conic-gradient(from 0deg, transparent 0%, var(--purple-h) 25%, transparent 45%); -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px)); mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px)); }
-.power-arc.spin { opacity:1; animation:spin 1.3s linear infinite; }
-@keyframes spin { to { transform:rotate(360deg); } }
-.connect-btn { position:absolute; inset:24px; border-radius:50%; border:2px solid var(--border-2); background:radial-gradient(circle at 38% 30%, oklch(0.28 0.05 340 / 0.9), oklch(0.15 0.03 340 / 0.95)); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; transition:all .4s var(--ease); box-shadow:0 10px 40px oklch(0.4 0.1 340 / 0.3), inset 0 0 30px oklch(0.3 0.08 340 / 0.2); }
-.connect-btn svg { width:32px; height:32px; fill:none; stroke:var(--text-2); stroke-width:2; stroke-linecap:round; transition:stroke .3s; }
-.connect-btn .power-lbl { font-size:10px; font-weight:700; letter-spacing:0.15em; text-transform:uppercase; color:var(--text-3); transition:color .3s; }
-.connect-btn:hover { border-color:var(--purple-h); transform:scale(1.02); }
-.connect-btn.connecting { border-color:var(--purple-h); }
-.connect-btn.on { border-color:var(--red); background:radial-gradient(circle at 38% 30%, oklch(0.45 0.18 12), oklch(0.28 0.14 10)); box-shadow:0 12px 50px oklch(0.5 0.2 10 / 0.5), inset 0 0 30px oklch(0.5 0.18 10 / 0.3); }
-.connect-btn.on svg { stroke:#fff; }
-.connect-btn.on .power-lbl { color:oklch(1 0 0 / 0.85); }
-.status-title { font-size:20px; font-weight:700; margin-bottom:2px; }
-.status-title.on { color:var(--red-h); }
-.status-desc { font-size:12px; color:var(--text-3); margin-bottom:var(--sp-5); }
-.home-cards { display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-3); width:100%; }
-.hc { padding:14px 16px; }
-.hc-lbl { font-size:9px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-3); }
-.hc-val { font-size:16px; font-weight:700; margin-top:6px; }
-.hc-action { float:right; font-size:11px; font-weight:600; color:var(--magenta-h); border:0; background:none; }
-.hc-action:hover { color:var(--magenta); }
-.home-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:var(--sp-3); width:100%; margin-top:var(--sp-3); }
-.stat { padding:14px 8px; text-align:center; }
-.stat-val { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
-.stat-lbl { font-size:9px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-3); margin-top:4px; }
-.stat-val.up { color:var(--magenta-h); } .stat-val.down { color:var(--wg); }
-.ip-card { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; margin-top:var(--sp-3); width:100%; cursor:pointer; text-align:left; }
-.ip-lbl { font-size:9px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-3); }
-.ip-val { font-size:15px; font-weight:600; font-family:ui-monospace,Consolas,monospace; margin-top:4px; }
-.ip-note { font-size:11px; color:var(--text-3); }
-.home-toggles { display:grid; grid-template-columns:repeat(3,1fr); gap:var(--sp-3); width:100%; margin-top:var(--sp-3); }
-.htg { display:flex; align-items:center; justify-content:center; gap:8px; padding:12px; font-size:12px; font-weight:600; color:var(--text-2); }
-.htg.on { color:var(--purple-h); border-color:var(--border-2); box-shadow:inset 0 0 0 1px var(--border-2), 0 4px 14px oklch(0.4 0.1 300 / 0.25); }
-.control-row { display:flex; gap:var(--sp-2); margin-bottom:var(--sp-3); flex-shrink:0; }
-.search { flex:1; display:flex; align-items:center; gap:10px; padding:0 14px; }
-.search svg { width:15px; height:15px; fill:none; stroke:var(--text-3); stroke-width:1.8; flex-shrink:0; }
-.search input { flex:1; background:none; border:none; outline:none; color:var(--text-1); font-size:13px; padding:11px 0; }
-.search input::placeholder { color:var(--text-3); }
-.icon-btn { width:42px; display:flex; align-items:center; justify-content:center; padding:0; background:var(--surface-1); border:1px solid var(--border-1); border-radius:var(--r-md); color:var(--text-2); backdrop-filter:blur(20px); transition:all .2s var(--ease); flex-shrink:0; }
-.icon-btn svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; }
-.icon-btn:hover { color:var(--text-1); border-color:var(--border-2); }
-.icon-btn.scanning { color:var(--yellow); border-color:oklch(0.7 0.12 90 / 0.4); }
-.icon-btn.scanning svg { animation:spin 1s linear infinite; }
-/* Custom dropdown (replaces native select — kills the arrow/checkmark artifact) */
-.dd { position:relative; flex-shrink:0; }
-.dd-trigger { height:42px; padding:0 12px; display:flex; align-items:center; gap:8px; background:oklch(0.18 0.02 345 / 0.92); border:1px solid var(--border-1); border-radius:var(--r-md); color:var(--text-2); font-size:12px; font-weight:600; white-space:nowrap; }
-.dd-trigger:hover { border-color:var(--border-2); color:var(--text-1); }
-.dd-caret { width:12px; height:12px; fill:none; stroke:var(--magenta-h); stroke-width:1.8; stroke-linecap:round; transition:transform .2s var(--ease); }
-.dd.open .dd-caret { transform:rotate(180deg); }
-.dd-menu { position:absolute; top:calc(100% + 6px); right:0; min-width:100%; background:oklch(0.19 0.03 345 / 0.98); border:1px solid var(--border-2); border-radius:var(--r-md); padding:5px; z-index:120; box-shadow:0 12px 34px oklch(0.08 0.02 345 / 0.6); display:none; backdrop-filter:blur(24px); }
-.dd.open .dd-menu { display:block; animation:pageIn .16s var(--ease); }
-.dd-item { width:100%; padding:8px 12px; border:0; background:none; border-radius:8px; font-size:12px; font-weight:600; color:var(--text-2); display:flex; align-items:center; justify-content:space-between; gap:16px; white-space:nowrap; }
-.dd-item:hover { background:oklch(0.3 0.05 345 / 0.6); color:var(--text-1); }
-.dd-item.on { color:var(--magenta-h); }
-.dd-item .tick { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; opacity:0; }
-.dd-item.on .tick { opacity:1; }
-.srv-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:var(--sp-2); }
-.srv-row { display:flex; align-items:center; gap:12px; padding:12px 14px; transition:all .18s var(--ease); }
-.srv-row:hover { border-color:var(--border-2); background:var(--surface-2); }
-.srv-row.sel { border-color:var(--red); box-shadow:0 0 0 1px var(--red), 0 4px 18px oklch(0.5 0.2 10 / 0.25); background:linear-gradient(145deg, oklch(0.28 0.08 10 / 0.4), var(--surface-1)); }
-.flag-code { width:30px; height:22px; border-radius:5px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; letter-spacing:0.04em; font-family:ui-monospace,Consolas,monospace; color:var(--text-2); background:oklch(0.24 0.04 345 / 0.8); border:1px solid var(--border-1); overflow:hidden; box-shadow:0 2px 7px oklch(0.08 0.02 345 / .35); }
-.flag-code img { width:100%; height:100%; object-fit:cover; display:block; }
-.srv-meta { flex:1; min-width:0; }
-.srv-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.srv-proto { font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.06em; margin-top:1px; }
-.srv-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-.awg-tag { font-size:9px; font-weight:700; padding:2px 6px; border-radius:5px; background:oklch(0.6 0.14 55 / 0.18); color:var(--awg); }
-.mini-btn { width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px; color:var(--text-3); border:none; background:none; padding:0; transition:all .15s; }
-.mini-btn svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
-.mini-btn:hover { color:var(--text-1); background:oklch(0.3 0.05 345 / 0.5); }
-.mini-btn.del:hover { color:var(--danger); background:oklch(0.35 0.14 22 / 0.4); }
-.mini-btn.star.on { color:var(--yellow); }
-.ping { font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; padding:3px 8px; border-radius:6px; min-width:50px; text-align:center; }
-.ping.green { background:oklch(0.7 0.14 155 / 0.15); color:var(--green); }
-.ping.yellow { background:oklch(0.75 0.12 90 / 0.15); color:var(--yellow); }
-.ping.red { background:oklch(0.6 0.18 20 / 0.15); color:var(--danger); }
-.ping.dim { background:oklch(0.4 0.04 345 / 0.2); color:var(--text-3); }
-.add-box { padding:16px; margin-bottom:var(--sp-3); }
-.field { display:flex; gap:var(--sp-2); }
-.inp { flex:1; background:oklch(0.14 0.02 345 / 0.7); border:1px solid var(--border-1); border-radius:var(--r-md); padding:11px 14px; color:var(--text-1); font-size:12px; outline:none; transition:border .2s; font-family:ui-monospace,Consolas,monospace; }
-.inp:focus { border-color:var(--purple-h); }
-.inp::placeholder { color:var(--text-3); font-family:-apple-system,"Segoe UI",sans-serif; }
-.inp.compact { flex:0 0 auto; width:130px; text-align:center; }
-.inp.wide { flex:0 0 auto; width:300px; text-align:left; }
-textarea.inp { resize:vertical; min-height:96px; width:100%; line-height:1.6; }
-.btn { padding:11px 18px; border:none; border-radius:var(--r-md); font-size:12px; font-weight:700; transition:all .2s var(--ease); white-space:nowrap; display:inline-flex; align-items:center; gap:8px; }
-.btn svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; }
-.btn-primary { color:#fff; background:linear-gradient(135deg,var(--purple),var(--magenta)); box-shadow:0 6px 18px oklch(0.5 0.2 320 / 0.35); }
-.btn-primary:hover { filter:brightness(1.08); transform:translateY(-1px); }
-.btn-wg { color:#fff; background:linear-gradient(135deg, oklch(0.5 0.14 235), oklch(0.6 0.14 250)); }
-.btn-ghost { background:var(--surface-2); color:var(--text-2); border:1px solid var(--border-1); }
-.btn-ghost:hover { color:var(--text-1); border-color:var(--border-2); }
-.btn-danger { background:oklch(0.35 0.14 22 / 0.6); color:var(--danger); border:1px solid oklch(0.5 0.16 22 / 0.4); }
-.btn-zap { width:100%; justify-content:center; color:#fff; background:linear-gradient(135deg, oklch(0.5 0.15 155), var(--green)); margin-top:var(--sp-2); }
-.btn-zap.running { background:oklch(0.4 0.14 22 / 0.6); color:var(--danger); border:1px solid oklch(0.5 0.16 22 / 0.4); }
-.notice { padding:11px 14px; border-radius:var(--r-md); font-size:11px; line-height:1.6; margin-bottom:var(--sp-3); background:oklch(0.5 0.12 55 / 0.1); border:1px solid oklch(0.55 0.13 55 / 0.28); color:var(--awg); }
-/* Routing: centered 3 cards, purple/magenta + green + red (restored) */
-.mode-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:var(--sp-3); margin-bottom:var(--sp-3); flex-shrink:0; }
-.mode-card { padding:18px 14px; text-align:center; transition:all .22s var(--ease); }
-.mode-icon { width:46px; height:46px; border-radius:14px; margin:0 auto 12px; display:flex; align-items:center; justify-content:center; font-size:20px; background:oklch(0.3 0.06 345 / 0.5); }
-.mode-t { font-size:14px; font-weight:700; }
-.mode-d { font-size:11px; color:var(--text-3); margin-top:4px; line-height:1.45; }
-.mode-card.active { border-color:var(--purple-h); box-shadow:0 0 0 1px var(--purple-h), 0 6px 22px oklch(0.5 0.14 300 / 0.28); }
-.mode-card.active .mode-icon { background:linear-gradient(135deg,var(--purple),var(--magenta)); }
-.mode-card.active .mode-t { color:var(--purple-h); }
-.mode-card.active.wl { border-color:var(--green); box-shadow:0 0 0 1px var(--green), 0 6px 22px oklch(0.6 0.14 155 / 0.22); }
-.mode-card.active.wl .mode-icon { background:linear-gradient(135deg, oklch(0.55 0.15 155), var(--green)); }
-.mode-card.active.wl .mode-t { color:var(--green); }
-.mode-card.active.bl { border-color:var(--danger); box-shadow:0 0 0 1px var(--danger), 0 6px 22px oklch(0.6 0.16 22 / 0.22); }
-.mode-card.active.bl .mode-icon { background:linear-gradient(135deg, oklch(0.5 0.16 22), var(--danger)); }
-.mode-card.active.bl .mode-t { color:var(--danger); }
-.preset-card { display:flex; align-items:center; gap:14px; padding:14px 18px; margin-bottom:var(--sp-3); }
-.preset-ico { width:44px; height:44px; border-radius:var(--r-md); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:20px; background:linear-gradient(135deg,var(--purple),var(--magenta)); color:#fff; }
-.preset-t { font-size:14px; font-weight:700; }
-.preset-d { font-size:11px; color:var(--text-3); margin-top:2px; }
-.rules-bar { display:flex; align-items:center; gap:10px; margin-bottom:var(--sp-3); }
-.rules-title { font-size:14px; font-weight:700; }
-.rules-count { font-size:11px; font-weight:700; color:var(--magenta-h); background:oklch(0.4 0.10 320 / 0.3); border:1px solid var(--border-2); border-radius:20px; padding:2px 10px; }
-.rule-row { display:flex; align-items:center; gap:12px; padding:11px 14px; margin-bottom:6px; }
-.rule-ico { width:34px; height:34px; border-radius:10px; background:oklch(0.28 0.04 345 / 0.5); flex-shrink:0; display:flex; align-items:center; justify-content:center; color:var(--text-2); font-size:15px; }
-.rule-meta { flex:1; min-width:0; }
-.rule-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.rule-type { font-size:10px; color:var(--text-3); }
-.rule-badge { font-size:10px; font-weight:700; color:var(--green); padding:3px 9px; border-radius:999px; background:oklch(0.7 0.14 155 / 0.14); }
-.rule-badge.direct { color:var(--yellow); background:oklch(0.75 0.12 90 / 0.14); }
-.rule-badge.off { color:var(--text-3); background:oklch(0.4 0.04 345 / 0.2); }
-.toggle { width:42px; height:24px; padding:0; border-radius:14px; background:oklch(0.3 0.03 345 / 0.7); position:relative; flex-shrink:0; transition:background .25s var(--ease); border:1px solid var(--border-1); }
-.toggle::after { content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:var(--text-2); transition:transform .25s var(--ease), background .25s; }
-.toggle.on { background:linear-gradient(135deg,var(--green), oklch(0.7 0.13 165)); border-color:transparent; }
-.toggle.on::after { transform:translateX(18px); background:#fff; }
-.zap-status { display:flex; align-items:center; gap:14px; padding:16px 18px; margin-bottom:var(--sp-3); }
-.zap-dot { width:12px; height:12px; border-radius:50%; background:var(--text-3); flex-shrink:0; transition:all .3s; }
-.zap-status.on .zap-dot { background:var(--green); box-shadow:0 0 10px var(--green); }
-.zap-t { font-size:14px; font-weight:700; }
-.zap-d { font-size:11px; color:var(--text-3); margin-top:2px; }
-.zap-info { padding:12px 16px; border-radius:var(--r-md); font-size:11px; line-height:1.8; margin-bottom:var(--sp-3); background:oklch(0.5 0.12 155 / 0.08); border:1px solid oklch(0.55 0.12 155 / 0.22); color:var(--text-2); }
-.zap-info b { color:var(--green); }
-.zap-card { display:flex; align-items:center; gap:14px; padding:14px 16px; margin-bottom:8px; transition:all .2s var(--ease); }
-.zap-card.sel { border-color:var(--green); box-shadow:0 0 0 1px var(--green); }
-.zap-ico { width:38px; height:38px; border-radius:var(--r-md); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:18px; background:oklch(0.3 0.06 345 / 0.5); }
-.zap-name { font-size:13px; font-weight:700; }
-.zap-sub { font-size:11px; color:var(--text-3); margin-top:2px; }
-.zap-tags { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
-.zap-tag { font-size:9px; font-weight:700; padding:2px 6px; border-radius:5px; background:oklch(0.42 0.12 300 / 0.25); color:var(--text-2); }
-.zap-radio { width:18px; height:18px; border-radius:50%; border:2px solid var(--border-2); flex-shrink:0; margin-left:auto; display:flex; align-items:center; justify-content:center; }
-.zap-card.sel .zap-radio::after { content:''; width:8px; height:8px; border-radius:50%; background:var(--green); }
-.set-row { display:flex; align-items:center; gap:14px; padding:14px 18px; margin-bottom:6px; }
-.set-row.dd-open { position:relative; z-index:160; }
-.set-meta { flex:1; min-width:0; }
-.set-name { font-size:13px; font-weight:600; }
-.set-desc { font-size:11px; color:var(--text-3); margin-top:2px; }
-.seg { display:flex; gap:6px; flex-shrink:0; }
-.seg button { min-width:44px; padding:6px 12px; border-radius:10px; background:oklch(0.22 0.03 345 / 0.75); border:1px solid var(--border-1); color:var(--text-2); font-size:12px; font-weight:600; }
-.seg button.on { background:linear-gradient(135deg,var(--purple),var(--magenta)); color:#fff; border-color:transparent; }
-.stat-inline { display:flex; gap:14px; flex-shrink:0; font-variant-numeric:tabular-nums; }
-.stat-inline span { font-size:12px; font-weight:600; color:var(--text-2); white-space:nowrap; }
-.stat-inline .u { color:var(--magenta-h); } .stat-inline .d { color:var(--wg); }
-.about-row { display:flex; align-items:center; justify-content:space-between; padding:12px 18px; }
-.about-row + .about-row { border-top:1px solid var(--border-1); }
-.about-k { font-size:12px; color:var(--magenta-h); }
-.about-v { font-size:12px; font-weight:600; font-family:ui-monospace,Consolas,monospace; }
-.about-foot { text-align:right; font-size:10px; color:var(--text-3); margin-top:8px; }
-.log-body { flex:1; overflow-y:auto; font-family:ui-monospace,Consolas,monospace; font-size:12px; line-height:1.9; padding:16px 18px; }
-.log-line { display:flex; gap:10px; }
-.log-line .t { color:var(--text-3); flex-shrink:0; }
-.log-line.ok .m { color:var(--green); } .log-line.err .m { color:var(--danger); } .log-line.warn .m { color:var(--yellow); } .log-line.info .m,.log-line.log .m { color:var(--text-2); }
-.empty { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:var(--sp-7) var(--sp-4); text-align:center; color:var(--text-3); }
-.empty b { font-size:14px; color:var(--text-2); font-weight:600; margin-bottom:4px; }
-.empty p { font-size:12px; max-width:38ch; line-height:1.6; }
-#toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px); z-index:500; padding:12px 20px; border-radius:var(--r-md); font-size:13px; font-weight:600; opacity:0; pointer-events:none; transition:all .3s var(--ease); background:var(--surface-3); border:1px solid var(--border-2); backdrop-filter:blur(24px); }
-#toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
-#toast.err { border-color:var(--danger); color:var(--danger); }
-#toast.ok { border-color:var(--green); color:var(--green); }
-.modal-backdrop { position:fixed; inset:0; z-index:700; display:none; align-items:center; justify-content:center; padding:18px; background:oklch(0.06 0.018 345 / .78); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
-.modal-backdrop.open { display:flex; animation:modalFade .18s var(--ease); }
-.modal-backdrop.process-layer { z-index:740; }
-.modal-card { width:min(500px,100%); max-height:calc(100vh - 36px); overflow:auto; padding:24px; border:1px solid var(--border-2); border-radius:22px; background:oklch(0.16 0.035 345 / .98); box-shadow:0 24px 80px oklch(0.04 0.025 345 / .72); }
-.modal-card::-webkit-scrollbar,.process-list::-webkit-scrollbar { width:6px; }
-.modal-card::-webkit-scrollbar-thumb,.process-list::-webkit-scrollbar-thumb { background:var(--border-2); border-radius:8px; }
-.modal-head { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
-.modal-icon { width:42px; height:42px; border-radius:13px; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(145deg,var(--purple),var(--magenta)); box-shadow:0 7px 20px oklch(0.5 0.18 320 / .35); }
-.modal-icon svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
-.modal-title { font-size:21px; font-weight:750; letter-spacing:-.02em; }
-.modal-sub { color:var(--text-3); font-size:11px; margin-top:2px; }
-.modal-close { margin-left:auto; width:36px; height:36px; border:0; border-radius:10px; background:transparent; color:var(--text-3); font-size:24px; line-height:1; }
-.modal-close:hover { color:var(--text-1); background:var(--surface-2); }
-.form-block { margin-top:16px; }
-.form-label { display:block; margin-bottom:7px; color:var(--text-2); font-size:11px; font-weight:700; }
-.form-hint { margin-top:7px; color:var(--text-3); font-size:11px; line-height:1.5; }
-.rule-value { display:flex; gap:8px; }
-.rule-value .inp { min-width:0; }
-.rule-mode { display:flex; align-items:center; gap:12px; margin-top:18px; padding:13px 15px; border:1px solid var(--border-1); border-radius:var(--r-md); background:var(--surface-1); }
-.rule-mode-icon { width:32px; height:32px; border-radius:10px; display:flex; align-items:center; justify-content:center; color:var(--purple-h); background:oklch(0.45 0.15 300 / .18); }
-.rule-mode-meta { flex:1; min-width:0; }
-.rule-mode-title { font-size:12px; font-weight:700; }
-.rule-mode-desc { color:var(--text-3); font-size:10px; margin-top:2px; }
-.rule-mode-action { color:var(--magenta-h); font-size:11px; font-weight:700; white-space:nowrap; }
-.modal-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:22px; }
-.modal-actions .btn { justify-content:center; }
-.process-card { width:min(560px,100%); }
-.process-search { display:flex; align-items:center; gap:10px; margin-bottom:14px; padding:0 13px; border:1px solid var(--border-1); border-radius:var(--r-md); background:oklch(0.13 0.025 345 / .8); }
-.process-search svg { width:16px; height:16px; flex-shrink:0; fill:none; stroke:var(--text-3); stroke-width:1.8; }
-.process-search input { width:100%; padding:12px 0; border:0; outline:0; color:var(--text-1); background:transparent; }
-.process-search input::placeholder { color:var(--text-3); }
-.process-list { max-height:min(440px,58vh); overflow-y:auto; padding-right:5px; }
-.process-row { width:100%; display:flex; align-items:center; gap:12px; padding:10px 11px; border:0; border-radius:12px; color:var(--text-1); background:transparent; text-align:left; }
-.process-row:hover,.process-row:focus-visible { background:var(--surface-2); }
-.process-ico { width:34px; height:34px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:10px; color:var(--magenta-h); background:oklch(0.36 0.08 340 / .42); }
-.process-ico svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.8; }
-.process-name { overflow:hidden; font-size:13px; font-weight:650; text-overflow:ellipsis; white-space:nowrap; }
-.process-state { padding:28px 12px; color:var(--text-3); text-align:center; font-size:12px; }
-body.modal-open { overflow:hidden; }
-@keyframes modalFade { from{opacity:0} to{opacity:1} }
-.notify-stack { position:fixed; top:52px; right:16px; z-index:600; display:flex; flex-direction:column; gap:10px; width:340px; pointer-events:none; }
-.notify { pointer-events:auto; background:var(--surface-3); border:1px solid var(--border-2); border-radius:var(--r-lg); padding:14px 16px; backdrop-filter:blur(24px); animation:noteIn .24s var(--ease); box-shadow:0 10px 30px oklch(0.1 0.02 345 / 0.45); }
-.notify.warn { border-color:oklch(0.75 0.12 90 / 0.5); } .notify.err { border-color:oklch(0.6 0.18 22 / 0.45); } .notify.ok { border-color:oklch(0.65 0.14 155 / 0.45); }
-.notify-top { display:flex; align-items:center; gap:10px; margin-bottom:5px; }
-.notify-ico { width:24px; height:24px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:14px; background:oklch(0.3 0.05 345 / 0.6); }
-.notify-t { font-size:13px; font-weight:700; }
-.notify-d { font-size:11px; color:var(--text-2); line-height:1.5; }
-@keyframes noteIn { from{opacity:0; transform:translateY(-8px) scale(.98)} to{opacity:1; transform:none} }
-.hidden { display:none !important; }
-@media (max-height:560px) {
-  .status-desc { margin-bottom:12px; }
-  .hc,.stat,.ip-card { padding-top:9px; padding-bottom:9px; }
-}
-@media (max-width:800px) {
-  .srv-grid { grid-template-columns:1fr; }
-  .mode-card { padding:12px 8px; }
-  .inp.wide { width:220px; }
-}
-@media (prefers-reduced-motion:reduce) {
-  *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
-  #petals { display:none; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/legacy.css">
+<link rel="stylesheet" href="/static/css/redesign.css">
+<link rel="stylesheet" href="/static/css/glass.css">
+<link rel="stylesheet" href="/static/css/subscriptions.css">
+<link rel="stylesheet" href="/static/css/server-groups.css">
+<link rel="stylesheet" href="/static/css/route-details.css">
 </head>
 <body>
+<div id="customWallpaper" aria-hidden="true"></div>
 <div id="aurora"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
 <div id="vignette"></div><div id="petals"></div><div class="notify-stack" id="notifyStack"></div>
 <div class="shell">
   <div class="titlebar pywebview-drag-region"><div class="tb-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 16a4 4 0 010-8 5 5 0 019.6-1.5A3.5 3.5 0 0117 16z"/></svg></div><span class="tb-name">Sadness VPN</span><span class="tb-dot" id="tbDot"></span><span class="tb-state" id="tbState">Подключение к приложению…</span><div class="tb-spacer"></div><span class="tb-ver" id="tbVer">v…</span><div class="win-btns" onmousedown="event.stopPropagation()"><button type="button" class="win-btn" aria-label="Свернуть окно" onclick="winMin()"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button><button type="button" class="win-btn" aria-label="Развернуть окно" onclick="winMax()"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button><button type="button" class="win-btn cls" aria-label="Закрыть окно" onclick="winClose()"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button></div></div>
-  <div class="body"><div class="sidebar"><div class="sb-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 16a4 4 0 010-8 5 5 0 019.6-1.5A3.5 3.5 0 0117 16z"/></svg></div><div class="nav on" data-page="home"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9"/></svg></div><div class="nav" data-page="servers"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg></div><div class="nav" data-page="wg"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></div><div class="nav" data-page="routing"><svg viewBox="0 0 24 24"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg></div><div class="nav" data-page="logs"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div><div class="nav" data-page="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></div><div class="nav zap" data-page="zapret"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></div><div class="sb-avatar">S</div></div>
+  <div class="body"><nav class="sidebar" aria-label="Основная навигация"><div class="sidebar-brand"><span class="brand-mark">S</span><div>Sadness<span>PRIVATE NETWORK</span></div></div>
+    <div class="sidebar-caption">Приложение</div>
+    <button type="button" class="nav on" data-page="home" aria-label="Главная"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9"/></svg><span>Главная</span></button>
+    <button type="button" class="nav" data-page="servers" aria-label="Серверы"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg><span>Серверы</span></button>
+    <button type="button" class="nav" data-page="subscriptions" aria-label="Подписки"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M7 14h4M7 17h7"/></svg><span>Подписки</span></button>
+    <button type="button" class="nav" data-page="wg" aria-label="WireGuard"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>WireGuard</span></button>
+    <button type="button" class="nav" data-page="routing" aria-label="Маршрутизация"><svg viewBox="0 0 24 24"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg><span>Маршруты</span></button>
+    <button type="button" class="nav" data-page="settings" aria-label="Настройки"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Настройки</span></button>
+    <div class="sidebar-caption sidebar-caption-bottom">Инструменты</div>
+    <button type="button" class="nav zap" data-page="zapret" aria-label="Zapret"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg><span>Zapret DPI</span></button>
+    <button type="button" class="sidebar-profile" aria-label="Открыть настройки профиля" onclick="go('settings')"><span class="sb-avatar" id="sidebarAvatar"><span>S</span></span></button>
+  </nav>
   <div class="main"><div class="pages">
-    <div class="page active" id="page-home"><div class="home-wrap"><div class="proto-badge vless" id="protoBadge">VLESS</div><div class="power-wrap"><div class="power-ring"></div><div class="power-ring r2"></div><div class="power-arc" id="powerArc"></div><button class="connect-btn" id="connectBtn" aria-label="Подключить или отключить VPN" onclick="toggleConnect()"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.5 7a8 8 0 1011 0"/></svg><span class="power-lbl" id="powerLbl">Подключить</span></button></div><div class="status-title" id="statusTitle">Не защищено</div><div class="status-desc" id="statusDesc">Нажмите, чтобы включить защиту</div><div class="home-cards"><div class="hc glass"><button type="button" class="hc-action" onclick="go('servers')">сменить</button><div class="hc-lbl">Сервер</div><div class="hc-val" id="hcServer">Не выбран</div></div><div class="hc glass"><button type="button" class="hc-action" onclick="go('routing')">настроить</button><div class="hc-lbl">Режим</div><div class="hc-val" id="hcMode">Весь ПК</div></div></div><div class="home-stats"><div class="stat glass"><div class="stat-val down" id="stDown">0.0</div><div class="stat-lbl">↓ Мбит/с</div></div><div class="stat glass"><div class="stat-val up" id="stUp">0.0</div><div class="stat-lbl">↑ Мбит/с</div></div><div class="stat glass"><div class="stat-val" id="stSession">00:00</div><div class="stat-lbl">сессия</div></div></div><button type="button" class="ip-card glass" onclick="refreshPublicIp()"><div><div class="ip-lbl">Внешний IP-адрес</div><div class="ip-val" id="ipVal">Нажмите для проверки</div></div><div class="ip-note" id="ipNote">Запрос выполняется только по нажатию</div></button><div class="home-toggles"><button type="button" class="htg glass on" id="tgTun" onclick="setProto('vless')">TUN</button><button type="button" class="htg glass" id="tgWg" onclick="setProto('wg')">WG</button><button type="button" class="htg glass" id="tgSecureDns" onclick="toggleSecureDns()">DNS-защита</button></div></div></div>
+    <div class="page active" id="page-home">
+      <div class="home-heading"><div><div class="eyebrow">SADNESS PRIVATE NETWORK</div><h1>Твоя сеть. Твой контроль.</h1><p>Безопасное подключение начинается здесь</p></div><span class="proto-badge vless" id="protoBadge">VLESS</span></div>
+      <div class="home-wrap">
+        <section class="connection-hero glass">
+          <div class="hero-orbit" aria-hidden="true"></div>
+          <div class="power-wrap"><div class="power-ring"></div><div class="power-ring r2"></div><div class="power-arc" id="powerArc"></div><button class="connect-btn" id="connectBtn" aria-label="Подключить или отключить VPN" onclick="toggleConnect()"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.5 7a8 8 0 1011 0"/></svg><span class="power-lbl" id="powerLbl">Подключить</span></button></div>
+          <div class="status-title" id="statusTitle">Не защищено</div><div class="status-desc" id="statusDesc">Нажмите, чтобы включить защиту</div>
+          <div class="hero-footnote"><span></span>Личный туннель · полный контроль</div>
+        </section>
+        <div class="home-cards">
+          <div class="hc glass hc-server"><button type="button" class="hc-action" onclick="go(ST.proto==='wg'?'wg':'servers')">Изменить ↗</button><div class="hc-lbl">Сервер</div><div class="hc-val hc-val-server"><span class="hc-flag" id="hcServerFlag" aria-hidden="true"></span><span id="hcServer">Не выбран</span></div></div>
+          <div class="hc glass hc-mode"><button type="button" class="hc-action" onclick="go('routing')">Настроить ↗</button><div class="hc-lbl">Режим</div><div class="hc-val" id="hcMode">Весь ПК</div></div>
+        </div>
+        <div class="home-stats">
+          <div class="stat glass"><div class="stat-val down" id="stDown">0.0</div><div class="stat-unit">↓ Мбит/с</div></div>
+          <div class="stat glass"><div class="stat-val up" id="stUp">0.0</div><div class="stat-unit">↑ Мбит/с</div></div>
+          <div class="stat glass"><div class="stat-val" id="stSession">00:00</div><div class="stat-unit">сессия</div></div>
+        </div>
+        <button type="button" class="ip-card glass" onclick="refreshPublicIp()"><div class="ip-lbl">Ваш IP-адрес ↗</div><div class="ip-val" id="ipVal">•••.•••.•••.•••</div><div class="ip-note" id="ipNote">Нажмите, чтобы проверить внешний адрес</div></button>
+        <div class="home-toggles"><button type="button" class="htg glass on" id="tgTun" onclick="setProto('vless')">TUN</button><button type="button" class="htg glass" id="tgWg" onclick="setProto('wg')">WG</button><button type="button" class="htg glass gemini-dns" id="tgSecureDns" onclick="toggleSecureDns()"><span class="gemini-star">✦</span><span id="geminiDnsLabel">AI-DNS</span><span class="gemini-star gemini-star-end">✧</span></button></div>
+      </div>
+    </div>
+    <div class="page" id="page-subscriptions">
+      <div class="page-head"><div><div class="page-title">Мои подписки</div><div class="page-sub">VPN-сервисы, сроки и обновления — в одном месте</div></div><span class="head-state" id="subscriptionCount">0 подписок</span></div>
+      <form class="subscription-import glass" id="subscriptionImport">
+        <div class="subscription-import-title">Добавить VPN-подписку</div>
+        <label>Название <span>(необязательно)</span><input class="inp" name="name" maxlength="160" placeholder="Название вашего VPN"></label>
+        <label class="subscription-url">Ссылка подписки<input class="inp" name="url" type="url" required autocomplete="off" spellcheck="false" placeholder="https://…"></label>
+        <label>Формат<select class="inp" name="protocol"><option value="vless">VLESS / Clash</option><option value="wg">WireGuard / AmneziaWG</option></select></label>
+        <button class="btn btn-primary" type="submit">Добавить</button>
+      </form>
+      <p class="subscription-notice" id="subscriptionNotice" role="status" aria-live="polite">Название и срок запрашиваются у провайдера при обновлении.</p>
+      <div class="scroll"><div id="subscriptionList" class="subscription-list"></div></div>
+    </div>
     <div class="page" id="page-servers"><div class="page-head"><div><div class="page-title">Выбор сервера</div><div class="page-sub">Узлы из вашей подписки</div></div><div class="head-state" data-connection-state>Не подключено</div></div><div class="control-row"><div class="search glass"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="srvSearch" aria-label="Поиск сервера" placeholder="Поиск сервера" oninput="renderServers()"></div><div class="dd" id="ddSort"><button type="button" class="dd-trigger" aria-haspopup="listbox" aria-expanded="false" onclick="ddToggle('ddSort')"><span id="ddSortLbl">По умолчанию</span><svg class="dd-caret" viewBox="0 0 12 12"><path d="M3 5l3 3 3-3"/></svg></button><div class="dd-menu" role="listbox"><button type="button" class="dd-item on" data-v="default" onclick="pickSort('default','По умолчанию',this)">По умолчанию<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></button><button type="button" class="dd-item" data-v="ping" onclick="pickSort('ping','По пингу',this)">По пингу<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></button><button type="button" class="dd-item" data-v="name" onclick="pickSort('name','По имени',this)">По имени<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></button></div></div><button class="icon-btn" id="pingBtn" aria-label="Проверить задержку всех серверов" title="Проверить пинг" onclick="pingAll()"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></button><button class="icon-btn" aria-label="Обновить все подписки" title="Обновить подписки" onclick="refreshSubs()"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button></div><div class="add-box glass"><div class="field"><input class="inp" id="addLink" aria-label="Ссылка сервера или подписки" placeholder="vless:// · ss:// · trojan:// · hysteria2:// или ссылка на подписку"><button class="btn btn-primary" onclick="addServer()">Добавить</button></div></div><div class="scroll"><div class="srv-grid" id="srvGrid"></div><div id="srvEmpty" class="empty hidden"><b>Нет серверов</b><p>Вставь ссылку выше или импортируй подписку.</p></div></div></div>
-    <div class="page" id="page-wg"><div class="page-head"><div><div class="page-title">WireGuard / AmneziaWG</div><div class="page-sub">Конфиги .conf и подписки WG/AWG</div></div><button class="icon-btn" onclick="wgPingAll()"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></button></div><div class="scroll"><div class="add-box glass"><div class="page-sub" style="margin-bottom:8px">Вставьте содержимое .conf файла:</div><textarea class="inp" id="wgConf" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = 10.0.0.2/32"></textarea><div class="field" style="margin-top:10px; justify-content:flex-end"><button class="btn btn-wg" onclick="wgAdd()">Добавить конфиг</button></div><div class="page-sub" style="margin:10px 0 6px">Подписка WG/AWG (URL):</div><div class="field"><input class="inp" id="wgSubUrl" placeholder="https://..."><button class="btn btn-wg" onclick="wgImport()">Подписка</button></div></div><div class="notice"><b>AmneziaWG:</b> поля jc, jmin, jmax, s1, s2, h1-h4 не поддерживаются sing-box. AWG-конфиги подключаются как обычный WireGuard без обфускации.</div><div id="wgGrid" class="srv-grid"></div><div id="wgEmpty" class="empty"><b>Нет WG/AWG серверов</b><p>Добавь конфиг или подписку выше.</p></div></div></div>
-    <div class="page" id="page-routing"><div class="page-head"><div><div class="page-title">Маршрутизация</div><div class="page-sub">Куда направлять трафик</div></div><div class="head-state" id="routeNote">Список не используется</div></div><div class="mode-cards"><button type="button" class="mode-card glass" id="modeAll" onclick="setMode('all')"><div class="mode-icon">🌐</div><div class="mode-t">Все через VPN</div><div class="mode-d">Весь трафик идёт через VPN-сервер</div></button><button type="button" class="mode-card glass wl" id="modeWl" onclick="setMode('whitelist')"><div class="mode-icon">✅</div><div class="mode-t">Только выбранные</div><div class="mode-d">Только список ниже через VPN</div></button><button type="button" class="mode-card glass bl" id="modeBl" onclick="setMode('blacklist')"><div class="mode-icon">🚫</div><div class="mode-t">Кроме выбранных</div><div class="mode-d">Все через VPN, кроме списка</div></button></div><div class="preset-card glass"><div class="preset-ico">✨</div><div style="flex:1"><div class="preset-t">Готовые правила</div><div class="preset-d">Telegram, Discord, Chrome, Firefox, Steam, Spotify и Opera</div></div><button class="btn btn-primary" onclick="addPresetSet()">Добавить набор</button></div><div class="rules-bar"><span class="rules-title">Мои правила</span><span class="rules-count" id="rulesCount">0</span><div style="flex:1"></div><button class="icon-btn" aria-label="Экспортировать правила" title="Экспортировать правила" onclick="exportRules()"><svg viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg></button><button class="btn btn-primary" onclick="promptRule()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Добавить</button></div><div class="control-row"><div class="search glass"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="ruleSearch" aria-label="Поиск по правилам" placeholder="Поиск по правилам" oninput="renderRules()"></div></div><div class="scroll"><div id="ruleList"></div><div id="ruleEmpty" class="empty hidden"><b>Список пуст</b><p>Добавь приложение кнопкой «Добавить» или подтяни готовый набор.</p></div></div></div>
-    <div class="page" id="page-logs"><div class="page-head"><div><div class="page-title">Логи</div><div class="page-sub">Живой журнал событий ядра</div></div><button class="btn btn-ghost" onclick="document.getElementById('logBody').innerHTML=''">Очистить</button></div><div class="glass" style="flex:1; display:flex; flex-direction:column; overflow:hidden"><div class="log-body" id="logBody"><div class="log-line ok"><span class="t">--:--:--</span><span class="m">Sadness VPN запущен</span></div></div></div></div>
-    <div class="page" id="page-settings"><div class="page-head"><div><div class="page-title">Настройки</div><div class="page-sub">Порты · туннель · сеть · оформление</div></div><div class="head-state" data-connection-state>Не подключено</div></div><div class="scroll">
+    <div class="page" id="page-wg"><div class="page-head"><div><div class="page-title">WireGuard / AmneziaWG</div><div class="page-sub">Конфиги .conf и подписки WG/AWG</div></div><button class="icon-btn" onclick="wgPingAll()"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></button></div><div class="scroll"><details class="wg-import glass"><summary>＋ Добавить конфиг или подписку</summary><div class="add-box glass"><div class="page-sub" style="margin-bottom:8px">Вставьте содержимое .conf файла:</div><textarea class="inp" id="wgConf" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = 10.0.0.2/32"></textarea><div class="field" style="margin-top:10px; justify-content:flex-end"><button class="btn btn-wg" onclick="wgAdd()">Добавить конфиг</button></div><div class="page-sub" style="margin:10px 0 6px">Подписка WG/AWG (URL):</div><div class="field"><input class="inp" id="wgSubUrl" placeholder="https://..."><button class="btn btn-wg" onclick="wgImport()">Подписка</button></div></div></details><div class="notice"><b>AmneziaWG:</b> AWG-конфиги запускаются нативным движком с сохранением параметров обфускации. В этом режиме туннель применяется ко всему компьютеру.</div><div id="wgGrid" class="srv-grid"></div><div id="wgEmpty" class="empty"><b>Нет WG/AWG серверов</b><p>Добавь конфиг или подписку выше.</p></div></div></div>
+    <div class="page" id="page-routing"><div class="page-head"><div><div class="page-title">Маршрутизация</div><div class="page-sub">Управляйте потоком приложений без сложных правил</div></div><div class="route-status" id="routeNote">VPN отключён</div></div><div class="awg-limit notice hidden">AmneziaWG работает для всего ПК. Правила приложений сохраняются для TUN/WireGuard.</div><div class="route-visual glass"><div class="route-node route-device"><span>PC</span><small>Это устройство</small></div><div class="route-flow"><i></i><i></i><i></i></div><div class="route-node route-vpn"><span>VPN</span><small id="routeVisualMode">Весь трафик</small></div></div><div class="mode-cards"><button type="button" class="mode-card glass" id="modeAll" onclick="setMode('all')"><div class="mode-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg></div><div class="mode-t">Весь компьютер</div><div class="mode-d">Все приложения используют VPN</div></button><button type="button" class="mode-card glass wl" id="modeWl" onclick="setMode('whitelist')"><div class="mode-icon"><svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></div><div class="mode-t">Только выбранные</div><div class="mode-d">VPN работает лишь для списка</div></button><button type="button" class="mode-card glass bl" id="modeBl" onclick="setMode('blacklist')"><div class="mode-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M7 7l10 10"/></svg></div><div class="mode-t">Кроме выбранных</div><div class="mode-d">Приложения из списка идут напрямую</div></button></div><div class="preset-card glass"><div class="preset-ico">✦</div><div style="flex:1"><div class="preset-t">Быстрый набор приложений</div><div class="preset-d">Telegram, Discord, браузеры, Steam, Spotify и Opera</div></div><button class="btn btn-primary" onclick="addPresetSet()">Добавить набор</button></div><div class="rules-bar"><span class="rules-title">Правила приложений</span><span class="rules-count" id="rulesCount">0</span><div style="flex:1"></div><button class="icon-btn" aria-label="Экспортировать правила" title="Экспортировать правила" onclick="exportRules()"><svg viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg></button><button class="btn btn-primary" onclick="promptRule()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Новое правило</button></div><div class="control-row"><div class="search glass"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="ruleSearch" aria-label="Поиск по правилам" placeholder="Найти приложение" oninput="renderRules()"></div></div><div class="scroll"><div id="ruleList"></div><div class="observed-heading">Обнаруженные приложения · <span id="observedAppCount">0</span></div><div id="observedAppList"></div><div id="ruleEmpty" class="empty hidden"><b>Здесь пока нет приложений</b><p>Добавьте отдельное правило или готовый набор.</p></div></div></div>
+    <div class="page" id="page-settings"><div class="page-head"><div><div class="page-title">Настройки</div><div class="page-sub">Порты · туннель · сеть · оформление</div></div><div class="head-state" data-connection-state>Не подключено</div></div><nav id="settingNav" aria-label="Разделы настроек"></nav><div class="scroll">
+      <div class="awg-limit notice hidden">AmneziaWG: DNS из конфига, без локального прокси и правил приложений. Настройки TUN ниже к нему не применяются.</div><div class="autostart-state glass" id="autostartState"><span class="autostart-dot"></span><div><strong>Запуск вручную</strong><small>Автозапуск Windows отключён</small></div></div>
       <div class="sec"><div class="sec-lbl">Порты</div><div class="sec-line"></div></div>
-      <div class="set-row glass"><div class="set-meta"><div class="set-name">SOCKS5 порт</div><div class="set-desc">Локальный SOCKS5 прокси</div></div><input class="inp compact" type="number" min="1" max="65535" id="portSocks" value="1080" aria-label="SOCKS5 порт" onchange="savePorts()"></div>
-      <div class="set-row glass"><div class="set-meta"><div class="set-name">HTTP порт</div><div class="set-desc">Локальный HTTP прокси</div></div><input class="inp compact" type="number" min="1" max="65535" id="portHttp" value="8080" aria-label="HTTP порт" onchange="savePorts()"></div>
+      <div class="set-row glass"><div class="set-meta"><label class="set-name" for="coreSelect">Ядро подключения</label><div class="set-desc">Авто: XHTTP и особые Hysteria 2 через Mihomo, остальные серверы через sing-box. WireGuard использует своё ядро.</div></div><select id="coreSelect" class="inp compact" onchange="saveTunnelField('core',this.value)"><option value="auto">Авто · рекомендуется</option><option value="singbox">sing-box</option><option value="mihomo">Mihomo</option></select></div>
+      <div class="port-grid"><label class="port-card glass" for="portSocks"><span class="port-icon">S5</span><span><strong>SOCKS5</strong><small>Локальный прокси</small></span><input class="port-input" type="number" min="1" max="65535" id="portSocks" value="1080" aria-label="SOCKS5 порт" onchange="savePorts()"></label><label class="port-card glass" for="portHttp"><span class="port-icon">HTTP</span><span><strong>HTTP</strong><small>Локальный прокси</small></span><input class="port-input" type="number" min="1" max="65535" id="portHttp" value="8080" aria-label="HTTP порт" onchange="savePorts()"></label></div>
       <div class="sec"><div class="sec-lbl">SOCKS5 аутентификация</div><div class="sec-line"></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Аутентификация SOCKS5</div><div class="set-desc">Требовать логин/пароль для SOCKS5 прокси</div></div><div class="toggle" data-tk="socks5_auth" onclick="tglTunnel(this,'socks5_auth')"></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Логин</div><div class="set-desc">Имя пользователя для SOCKS5</div></div><input class="inp compact" id="s5user" placeholder="username" onchange="saveTunnelField('socks5_user',this.value)"></div>
@@ -353,7 +84,7 @@ body.modal-open { overflow:hidden; }
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Предпочитаемый IP</div><div class="set-desc">IPv4 или IPv6 при подключении к серверу</div></div><div class="seg" id="segIp"><button data-v="ipv4" onclick="setPref('preferred_ip','ipv4',this)">IPv4</button><button data-v="ipv6" onclick="setPref('preferred_ip','ipv6',this)">IPv6</button><button data-v="auto" onclick="setPref('preferred_ip','auto',this)">Авто</button></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Сортировка серверов</div><div class="set-desc">Один режим для списка серверов и настроек</div></div><div class="seg" id="segSort"><button data-v="default" class="on" onclick="setServerSort('default',this)">Нет</button><button data-v="ping" onclick="setServerSort('ping',this)">Пинг</button><button data-v="name" onclick="setServerSort('name',this)">Имя</button></div></div>
       <div class="sec"><div class="sec-lbl">DNS</div><div class="sec-line"></div></div>
-      <div class="set-row glass"><div class="set-meta"><div class="set-name">Пресет DNS</div><div class="set-desc">Выберите DNS провайдера</div></div><div class="dd" id="ddDns"><div class="dd-trigger" onclick="ddToggle('ddDns')"><span id="ddDnsLbl">Cloudflare + Google</span><svg class="dd-caret" viewBox="0 0 12 12"><path d="M3 5l3 3 3-3"/></svg></div><div class="dd-menu"><div class="dd-item on" data-v="cf_google" onclick="pickDns('cf_google','Cloudflare + Google',this)">Cloudflare + Google<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div><div class="dd-item" data-v="cloudflare" onclick="pickDns('cloudflare','Cloudflare (1.1.1.1)',this)">Cloudflare (1.1.1.1)<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div><div class="dd-item" data-v="google" onclick="pickDns('google','Google (8.8.8.8)',this)">Google (8.8.8.8)<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div><div class="dd-item" data-v="adguard" onclick="pickDns('adguard','AdGuard',this)">AdGuard<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div></div></div></div>
+      <div class="set-row glass"><div class="set-meta"><div class="set-name">Пресет DNS</div><div class="set-desc">Выберите DNS провайдера для туннеля</div></div><div class="dd" id="ddDns"><div class="dd-trigger" onclick="ddToggle('ddDns')"><span id="ddDnsLbl">Cloudflare + Google</span><svg class="dd-caret" viewBox="0 0 12 12"><path d="M3 5l3 3 3-3"/></svg></div><div class="dd-menu"><div class="dd-item on" data-v="cf_google" onclick="pickDns('cf_google','Cloudflare + Google',this)">Cloudflare + Google<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div><div class="dd-item" data-v="cloudflare" onclick="pickDns('cloudflare','Cloudflare (1.1.1.1)',this)">Cloudflare (1.1.1.1)<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div><div class="dd-item" data-v="google" onclick="pickDns('google','Google (8.8.8.8)',this)">Google (8.8.8.8)<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div><div class="dd-item" data-v="adguard" onclick="pickDns('adguard','AdGuard',this)">AdGuard<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div><div class="dd-item" data-v="comss_dot" onclick="pickDns('comss_dot','Comss DNS · Gemini',this)">✦ Comss DNS · Gemini<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div><div class="dd-item" data-v="xbox_dot" onclick="pickDns('xbox_dot','Xbox DNS · Gemini',this)">✦ Xbox DNS · Gemini<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></div></div></div></div>
       <div class="sec"><div class="sec-lbl">Пинг</div><div class="sec-line"></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Метод пинга серверов</div><div class="set-desc">TCP работает всегда. ICMP требует прав администратора</div></div><div class="seg" id="segPing"><button data-v="tcp" class="on" onclick="setPing('ping_type','tcp',this)">TCP</button><button data-v="icmp" onclick="setPing('ping_type','icmp',this)">ICMP</button></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">URL для пинга</div><div class="set-desc">Адрес для проверки связи</div></div><input class="inp wide" id="pingUrl" value="https://www.gstatic.com/generate_204" onchange="setPingVal('ping_url',this.value)"></div>
@@ -361,13 +92,17 @@ body.modal-open { overflow:hidden; }
       <div class="sec"><div class="sec-lbl">Общие</div><div class="sec-line"></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Запускать при старте</div><div class="set-desc">Запускать Sadness VPN вместе с Windows</div></div><div class="toggle" data-sk="startup" onclick="tglSetting(this,'startup')"></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Автоподключение</div><div class="set-desc">Подключаться к VPN автоматически при запуске</div></div><div class="toggle" data-sk="autoconn" onclick="tglSetting(this,'autoconn')"></div></div>
-      <div class="set-row glass"><div class="set-meta"><div class="set-name">Тихий запуск</div><div class="set-desc">После запуска сразу свернуть окно в панель задач</div></div><div class="toggle" data-sk="silent" onclick="tglSetting(this,'silent')"></div></div>
+      <div class="set-row glass"><div class="set-meta"><div class="set-name">Тихий запуск</div><div class="set-desc">После запуска скрыть окно и оставить значок в системном трее</div></div><div class="toggle" data-sk="silent" onclick="tglSetting(this,'silent')"></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Разрешить LAN-прокси</div><div class="set-desc">Открыть SOCKS5/HTTP порты для локальной сети после переподключения</div></div><div class="toggle" data-sk="lan" onclick="tglSetting(this,'lan')"></div></div>
-      <div class="set-row glass"><div class="set-meta"><div class="set-name">Сворачивать при закрытии</div><div class="set-desc">Кнопка закрытия будет сворачивать окно в панель задач</div></div><div class="toggle" data-sk="mintray" onclick="tglSetting(this,'mintray')"></div></div>
-      <div class="set-row glass"><div class="set-meta"><div class="set-name">Лепестки сакуры</div><div class="set-desc">Анимация лепестков на фоне</div></div><div class="toggle on" id="tgPetals" data-sk="petals" onclick="tglPetals(this)"></div></div>
-      <div class="set-row glass"><div class="set-meta"><div class="set-name">Анимация фона</div><div class="set-desc">Плавное движение авроры (выкл для max FPS)</div></div><div class="toggle on" id="tgAnimations" data-sk="animations" onclick="tglAnim(this)"></div></div>
+      <div class="sec"><div class="sec-lbl">Персонализация</div><div class="sec-line"></div></div>
+      <div class="appearance-grid">
+        <div class="appearance-card glass"><div class="appearance-preview avatar-preview" id="avatarPreview"><span>S</span></div><div><div class="set-name">Аватар</div><div class="set-desc">PNG, JPEG или WebP до 2 МБ</div><div class="appearance-actions"><button class="btn btn-ghost" onclick="document.getElementById('avatarInput').click()">Выбрать</button><button class="mini-btn" aria-label="Сбросить аватар" onclick="resetAppearance('avatar')">×</button></div></div><input type="file" id="avatarInput" accept="image/png,image/jpeg,image/webp" hidden onchange="uploadAppearance('avatar',this)"></div>
+        <div class="appearance-card glass"><div class="appearance-preview wallpaper-preview" id="wallpaperPreview"><span>✦</span></div><div><div class="set-name">Фон приложения</div><div class="set-desc">Собственные обои до 8 МБ</div><div class="appearance-actions"><button class="btn btn-ghost" onclick="document.getElementById('wallpaperInput').click()">Выбрать</button><button class="mini-btn" aria-label="Сбросить фон" onclick="resetAppearance('wallpaper')">×</button></div></div><input type="file" id="wallpaperInput" accept="image/png,image/jpeg,image/webp" hidden onchange="uploadAppearance('wallpaper',this)"></div>
+      </div>
       <div class="sec"><div class="sec-lbl">Подписка / HWID</div><div class="sec-line"></div></div>
-      <div class="set-row glass"><div class="set-meta"><div class="set-name">HWID / Ключ устройства</div><div class="set-desc">Отправляется при обновлении подписки</div></div><input class="inp wide" id="hwidVal" placeholder="Загрузка..." readonly><button class="mini-btn" onclick="copyHwid()"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button><button class="mini-btn" onclick="regenHwid()"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5"/></svg></button></div>
+      <div class="set-row glass hwid-row"><div class="set-meta"><div class="set-name">Локальный ID подписки</div><div class="set-desc">Стабильный случайный ключ — не содержит серийных номеров компьютера</div></div><input class="inp wide" id="hwidVal" placeholder="Загрузка..." readonly><button class="mini-btn" aria-label="Скопировать локальный ID" onclick="copyHwid()"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button><button class="mini-btn" aria-label="Создать новый локальный ID" onclick="regenHwid()"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5"/></svg></button></div>
+      <div class="sec"><div class="sec-lbl">Диагностика</div><div class="sec-line"></div></div>
+      <button type="button" class="set-row glass diagnostic-row" onclick="copyLogs()"><div class="diagnostic-icon"><svg viewBox="0 0 24 24"><path d="M8 4h8M8 9h8M8 14h5"/><rect x="4" y="2" width="16" height="20" rx="3"/></svg></div><div class="set-meta"><div class="set-name">Скопировать журнал</div><div class="set-desc">Сохранённая история запусков и подключений · до 4 МБ</div></div><span class="diagnostic-action">Копировать</span></button>
       <div class="sec"><div class="sec-lbl">Статистика</div><div class="sec-line"></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Трафик сегодня</div><div class="set-desc">Суммарно за текущие сутки</div></div><div class="stat-inline"><span class="u" id="statTodayUp">↑ 0 B</span><span class="d" id="statTodayDn">↓ 0 B</span></div><button class="btn btn-ghost" onclick="resetStats('today')">Сброс</button></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Трафик всего</div><div class="set-desc">Суммарно за всё время</div></div><div class="stat-inline"><span class="u" id="statTotalUp">↑ 0 B</span><span class="d" id="statTotalDn">↓ 0 B</span></div><button class="btn btn-danger" onclick="resetStats('all')">Сброс всего</button></div>
@@ -375,7 +110,7 @@ body.modal-open { overflow:hidden; }
       <div class="glass"><div class="about-row"><span class="about-k">Sadness VPN</span><span class="about-v" id="aboutVer">v…</span></div><div class="about-row"><span class="about-k">Движок</span><span class="about-v" id="engineVer">sing-box …</span></div><div class="about-row"><span class="about-k">Протоколы</span><span class="about-v">VLESS / WG / AWG→WG</span></div></div>
       <div class="about-foot">♥ by Sadness</div>
     </div></div>
-    <div class="page" id="page-zapret"><div class="page-head"><div><div class="page-title">Zapret — обход DPI</div><div class="page-sub">Обход блокировок без VPN</div></div><div class="head-state" id="zapHeadState">Не подключено</div></div><div class="scroll"><div class="zap-status glass" id="zapStatus"><div class="zap-dot"></div><div style="flex:1"><div class="zap-t" id="zapT">Не активен</div><div class="zap-d" id="zapD">Выберите стратегию и нажмите «Запустить»</div></div></div><div class="zap-info">◇ <b>Zapret</b> обходит блокировки на уровне DPI без VPN. Работает независимо от туннеля.<br>⚠ Требует winws.exe + WinDivert64.sys в папке bin/<br>↓ Скачать: github.com/bol-van/zapret</div><div class="sec-lbl" style="letter-spacing:0.2em">Стратегии</div><div class="sec-line" style="margin-bottom:var(--sp-3)"></div><div id="zapList"></div><button class="btn btn-zap" id="zapBtn" onclick="toggleZapret()">▶ Запустить выбранную стратегию</button></div></div>
+    <div class="page" id="page-zapret"><div class="page-head"><div><div class="page-title">Zapret — обход DPI</div><div class="page-sub">Стратегии Flowseal · поиск по названию и сервису</div></div><div class="head-state" id="zapHeadState">Не подключено</div></div><div class="control-row"><input class="inp" id="zapSearch" aria-label="Поиск стратегии Zapret" placeholder="Поиск: ALT, Discord, YouTube…" oninput="filterZapret()"></div><div class="scroll"><div class="zap-status glass" id="zapStatus"><div class="zap-dot"></div><div style="flex:1"><div class="zap-t" id="zapT">Не активен</div><div class="zap-d" id="zapD">Выберите стратегию и нажмите «Запустить»</div></div></div><div class="zap-info">◇ <b>Zapret</b> обходит блокировки на уровне DPI без VPN. Работает независимо от туннеля.<br>⚠ Стратегии зависят от провайдера — перебирайте варианты до стабильного результата.<br>↻ Профили синхронизированы с Flowseal/zapret-discord-youtube.</div><button class="btn btn-zap" id="zapBtn" onclick="toggleZapret()">▶ Запустить выбранную стратегию</button><div class="sec-lbl zap-strategy-title">Стратегии <span id="zapCount">0</span></div><div class="sec-line" style="margin-bottom:var(--sp-3)"></div><div id="zapList"></div></div></div>
   </div></div></div>
 </div>
 <div class="modal-backdrop" id="ruleModal" aria-hidden="true" onclick="modalBackdropClose(event,'ruleModal')">
@@ -423,135 +158,21 @@ body.modal-open { overflow:hidden; }
   </section>
 </div>
 <div id="toast"></div>
-<script>
-let ST={connected:false,status:'off',backendOnline:false,server:'',proto:'vless',groups:[],selGroup:null,selIndex:null,wgGroups:[],selWgGroup:null,selWgIndex:null,appsConfig:{mode:'all',apps:[]},settings:{},tunnel:{},pings:{},wgPings:{},stars:{},hwid:'',zapStrategies:[],zapSel:null,zapRunning:false,srvSort:'default'};
-let ws=null, wsRetry=0, wsTimer=null, petalsOn=true, autoConnectAttempted=false;
-let sessionStart=null, sessionTimerInt=null, sessionBaseSec=0;
-let runningProcesses=[], modalReturnFocus=null;
-function startSessionTimer(baseSec){ sessionBaseSec=baseSec||0; sessionStart=Date.now(); if(!sessionTimerInt) sessionTimerInt=setInterval(tickSession,1000); tickSession(); }
-function tickSession(){ if(sessionStart==null) return; const el=document.getElementById('stSession'); if(!el) return; el.textContent=fmtTime(sessionBaseSec+(Date.now()-sessionStart)/1000); }
-function stopSessionTimer(){ sessionStart=null; if(sessionTimerInt){ clearInterval(sessionTimerInt); sessionTimerInt=null; } const el=document.getElementById('stSession'); if(el) el.textContent='00:00'; }
-const PRESET_SET=[['telegram.exe','Telegram'],['Discord.exe','Discord'],['chrome.exe','Google Chrome'],['firefox.exe','Mozilla Firefox'],['steam.exe','Steam'],['spotify.exe','Spotify'],['opera.exe','Opera']];
-async function requestJson(path,{method='POST',body=null,timeoutMs=10000}={}){ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),options={method,signal:controller.signal,headers:{}};if(method!=='GET'){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body||{});}try{const r=await fetch(path,options);let data;try{data=await r.json();}catch(_){data={ok:false,error:`HTTP ${r.status}: некорректный ответ`};}if(!r.ok&&data.ok!==false)data={...data,ok:false,error:data.error||`HTTP ${r.status}`};return data;}catch(e){return {ok:false,error:e.name==='AbortError'?'Превышено время ожидания ответа':'Нет связи с приложением'};}finally{clearTimeout(timer);} }
-function api(path,body,timeoutMs=10000){ return requestJson(path,{method:'POST',body,timeoutMs}); }
-function apiGet(path,timeoutMs=10000){ return requestJson(path,{method:'GET',timeoutMs}); }
-async function windowAction(path){ const r=await api(path); if(!r.ok) toast(r.error||'Команда окна не выполнена','err'); return r; }
-function winMin(){ windowAction('/api/window/minimize'); } function winMax(){ windowAction('/api/window/togglemax'); } function winClose(){ windowAction('/api/window/close'); }
-function setBackendOnline(online){ ST.backendOnline=online; if(!online){ const tb=document.getElementById('tbState'); tb.textContent='Нет связи с приложением'; tb.classList.remove('on'); document.getElementById('tbDot').classList.remove('on'); } }
-function connectWS(){ if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return; clearTimeout(wsTimer); const scheme=location.protocol==='https:'?'wss':'ws'; ws=new WebSocket(`${scheme}://${location.host}/ws`); ws.onopen=()=>{wsRetry=0;setBackendOnline(true);}; ws.onmessage=ev=>{try{handle(JSON.parse(ev.data));}catch(e){addLog('Некорректное сообщение интерфейса: '+e,'warn');}}; ws.onerror=()=>ws.close(); ws.onclose=()=>{setBackendOnline(false);const delay=Math.min(15000,1000*Math.pow(1.7,wsRetry++));wsTimer=setTimeout(connectWS,delay);}; }
-function handle(d){ switch(d.type){
-  case 'state': ST.connected=!!d.connected;ST.status=d.status||'off';ST.server=d.server||'';ST.proto=d.activeProtocol||'vless';ST.groups=d.groups||[];ST.selGroup=d.selGroup;ST.selIndex=d.selIndex;ST.wgGroups=d.wgGroups||[];ST.selWgGroup=d.selWgGroup;ST.selWgIndex=d.selWgIndex;ST.appsConfig=d.appsConfig||{mode:'all',apps:[]};ST.settings=d.appSettings||{};ST.tunnel=d.tunnelSettings||{};ST.stars=Object.fromEntries((ST.settings.favorite_servers||[]).map(id=>[id,true]));ST.hwid=d.hwid||'';ST.zapStrategies=d.zapretStrategies||[];ST.zapRunning=!!d.zapretRunning;ST.zapSel=d.zapretStrategy||ST.zapSel;document.getElementById('tbVer').textContent='v'+(d.appVersion||'…');document.getElementById('aboutVer').textContent='v'+(d.appVersion||'…');document.getElementById('engineVer').textContent='sing-box '+(d.engineVersion||'…');applyStatus();renderServers();renderWg();renderRules();renderModeCards();renderZapret();syncSettings();if(d.stats)applyStats(d.stats);maybeAutoConnect();break;
-  case 'status': ST.status=d.state;ST.connected=d.state==='on';if(d.server)ST.server=d.server;if(d.state==='off'){applyTraffic._t=null;applyTraffic._d=0;applyTraffic._u=0;}applyStatus();break;
-  case 'log': addLog(d.msg,d.tag);break;
-  case 'groups_updated': ST.groups=d.groups||[];ST.selGroup=d.selGroup;ST.selIndex=d.selIndex;renderServers();applyStatus();break;
-  case 'wg_groups_updated': ST.wgGroups=d.wgGroups||[];ST.selWgGroup=d.selWgGroup;ST.selWgIndex=d.selWgIndex;renderWg();applyStatus();break;
-  case 'traffic_stats': applyTraffic(d);break;
-  case 'stats': applyStats(d);break;
-  case 'ping_result': {const key=d.sid||`${d.gid}:${d.index}`;ST.pings[key]={label:d.label,color:d.color};updatePing('ping',key);break;}
-  case 'wg_ping_result': {const key=d.sid||`${d.gid}:${d.index}`;ST.wgPings[key]={label:d.label,color:d.color};updatePing('wping',key);break;}
-  case 'ping_done': document.getElementById('pingBtn').classList.remove('scanning');if(ST.srvSort==='ping')renderServers();toast('Проверка серверов завершена','ok');break;
-  case 'wg_ping_done': {const btn=document.getElementById('wgPingBtn');if(btn)btn.classList.remove('scanning');toast('Проверка WG серверов завершена','ok');break;}
-  case 'apps_config': ST.appsConfig=d.config;renderRules();renderModeCards();applyStatus();break;
-  case 'settings_updated': Object.assign(ST.tunnel,d.settings);syncSettings();renderServers();break;
-  case 'app_settings_updated': Object.assign(ST.settings,d.settings);ST.stars=Object.fromEntries((ST.settings.favorite_servers||[]).map(id=>[id,true]));syncSettings();renderServers();break;
-  case 'socks5_creds': document.getElementById('s5user').value=d.user;document.getElementById('s5pass').value=d.pass;break;
-  case 'zapret_status': ST.zapRunning=!!d.running;ST.zapSel=d.strategy||ST.zapSel;applyZapret(d.state);break;
-} }
-function applyStatus(){ const btn=document.getElementById('connectBtn'),arc=document.getElementById('powerArc'),title=document.getElementById('statusTitle'),desc=document.getElementById('statusDesc'),lbl=document.getElementById('powerLbl'),dot=document.getElementById('tbDot'),tbSt=document.getElementById('tbState');btn.classList.remove('on','connecting');arc.classList.remove('spin');title.classList.remove('on');dot.classList.remove('on');tbSt.classList.remove('on');let connectionText='Не подключено';if(ST.status==='connecting'){btn.classList.add('connecting');arc.classList.add('spin');title.textContent='Подключение…';desc.textContent='Поднимаем туннель';lbl.textContent='Отменить';connectionText='Подключение…';}else if(ST.status==='on'||ST.connected){btn.classList.add('on');title.classList.add('on');dot.classList.add('on');tbSt.classList.add('on');title.textContent='Защищено';desc.textContent='Туннель работает';lbl.textContent='Отключить';connectionText=ST.server?('Подключено · '+ST.server):'Подключено';if(sessionStart===null)startSessionTimer(0);}else{title.textContent='Не защищено';desc.textContent='Нажмите, чтобы включить защиту';lbl.textContent='Подключить';document.getElementById('stDown').textContent='0.0';document.getElementById('stUp').textContent='0.0';stopSessionTimer();}tbSt.textContent=connectionText;document.querySelectorAll('[data-connection-state]').forEach(el=>{el.textContent=connectionText;el.classList.toggle('on',ST.connected);});if(!ST.backendOnline)setBackendOnline(false);const srv=selectedServer();document.getElementById('hcServer').textContent=srv?(srv.remark||'Без имени'):'Не выбран';document.getElementById('hcMode').textContent=({all:'Весь ПК',whitelist:'Только выбранные',blacklist:'Кроме выбранных'})[ST.appsConfig.mode]||'Весь ПК';document.getElementById('tgTun').classList.toggle('on',ST.proto!=='wg');document.getElementById('tgWg').classList.toggle('on',ST.proto==='wg');const pb=document.getElementById('protoBadge'),pr=(srv&&srv.protocol)?srv.protocol:ST.proto;pb.className='proto-badge '+(pr==='wg'?'wg':(srv&&srv.is_awg?'awg':'vless'));pb.textContent=(pr||'vless').toUpperCase();}
-function selectedServer(){ if(ST.proto==='wg'){ const g=ST.wgGroups.find(g=>g.id===ST.selWgGroup); return g&&g.servers[ST.selWgIndex]||null; } const g=ST.groups.find(g=>g.id===ST.selGroup); return g&&g.servers[ST.selIndex]||null; }
-async function toggleConnect(){ if(ST.connected||ST.status==='on'||ST.status==='connecting'){const r=await api('/api/disconnect');if(!r.ok)toast(r.error||'Не удалось отключиться','err');return;}if(!selectedServer()){toast('Сначала выбери сервер','err');go(ST.proto==='wg'?'wg':'servers');return;}const r=await api('/api/connect',{protocol:ST.proto});if(!r.ok)toast(r.error||'Не удалось подключиться','err');}
-function setProto(p){ if(ST.connected||ST.status==='connecting'){toast('Сначала отключи активный туннель','err');return;}ST.proto=p;applyStatus(); }
-async function toggleSecureDns(){ const next=ST.tunnel.dns_preset==='adguard'?'cf_google':'adguard';const r=await api('/api/tunnel-settings',{dns_preset:next});if(!r.ok){toast(r.error||'Не удалось изменить DNS','err');return;}ST.tunnel.dns_preset=next;syncSettings();toast(next==='adguard'?'DNS-защита включена':'DNS-защита выключена','ok'); }
-async function refreshPublicIp(){ const value=document.getElementById('ipVal'),note=document.getElementById('ipNote');value.textContent='Проверяю…';note.textContent='Определение внешнего адреса';const r=await api('/api/network/ip',{},15000);if(r.ok){value.textContent=r.ip;const version=r.version?`IPv${r.version}`:'IP';note.textContent=ST.connected?`${version} при работающем туннеле`:`Текущий внешний ${version}`;}else{value.textContent='Не определён';note.textContent=r.error||'Ошибка проверки';toast(note.textContent,'err');} }
-function maybeAutoConnect(){ if(autoConnectAttempted||!ST.settings.autoconn||ST.connected||ST.status==='connecting')return;autoConnectAttempted=true;if(!selectedServer()){toast('Автоподключение: сервер не выбран','err');return;}setTimeout(toggleConnect,300); }
-function fmtBytes(n){ n=n||0; if(n<1024)return n+' B'; const u=['KB','MB','GB','TB']; let i=-1; do{n/=1024;i++;}while(n>=1024&&i<u.length-1); return n.toFixed(1)+' '+u[i]; }
-function fmtTime(sec){ sec=Math.floor(sec||0); const h=String(Math.floor(sec/3600)).padStart(2,'0'),m=String(Math.floor(sec%3600/60)).padStart(2,'0'),s=String(sec%60).padStart(2,'0'); return h!=='00'?`${h}:${m}:${s}`:`${m}:${s}`; }
-function applyStats(s){ const sess=s.session_time??s.sessionSeconds??s.session;if(sess!==undefined&&(s.connected??ST.connected))startSessionTimer(sess);else if(!(s.connected??ST.connected))stopSessionTimer();const tu=s.today?.up??s.today_up??s.todayUp??0,td=s.today?.down??s.today_down??s.todayDown??0,au=s.total?.up??s.total_up??s.totalUp??0,ad=s.total?.down??s.total_down??s.totalDown??0;document.getElementById('statTodayUp').textContent='↑ '+fmtBytes(tu);document.getElementById('statTodayDn').textContent='↓ '+fmtBytes(td);document.getElementById('statTotalUp').textContent='↑ '+fmtBytes(au);document.getElementById('statTotalDn').textContent='↓ '+fmtBytes(ad); }
-function applyTraffic(d){ const now=Date.now()/1000; if(applyTraffic._t){ const dt=now-applyTraffic._t; if(dt>0){ const dn=(d.totalDown-applyTraffic._d)*8/1e6/dt,up=(d.totalUp-applyTraffic._u)*8/1e6/dt; document.getElementById('stDown').textContent=Math.max(0,dn).toFixed(1); document.getElementById('stUp').textContent=Math.max(0,up).toFixed(1); } } applyTraffic._t=now; applyTraffic._d=d.totalDown; applyTraffic._u=d.totalUp; }
-const FLAG_CODES=new Set('ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bl bm bn bo bq br bs bt bv bw by bz ca cc cd cf cg ch ci ck cl cm cn co cp cr cu cv cw cx cy cz de dg dj dk dm do dz ec ee eg eh er es et eu fi fj fk fm fo fr ga gb gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu ic id ie il im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mf mg mh ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pc pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug um un us uy uz va vc ve vg vi vn vu wf ws xk xx ye yt za zm zw'.split(' '));
-const COUNTRY_ALIASES={usa:'us','u.s.a.':'us','united states of america':'us',uk:'gb','u.k.':'gb',england:'gb',scotland:'gb',wales:'gb',uae:'ae','u.a.e.':'ae','south korea':'kr','north korea':'kp','czech republic':'cz',turkey:'tr','russian federation':'ru','viet nam':'vn'};
-function normalizedCountryName(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[_|,;:()[\]{}]+/g,' ').replace(/\s+/g,' ').trim();}
-function buildCountryNames(){const names=[];for(const [name,code] of Object.entries(COUNTRY_ALIASES))names.push([normalizedCountryName(name),code]);if(typeof Intl.DisplayNames==='function'){for(const locale of ['en','ru']){try{const display=new Intl.DisplayNames([locale],{type:'region'});for(const code of FLAG_CODES){if(code==='xx')continue;const label=display.of(code.toUpperCase());if(label&&label.toUpperCase()!==code.toUpperCase())names.push([normalizedCountryName(label),code]);}}catch(_){}}}return names.filter(([name])=>name).sort((a,b)=>b[0].length-a[0].length);}
-const COUNTRY_NAMES=buildCountryNames();
-function cleanName(name){ return String(name||'').replace(/[\u{1F1E6}-\u{1F1FF}]{1,2}/gu,'').replace(/[\u{1D400}-\u{1D7FF}\u{1F100}-\u{1F1FF}]/gu,'').trim(); }
-function ccFor(name){if(!name)return'xx';const flag=[...name].filter(c=>c.codePointAt(0)>=0x1F1E6&&c.codePointAt(0)<=0x1F1FF);if(flag.length>=2){const code=flag.slice(0,2).map(c=>String.fromCharCode(c.codePointAt(0)-0x1F1E6+97)).join('');if(FLAG_CODES.has(code))return code;}const normalized=normalizedCountryName(name);for(const [country,code] of COUNTRY_NAMES){if((` ${normalized} `).includes(` ${country} `))return code;}const codeMatch=String(name).match(/(?:^|[^A-Z])([A-Z]{2})(?=$|[^A-Z])/);const code=codeMatch?.[1]?.toLowerCase();return code&&FLAG_CODES.has(code)?code:'xx';}
-function flagImg(code){const safe=FLAG_CODES.has(String(code||'').toLowerCase())?String(code).toLowerCase():'xx';return `<img src="/static/flags/4x3/${safe}.svg" alt="" draggable="false">`;}
-function serverKey(server,gid,idx){ return server&&server.ui_id?server.ui_id:`${gid}:${idx}`; }
-function renderServers(){ const grid=document.getElementById('srvGrid'),q=(document.getElementById('srvSearch').value||'').toLowerCase(),sort=ST.srvSort;let rows=[];ST.groups.forEach(g=>(g.servers||[]).forEach((s,i)=>rows.push({g:g.id,i,s,key:serverKey(s,g.id,i)})));if(q)rows=rows.filter(r=>(r.s.remark||'').toLowerCase().includes(q));if(sort==='name')rows.sort((a,b)=>(a.s.remark||'').localeCompare(b.s.remark||'','ru'));if(sort==='ping')rows.sort((a,b)=>(parseInt(ST.pings[a.key]?.label)||999999)-(parseInt(ST.pings[b.key]?.label)||999999));document.getElementById('srvEmpty').classList.toggle('hidden',rows.length>0);grid.innerHTML=rows.map(r=>{const sel=r.g===ST.selGroup&&r.i===ST.selIndex,p=ST.pings[r.key],star=!!ST.stars[r.key],nm=cleanName(r.s.remark)||'Без имени';return `<div class="srv-row glass ${sel?'sel':''}" role="button" tabindex="0" data-action="select-server" data-gid="${esc(r.g)}" data-index="${r.i}"><span class="flag-code" aria-hidden="true">${flagImg(ccFor(r.s.remark||''))}</span><div class="srv-meta"><div class="srv-name">${esc(nm)}</div><div class="srv-proto">${esc(r.s.protocol||'vless')}</div></div><div class="srv-actions"><span class="ping ${p?p.color:'dim'}" data-ping-id="${esc(r.key)}">${p?p.label:'—'}</span><button class="mini-btn star ${star?'on':''}" aria-label="${star?'Убрать из избранного':'Добавить в избранное'}" data-action="toggle-star" data-sid="${esc(r.key)}"><svg viewBox="0 0 24 24" fill="${star?'currentColor':'none'}"><path d="M12 3l2.5 6 6.5.5-5 4.2 1.6 6.3L12 17l-5.6 3 1.6-6.3-5-4.2 6.5-.5z"/></svg></button><button class="mini-btn del" aria-label="Удалить сервер" data-action="delete-server" data-gid="${esc(r.g)}" data-index="${r.i}"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></div>`;}).join(''); }
-function updatePing(pfx,key){ const el=[...document.querySelectorAll(`[data-ping-id]`)].find(item=>item.dataset.pingId===key),p=(pfx==='ping'?ST.pings:ST.wgPings)[key];if(el&&p){el.textContent=p.label;el.className='ping '+p.color;} }
-async function selectServer(gid,idx){ const previous=[ST.selGroup,ST.selIndex,ST.proto];ST.selGroup=gid;ST.selIndex=idx;ST.proto='vless';renderServers();applyStatus();const r=await api('/api/servers/select',{group_id:gid,index:idx});if(!r.ok){[ST.selGroup,ST.selIndex,ST.proto]=previous;renderServers();applyStatus();toast(r.error||'Не удалось выбрать сервер','err');} }
-async function toggleStar(serverId){ const previous=!!ST.stars[serverId];ST.stars[serverId]=!previous;renderServers();const favorites=Object.keys(ST.stars).filter(id=>ST.stars[id]);const r=await api('/api/app-settings',{key:'favorite_servers',value:favorites});if(!r.ok){ST.stars[serverId]=previous;renderServers();toast(r.error||'Не удалось сохранить избранное','err');}else{ST.settings.favorite_servers=favorites;} }
-async function delServer(gid,idx){ if(!confirm('Удалить выбранный сервер?'))return;const r=await api('/api/servers/delete',{group_id:gid,index:idx});if(!r.ok)toast(r.error||'Ошибка удаления','err');else toast('Сервер удалён','ok'); }
-async function addServer(){ const el=document.getElementById('addLink'); const link=el.value.trim(); if(!link){toast('Вставь ссылку','err');return;} if(link.startsWith('http')){ const r=await api('/api/servers/import',{url:link}); if(r.ok){el.value='';toast('Подписка добавляется…','ok');}else toast(r.error||'Ошибка','err'); return; } const r=await api('/api/servers/add',{link}); if(r.ok){el.value='';toast('Сервер добавлен','ok');}else toast(r.error||'Ошибка','err'); }
-async function pingAll(){ const btn=document.getElementById('pingBtn');btn.classList.add('scanning');const r=await api('/api/ping/all');if(!r.ok){btn.classList.remove('scanning');toast(r.error||'Не удалось запустить проверку','err');} }
-async function refreshSubs(){ const groups=ST.groups.filter(g=>g.url);if(!groups.length){toast('Нет подписок для обновления');return;}const results=await Promise.all(groups.map(g=>api('/api/groups/refresh',{id:g.id})));const failed=results.filter(r=>!r.ok);toast(failed.length?`Не запущено обновлений: ${failed.length}`:`Обновляются подписки: ${groups.length}`,failed.length?'err':'ok'); }
-function renderWg(){ const grid=document.getElementById('wgGrid');let rows=[];ST.wgGroups.forEach(g=>(g.servers||[]).forEach((s,i)=>rows.push({g:g.id,i,s,key:serverKey(s,g.id,i)})));if(ST.srvSort==='name')rows.sort((a,b)=>(a.s.remark||'').localeCompare(b.s.remark||'','ru'));if(ST.srvSort==='ping')rows.sort((a,b)=>(parseInt(ST.wgPings[a.key]?.label)||999999)-(parseInt(ST.wgPings[b.key]?.label)||999999));document.getElementById('wgEmpty').classList.toggle('hidden',rows.length>0);grid.innerHTML=rows.map(r=>{const sel=r.g===ST.selWgGroup&&r.i===ST.selWgIndex,p=ST.wgPings[r.key],nm=cleanName(r.s.remark)||'WG сервер';return `<div class="srv-row glass ${sel?'sel':''}" role="button" tabindex="0" data-action="select-wg" data-gid="${esc(r.g)}" data-index="${r.i}"><span class="flag-code" aria-hidden="true">${flagImg(ccFor(r.s.remark||''))}</span><div class="srv-meta"><div class="srv-name">${esc(nm)}</div><div class="srv-proto">${r.s.is_awg?'AmneziaWG → WireGuard':'WireGuard'}</div></div><div class="srv-actions">${r.s.is_awg?'<span class="awg-tag">AWG</span>':''}<span class="ping ${p?p.color:'dim'}" data-ping-id="${esc(r.key)}">${p?p.label:'—'}</span><button class="mini-btn del" aria-label="Удалить WG сервер" data-action="delete-wg" data-gid="${esc(r.g)}" data-index="${r.i}"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></div>`;}).join(''); }
-async function selectWg(gid,idx){ const previous=[ST.selWgGroup,ST.selWgIndex,ST.proto];ST.selWgGroup=gid;ST.selWgIndex=idx;ST.proto='wg';renderWg();applyStatus();const r=await api('/api/wg/servers/select',{group_id:gid,index:idx});if(!r.ok){[ST.selWgGroup,ST.selWgIndex,ST.proto]=previous;renderWg();applyStatus();toast(r.error||'Не удалось выбрать WG сервер','err');} }
-async function delWg(gid,idx){ if(!confirm('Удалить выбранный WG сервер?'))return;const r=await api('/api/wg/servers/delete',{group_id:gid,index:idx});if(!r.ok)toast(r.error||'Ошибка удаления','err');else toast('WG сервер удалён','ok'); }
-async function wgAdd(){ const el=document.getElementById('wgConf'); const conf=el.value.trim(); if(!conf){toast('Вставь конфиг','err');return;} const r=await api('/api/wg/servers/add',{conf}); if(r.ok){el.value='';toast(`Добавлено серверов: ${r.added}`,'ok');}else toast(r.error||'Ошибка','err'); }
-async function wgImport(){ const el=document.getElementById('wgSubUrl'); const url=el.value.trim(); if(!url.startsWith('http')){toast('Нужна http(s) ссылка','err');return;} const r=await api('/api/wg/servers/import',{url}); if(r.ok){el.value='';toast('WG подписка добавляется…','ok');}else toast(r.error||'Ошибка','err'); }
-async function wgPingAll(){ const btn=document.getElementById('wgPingBtn');if(btn)btn.classList.add('scanning');const r=await api('/api/wg/ping/all');if(!r.ok){if(btn)btn.classList.remove('scanning');toast(r.error||'Не удалось запустить проверку WG','err');} }
-function renderModeCards(){ const m=ST.appsConfig.mode||'all';[['modeAll','all'],['modeWl','whitelist'],['modeBl','blacklist']].forEach(([id,value])=>{const el=document.getElementById(id),active=m===value;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));});document.getElementById('routeNote').textContent=m==='all'?'Список не используется':(m==='whitelist'?'Через VPN только список':'Через VPN всё, кроме списка');const action=document.getElementById('ruleModeAction');if(action)action.textContent=currentRuleAction(); }
-async function setMode(m){ const previous=ST.appsConfig.mode;ST.appsConfig.mode=m;renderModeCards();renderRules();applyStatus();const r=await api('/api/apps/mode',{mode:m});if(!r.ok){ST.appsConfig.mode=previous;renderModeCards();renderRules();applyStatus();toast(r.error||'Не удалось изменить режим','err');} }
-function renderRules(){ const list=document.getElementById('ruleList'),q=(document.getElementById('ruleSearch')?.value||'').toLowerCase(),mode=ST.appsConfig.mode||'all';let apps=ST.appsConfig.apps||[];document.getElementById('rulesCount').textContent=apps.length;if(q)apps=apps.filter(a=>(a.name||a.exe||'').toLowerCase().includes(q));document.getElementById('ruleEmpty').classList.toggle('hidden',apps.length>0);list.innerHTML=apps.map(a=>{const enabled=a.enabled!==false,badge=!enabled?'Выключено':mode==='blacklist'?'Напрямую':mode==='whitelist'?'Через VPN':'Список не используется',badgeClass=!enabled?'off':mode==='blacklist'?'direct':'';return `<div class="rule-row glass"><div class="rule-ico">💻</div><div class="rule-meta"><div class="rule-name">${esc(a.name||a.exe)}</div><div class="rule-type">${esc(a.exe)}</div></div><span class="rule-badge ${badgeClass}">${badge}</span><button class="toggle ${enabled?'on':''}" aria-label="${enabled?'Отключить':'Включить'} правило" data-action="toggle-app" data-exe="${esc(a.exe)}"></button><button class="mini-btn" aria-label="Переименовать правило" data-action="edit-app" data-exe="${esc(a.exe)}" data-name="${esc(a.name||a.exe)}"><svg viewBox="0 0 24 24"><path d="M17 3l4 4-11 11H6v-4z"/></svg></button><button class="mini-btn del" aria-label="Удалить правило" data-action="remove-app" data-exe="${esc(a.exe)}"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div>`;}).join(''); }
-async function toggleApp(exe,el){ const next=!el.classList.contains('on');el.classList.toggle('on',next);const r=await api('/api/apps/toggle',{exe,enabled:next});if(!r.ok){el.classList.toggle('on',!next);toast(r.error||'Не удалось изменить правило','err');} }
-async function removeApp(exe){ if(!confirm(`Удалить правило для ${exe}?`))return;const r=await api('/api/apps/remove',{exe});if(!r.ok)toast(r.error||'Ошибка удаления','err');else toast('Правило удалено','ok'); }
-function openModal(id){const modal=document.getElementById(id);if(!modal)return;modal._returnFocus=document.activeElement;modal.classList.add('open');modal.setAttribute('aria-hidden','false');document.body.classList.add('modal-open');requestAnimationFrame(()=>modal.querySelector('input,button')?.focus());}
-function closeModal(id){const modal=document.getElementById(id);if(!modal)return;modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!document.querySelector('.modal-backdrop.open'))document.body.classList.remove('modal-open');const target=modal._returnFocus;if(target&&document.contains(target))target.focus();}
-function modalBackdropClose(event,id){if(event.target===event.currentTarget)closeModal(id);}
-function currentRuleAction(){const mode=ST.appsConfig.mode||'all';return mode==='whitelist'?'Через VPN':mode==='blacklist'?'Без VPN':'Список не используется';}
-function promptRule(){document.getElementById('ruleExe').value='';document.getElementById('ruleName').value='';document.getElementById('ruleModeAction').textContent=currentRuleAction();openModal('ruleModal');requestAnimationFrame(()=>document.getElementById('ruleExe').focus());}
-async function saveRule(){const exeInput=document.getElementById('ruleExe'),nameInput=document.getElementById('ruleName'),button=document.getElementById('saveRuleBtn');let exe=exeInput.value.trim();if(!exe){toast('Укажите процесс приложения','err');exeInput.focus();return;}if(/[\\/:*?"<>|]/.test(exe)){toast('Укажите только имя процесса, без пути','err');exeInput.focus();return;}if(!exe.toLowerCase().endsWith('.exe'))exe+='.exe';const name=nameInput.value.trim()||exe.replace(/\.exe$/i,'');button.disabled=true;try{const r=await api('/api/apps/add',{exe,name});if(r.ok){closeModal('ruleModal');toast('Правило добавлено','ok');}else toast(r.error||'Не удалось добавить правило','err');}finally{button.disabled=false;}}
-async function openProcessPicker(){document.getElementById('processSearch').value='';openModal('processModal');await loadProcesses(true);document.getElementById('processSearch').focus();}
-async function loadProcesses(force=false){const list=document.getElementById('processList'),count=document.getElementById('processCount');if(!force&&runningProcesses.length){renderProcessList();return;}list.innerHTML='<div class="process-state">Получение списка процессов…</div>';count.textContent='Получение списка…';const r=await apiGet('/api/apps/processes',12000);if(!Array.isArray(r.processes)){runningProcesses=[];count.textContent='Список недоступен';list.innerHTML=`<div class="process-state">${esc(r.error||'Не удалось получить процессы')}</div>`;return;}const unique=new Map();for(const value of r.processes){if(typeof value!=='string')continue;const name=value.trim();if(name&&name.toLowerCase().endsWith('.exe'))unique.set(name.toLowerCase(),name);}runningProcesses=[...unique.values()].sort((a,b)=>a.localeCompare(b,'ru',{sensitivity:'base'}));renderProcessList();}
-function renderProcessList(){const list=document.getElementById('processList'),count=document.getElementById('processCount'),query=(document.getElementById('processSearch').value||'').trim().toLowerCase(),visible=query?runningProcesses.filter(name=>name.toLowerCase().includes(query)):runningProcesses;count.textContent=query?`Найдено: ${visible.length} из ${runningProcesses.length}`:`Активных процессов: ${runningProcesses.length}`;if(!visible.length){list.innerHTML=`<div class="process-state">${query?'Ничего не найдено':'Нет доступных процессов'}</div>`;return;}list.innerHTML=visible.map(name=>`<button type="button" class="process-row" data-action="choose-process" data-exe="${esc(name)}"><span class="process-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h7"/></svg></span><span class="process-name">${esc(name)}</span></button>`).join('');}
-function chooseProcess(exe){document.getElementById('ruleExe').value=exe;const name=document.getElementById('ruleName');if(!name.value.trim())name.value=exe.replace(/\.exe$/i,'');closeModal('processModal');name.focus();}
-async function editRule(exe,name){ const nv=prompt('Новое имя правила:',name);if(!nv||nv.trim()===name)return;const r=await api('/api/apps/rename',{exe,name:nv.trim()});toast(r.ok?'Правило переименовано':(r.error||'Не удалось переименовать'),r.ok?'ok':'err'); }
-async function exportRules(){ const r=await api('/api/apps/export');toast(r.ok?`Правила сохранены: ${r.path}`:(r.error||'Не удалось экспортировать'),r.ok?'ok':'err'); }
-async function addPresetSet(){ let n=0; for(const [exe,name] of PRESET_SET){ const r=await api('/api/apps/add',{exe,name}); if(r.ok) n++; } toast(n?`Добавлено правил: ${n}`:'Все уже добавлены','ok'); }
-async function savePorts(){ const socks=parseInt(document.getElementById('portSocks').value),http=parseInt(document.getElementById('portHttp').value),r=await api('/api/settings',{socks,http});if(r.ok){ST.settings.socks=socks;ST.settings.http=http;}else syncSettings();toast(r.ok?'Порты сохранены':(r.error||'Не удалось сохранить порты'),r.ok?'ok':'err'); }
-async function updateTunnel(payload){ const r=await api('/api/tunnel-settings',payload);if(!r.ok){toast(r.error||'Не удалось сохранить настройку','err');syncSettings();return false;}Object.assign(ST.tunnel,payload);syncSettings();return true; }
-async function tglTunnel(el,key){ const next=!el.classList.contains('on');el.classList.toggle('on',next);if(!await updateTunnel({[key]:next}))el.classList.toggle('on',!next); }
-async function saveTunnelField(key,val){ if(await updateTunnel({[key]:val}))toast('Настройка сохранена','ok'); }
-async function setPref(key,val){ await updateTunnel({[key]:val}); }
-async function setPing(key,val){ const previous=ST.tunnel[key],r=await api('/api/ping-settings',{[key]:val});if(!r.ok){ST.tunnel[key]=previous;syncSettings();toast(r.error||'Не удалось сохранить настройку пинга','err');return;}ST.tunnel[key]=val;syncSettings(); }
-async function setPingVal(key,val){ await setPing(key,val); }
-async function tglSetting(el,key){ const next=!el.classList.contains('on');if(key==='lan'&&next&&!confirm('LAN-прокси откроет защищённые логином и паролем SOCKS5/HTTP порты для локальной сети. Продолжить?'))return;el.classList.toggle('on',next);const r=await api('/api/app-settings',{key,value:next});if(!r.ok){el.classList.toggle('on',!next);toast(r.error||'Не удалось сохранить настройку','err');return;}ST.settings[key]=next;syncSettings();if(key==='lan')toast('Настройка LAN применится после переподключения','ok'); }
-async function regenSocks5(){ const r=await api('/api/socks5/regenerate');if(r.ok){document.getElementById('s5user').value=r.user;document.getElementById('s5pass').value=r.pass;toast('Новые данные SOCKS5 созданы','ok');}else toast(r.error||'Не удалось создать данные','err'); }
-function togglePassword(btn){ const input=document.getElementById('s5pass'),show=input.type==='password';input.type=show?'text':'password';btn.title=show?'Скрыть пароль':'Показать пароль'; }
-async function regenHwid(){ if(!confirm('Изменение HWID может отвязать текущую подписку. Продолжить?'))return;const r=await api('/api/hwid/regenerate');if(r.ok){ST.hwid=r.hwid;document.getElementById('hwidVal').value=r.hwid;toast('HWID обновлён','ok');}else toast(r.error||'Не удалось обновить HWID','err'); }
-async function copyHwid(){ const v=document.getElementById('hwidVal').value;if(!v)return;try{await navigator.clipboard.writeText(v);toast('HWID скопирован','ok');}catch(_){toast('Не удалось скопировать HWID','err');} }
-async function resetStats(which){ if(!confirm(which==='today'?'Сбросить статистику за сегодня?':'Полностью удалить всю статистику?'))return;const r=await api(which==='today'?'/api/stats/reset-today':'/api/stats/reset-all');toast(r.ok?'Статистика сброшена':(r.error||'Не удалось сбросить статистику'),r.ok?'ok':'err'); }
-async function tglAnim(el){ await tglSetting(el,'animations'); }
-async function tglPetals(el){ await tglSetting(el,'petals'); }
-/* Custom dropdowns */
-function closeDropdowns(){document.querySelectorAll('.dd.open').forEach(d=>{d.classList.remove('open');d.closest('.set-row')?.classList.remove('dd-open');d.querySelector('.dd-trigger')?.setAttribute('aria-expanded','false');});}
-function ddToggle(id){ const el=document.getElementById(id),willOpen=!el.classList.contains('open');closeDropdowns();if(willOpen){el.classList.add('open');el.closest('.set-row')?.classList.add('dd-open');}el.querySelector('.dd-trigger')?.setAttribute('aria-expanded',String(willOpen)); }
-document.addEventListener('click',e=>{ if(!e.target.closest('.dd')) closeDropdowns(); });
-async function setServerSort(v){ if(await updateTunnel({server_sort:v})){ST.srvSort=v;renderServers();renderWg();} }
-async function pickSort(v,_lbl,_el){ closeDropdowns();await setServerSort(v); }
-async function pickDns(v,_lbl,_el){ closeDropdowns();await updateTunnel({dns_preset:v}); }
-function segSet(id,val){ document.querySelectorAll(`#${id} button`).forEach(b=>b.classList.toggle('on',b.dataset.v===val)); }
-function syncSettings(){ const s=ST.settings,t=ST.tunnel;document.querySelectorAll('.toggle[data-sk]').forEach(el=>el.classList.toggle('on',s[el.dataset.sk]!==false));document.querySelectorAll('.toggle[data-tk]').forEach(el=>el.classList.toggle('on',!!t[el.dataset.tk]));if(s.socks)document.getElementById('portSocks').value=s.socks;if(s.http)document.getElementById('portHttp').value=s.http;if(t.socks5_user!==undefined)document.getElementById('s5user').value=t.socks5_user||'';if(t.socks5_pass!==undefined)document.getElementById('s5pass').value=t.socks5_pass||'';if(t.ping_url)document.getElementById('pingUrl').value=t.ping_url;if(t.ping_timeout)document.getElementById('pingTimeout').value=t.ping_timeout;segSet('segPing',t.ping_type||'tcp');segSet('segIp',t.preferred_ip||'auto');ST.srvSort=t.server_sort||'default';segSet('segSort',ST.srvSort);const sortMap={default:'По умолчанию',ping:'По пингу',name:'По имени'};document.getElementById('ddSortLbl').textContent=sortMap[ST.srvSort]||sortMap.default;document.querySelectorAll('#ddSort .dd-item').forEach(i=>i.classList.toggle('on',i.dataset.v===ST.srvSort));const dnsMap={cf_google:'Cloudflare + Google',cloudflare:'Cloudflare (1.1.1.1)',google:'Google (8.8.8.8)',adguard:'AdGuard'};const dv=t.dns_preset||'cf_google';document.getElementById('ddDnsLbl').textContent=dnsMap[dv]||dnsMap.cf_google;document.querySelectorAll('#ddDns .dd-item').forEach(i=>i.classList.toggle('on',i.dataset.v===dv));document.getElementById('tgSecureDns').classList.toggle('on',dv==='adguard');document.getElementById('hwidVal').value=ST.hwid||'';petalsOn=s.petals!==false;document.getElementById('petals').style.display=petalsOn?'block':'none';document.body.classList.toggle('no-anim',s.animations===false); }
-function renderZapret(){ const list=document.getElementById('zapList'),strats=ST.zapStrategies||[];if(!ST.zapSel&&strats[0])ST.zapSel=strats[0].id;list.innerHTML=strats.map(s=>`<div class="zap-card glass ${s.id===ST.zapSel?'sel':''}" role="button" tabindex="0" data-action="select-zapret" data-id="${esc(s.id)}"><div class="zap-ico">${esc(s.icon||'🚀')}</div><div><div class="zap-name">${esc(s.name||s.id)}</div><div class="zap-sub">${esc(s.desc||'Стратегия обхода DPI')}</div><div class="zap-tags">${(s.tags||['Discord','YouTube']).map(t=>`<span class="zap-tag">${esc(t)}</span>`).join('')}</div></div><div class="zap-radio"></div></div>`).join('')||'<div class="empty"><b>Нет стратегий</b><p>Добавь winws.exe и WinDivert64.sys в папку bin/</p></div>';applyZapret(ST.zapRunning?'on':'off'); }
-function applyZapret(state){ const st=document.getElementById('zapStatus'),t=document.getElementById('zapT'),d=document.getElementById('zapD'),btn=document.getElementById('zapBtn'); st.classList.toggle('on',state==='on'||ST.zapRunning); if(state==='starting'){ t.textContent='Запуск…'; d.textContent='Инициализация стратегии'; } else if(state==='on'||ST.zapRunning){ t.textContent='Активен'; d.textContent='Обход DPI работает'; btn.textContent='■ Остановить'; btn.classList.add('running'); document.getElementById('zapHeadState').textContent='Активен'; document.getElementById('zapHeadState').classList.add('on'); } else { t.textContent='Не активен'; d.textContent='Выберите стратегию и нажмите «Запустить»'; btn.textContent='▶ Запустить выбранную стратегию'; btn.classList.remove('running'); document.getElementById('zapHeadState').textContent='Не подключено'; document.getElementById('zapHeadState').classList.remove('on'); } }
-async function toggleZapret(){ const r=ST.zapRunning?await api('/api/zapret/stop'):ST.zapSel?await api('/api/zapret/start',{strategy_id:ST.zapSel}):{ok:false,error:'Выбери стратегию'};if(!r.ok)toast(r.error||'Не удалось изменить состояние Zapret','err'); }
-const NAV_LABELS={home:'Главная',servers:'Серверы',wg:'WireGuard',routing:'Маршрутизация',logs:'Логи',settings:'Настройки',zapret:'Zapret'};
-document.querySelectorAll('.nav').forEach(n=>{n.onclick=()=>go(n.dataset.page);n.setAttribute('role','button');n.tabIndex=0;n.setAttribute('aria-label',NAV_LABELS[n.dataset.page]||n.dataset.page);n.title=NAV_LABELS[n.dataset.page]||n.dataset.page;});
-const wgPingButton=document.querySelector('#page-wg .page-head .icon-btn');if(wgPingButton){wgPingButton.id='wgPingBtn';wgPingButton.setAttribute('aria-label','Проверить задержку WG серверов');wgPingButton.title='Проверить пинг WG';}
-const BUTTON_LABELS={refreshSubs:'Обновить подписки',copyHwid:'Скопировать HWID',regenHwid:'Создать новый HWID',regenSocks5:'Создать логин и пароль',resetStats:'Сбросить статистику'};document.querySelectorAll('button:not([aria-label])').forEach(button=>{const text=button.textContent.trim(),handler=button.getAttribute('onclick')||'',name=Object.keys(BUTTON_LABELS).find(item=>handler.startsWith(item+'('));if(text)button.setAttribute('aria-label',text);else if(name)button.setAttribute('aria-label',BUTTON_LABELS[name]);});
-document.querySelectorAll('.toggle:not(button)').forEach(el=>{el.setAttribute('role','switch');el.tabIndex=0;el.setAttribute('aria-checked',String(el.classList.contains('on')));const label=el.closest('.set-row')?.querySelector('.set-name')?.textContent;if(label)el.setAttribute('aria-label',label);});
-const switchObserver=new MutationObserver(records=>records.forEach(({target})=>{if(target.matches('[role="switch"]'))target.setAttribute('aria-checked',String(target.classList.contains('on')));}));document.querySelectorAll('[role="switch"]').forEach(el=>switchObserver.observe(el,{attributes:true,attributeFilter:['class']}));
-document.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&event.target.matches('[role="button"],[role="switch"]')){event.preventDefault();event.target.click();}});
-document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(document.getElementById('processModal').classList.contains('open'))closeModal('processModal');else if(document.getElementById('ruleModal').classList.contains('open'))closeModal('ruleModal');else closeDropdowns();});
-document.addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(!target)return;event.stopPropagation();const action=target.dataset.action,idx=Number(target.dataset.index);if(action==='select-server')selectServer(target.dataset.gid,idx);else if(action==='toggle-star')toggleStar(target.dataset.sid);else if(action==='delete-server')delServer(target.dataset.gid,idx);else if(action==='select-wg')selectWg(target.dataset.gid,idx);else if(action==='delete-wg')delWg(target.dataset.gid,idx);else if(action==='toggle-app')toggleApp(target.dataset.exe,target);else if(action==='edit-app')editRule(target.dataset.exe,target.dataset.name);else if(action==='remove-app')removeApp(target.dataset.exe);else if(action==='choose-process')chooseProcess(target.dataset.exe);else if(action==='select-zapret'){ST.zapSel=target.dataset.id;renderZapret();}});
-function go(page){ document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('on',n.dataset.page===page)); document.querySelectorAll('.page').forEach(p=>p.classList.remove('active')); const el=document.getElementById('page-'+page); if(el) el.classList.add('active'); }
-function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function addLog(msg,tag){ const body=document.getElementById('logBody'); const t=new Date().toTimeString().slice(0,8); const line=document.createElement('div'); line.className='log-line '+(tag||'log'); line.innerHTML=`<span class="t">${t}</span><span class="m">${esc(msg)}</span>`; body.appendChild(line); body.scrollTop=body.scrollHeight; while(body.children.length>300) body.removeChild(body.firstChild); }
-let _tt; function toast(msg,kind){ const el=document.getElementById('toast'); el.textContent=msg; el.className='show '+(kind||''); clearTimeout(_tt); _tt=setTimeout(()=>el.className='',2600); }
-function spawnPetal(){ if(!petalsOn) return; const layer=document.getElementById('petals'); if(layer.children.length>16) return; const p=document.createElement('div'); p.className='petal'; const x=Math.random()*100,dur=8+Math.random()*8,sz=8+Math.random()*8; p.style.left=x+'vw'; p.style.width=sz+'px'; p.style.height=sz+'px'; p.style.opacity=(0.3+Math.random()*0.4).toFixed(2); p.style.animation=`fall ${dur}s linear forwards`; layer.appendChild(p); setTimeout(()=>p.remove(),dur*1000+200); }
-setInterval(spawnPetal,900);
-connectWS();
-</script>
+<dialog id="subscriptionDialog" aria-labelledby="subscriptionDialogTitle"><form method="dialog" id="subscriptionEdit">
+  <h2 id="subscriptionDialogTitle"></h2><p id="subscriptionDialogDescription"></p>
+  <label id="subscriptionNameLabel">Название<input class="inp" id="subscriptionName" maxlength="160"></label>
+  <div class="subscription-actions"><button class="btn" type="button" id="subscriptionCancel">Отмена</button><button class="btn btn-primary" type="submit" id="subscriptionConfirm">Сохранить</button></div>
+</form></dialog>
+<script src="/static/js/server-groups.js"></script>
+<script src="/static/js/app.js"></script>
+<script src="/static/js/route-details.js"></script>
+<script src="/static/js/subscriptions.js"></script>
+<link rel="stylesheet" href="/static/css/routing-workspace.css">
+<script src="/static/js/routing-workspace.js"></script>
+<link rel="stylesheet" href="/static/css/settings-workspace.css">
+<script src="/static/js/settings-workspace.js"></script>
+<link rel="stylesheet" href="/static/css/routing-editor.css">
+<script src="/static/js/routing-editor.js"></script>
+<script src="/static/js/updates.js"></script>
 </body>
 </html>

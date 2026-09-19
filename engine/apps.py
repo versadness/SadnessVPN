@@ -52,7 +52,10 @@ def load_apps() -> dict:
                 item for item in data["apps"]
                 if isinstance(item, dict) and isinstance(item.get("exe"), str)
             ]
-            return {"mode": mode, "apps": valid_apps}
+            result = {"mode": mode, "apps": valid_apps}
+            if isinstance(data.get("rules"), list):
+                result["rules"] = data["rules"]
+            return result
     except (OSError, UnicodeError, json.JSONDecodeError):
         return _default_apps()
 

@@ -1,0 +1,5 @@
+.rule-route-detail{display:block;margin-top:6px;color:var(--muted,#a9a5bc);font-size:11px;line-height:1.55;white-space:normal;overflow-wrap:anywhere}
+.rule-row{min-height:86px}.rule-meta{min-width:0}.observed-app{padding:13px 16px;margin-bottom:8px;border-radius:14px}.observed-app strong{display:block;font-size:12px}.observed-app small{display:block;margin-top:6px;font-size:11px;line-height:1.5;color:var(--muted,#a9a5bc);overflow-wrap:anywhere}
+.observed-heading{margin:24px 0 12px;font-size:12px;color:var(--muted,#a9a5bc)}
+#coreSelect{min-width:180px;max-width:230px}#coreSelect option{background:#171324;color:#eee}
+@media(max-width:700px){#coreSelect{min-width:130px}.rule-route-detail{font-size:10px}.rule-row{flex-wrap:wrap}.rule-meta{flex-basis:55%}}

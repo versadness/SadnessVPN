@@ -1,0 +1,12 @@
+.routing-editor{margin:auto;width:min(480px,calc(100vw - 32px));max-height:calc(100vh - 40px);box-sizing:border-box;overflow:auto;padding:26px;border:1px solid #a898df55;border-radius:24px;color:#ece8ff;background:linear-gradient(145deg,#29213d,#161222);box-shadow:0 24px 90px #0009}
+.routing-editor [hidden]{display:none!important}#routeCustom>input,#routeCustom>button{flex:0 0 auto;min-height:42px}#routeCustom>.custom-rule-list{flex:1;min-height:0}
+.routing-editor::backdrop{background:#080613b8}.routing-editor h2{margin:0 0 20px;font-size:22px}
+.routing-editor .inp{width:100%;max-width:100%;box-sizing:border-box}.routing-editor .form-label{display:block;margin:16px 0 8px}
+.rule-type-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rule-type-grid button{border:1px solid transparent;background:#ffffff0d;border-radius:12px;color:#b9b2cb;padding:12px;text-align:left;cursor:pointer}
+.rule-type-grid button[aria-pressed=true]{border-color:#aa90f4;color:#eee5ff;background:#9a72f526}
+.route-error{color:#efb597;font-size:12px;overflow-wrap:anywhere}.custom-rule-list{overflow:auto;min-height:80px}
+.custom-rule{padding:16px;margin:10px 0;border-radius:16px}.custom-rule p{margin:8px 0;overflow-wrap:anywhere}
+.rule-actions{display:flex;flex-wrap:wrap;gap:8px}.rule-actions .btn{padding:7px 10px}.route-choice-list{max-height:220px;overflow:auto;margin:10px 0}.route-choice-list button{display:block;width:100%;text-align:left}
+#routeCustom,#routePresets{overflow:auto;min-height:0}#routeCustom>input{margin-bottom:10px}.routing-editor :focus-visible{outline:2px solid #c0a3ff;outline-offset:2px}
+.route-choice-list button.btn{display:flex;align-items:center;gap:10px}.route-choice-list img{flex:0 0 24px;object-fit:contain;border-radius:4px}

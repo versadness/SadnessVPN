@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 from ui import server
+from ui import profile_state
 
 
 class LocalApiBoundaryTests(unittest.TestCase):
@@ -46,7 +47,8 @@ class LocalApiBoundaryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_invalid_or_reserved_proxy_ports_are_rejected_without_mutation(self):
-        original = (server._socks_port, server._http_port)
+        ports = lambda: (server._app_settings["socks"], server._app_settings["http"])
+        original = ports()
         cases = (
             {"socks": 0, "http": 8080},
             {"socks": 8080, "http": 8080},
@@ -62,7 +64,7 @@ class LocalApiBoundaryTests(unittest.TestCase):
                     base_url="http://127.0.0.1:45678",
                 )
                 self.assertFalse(response.get_json()["ok"])
-                self.assertEqual((server._socks_port, server._http_port), original)
+                self.assertEqual(ports(), original)
 
     def test_invalid_tunnel_setting_is_rejected_without_mutation(self):
         original = server._app_settings["preferred_ip"]
@@ -77,8 +79,8 @@ class LocalApiBoundaryTests(unittest.TestCase):
         self.assertEqual(server._app_settings["preferred_ip"], original)
 
     def test_rule_rename_preserves_the_existing_rule(self):
-        original = server._apps_config
-        server._apps_config = {
+        original = profile_state.apps_config
+        profile_state.apps_config = {
             "mode": "blacklist",
             "apps": [{
                 "exe": "Bob's Browser.exe",
@@ -96,19 +98,19 @@ class LocalApiBoundaryTests(unittest.TestCase):
                 )
 
             self.assertTrue(response.get_json()["ok"])
-            self.assertEqual(server._apps_config["apps"], [{
+            self.assertEqual(profile_state.apps_config["apps"], [{
                 "exe": "Bob's Browser.exe",
                 "name": "Bob's private browser",
                 "path": r"C:\Apps\browser.exe",
                 "enabled": False,
             }])
         finally:
-            server._apps_config = original
+            profile_state.apps_config = original
 
     def test_invalid_rule_rename_does_not_remove_the_rule(self):
-        original = server._apps_config
+        original = profile_state.apps_config
         app = {"exe": "chat.exe", "name": "Chat", "path": "", "enabled": True}
-        server._apps_config = {"mode": "all", "apps": [dict(app)]}
+        profile_state.apps_config = {"mode": "all", "apps": [dict(app)]}
         try:
             response = self.client.post(
                 "/api/apps/rename",
@@ -117,24 +119,24 @@ class LocalApiBoundaryTests(unittest.TestCase):
             )
 
             self.assertFalse(response.get_json()["ok"])
-            self.assertEqual(server._apps_config["apps"], [app])
+            self.assertEqual(profile_state.apps_config["apps"], [app])
         finally:
-            server._apps_config = original
+            profile_state.apps_config = original
 
     def test_server_ui_identity_does_not_depend_on_list_index(self):
-        original = server._groups
+        original = profile_state.groups
         first = {"remark": "First", "protocol": "vless", "ui_id": "server-a"}
         second = {"remark": "Second", "protocol": "trojan", "ui_id": "server-b"}
-        server._groups = [{"id": "g", "name": "Group", "servers": [first, second]}]
+        profile_state.groups = [{"id": "g", "name": "Group", "servers": [first, second]}]
         try:
             before = server._groups_for_ui()[0]["servers"]
-            server._groups[0]["servers"].reverse()
+            profile_state.groups[0]["servers"].reverse()
             after = server._groups_for_ui()[0]["servers"]
 
             self.assertEqual([item["ui_id"] for item in before], ["server-a", "server-b"])
             self.assertEqual([item["ui_id"] for item in after], ["server-b", "server-a"])
         finally:
-            server._groups = original
+            profile_state.groups = original
 
     def test_public_ip_response_is_validated(self):
         response_body = json.dumps({"ip": "203.0.113.9"}).encode("utf-8")
@@ -195,8 +197,9 @@ class LocalApiBoundaryTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, len(server._PUBLIC_IP_SOURCES))
 
     def test_process_picker_returns_running_executables(self):
+        from ui.routes import apps as apps_routes
         with mock.patch.object(
-            server,
+            apps_routes,
             "get_running_processes",
             return_value=["ChatGPT.exe", "Telegram.exe"],
         ):
@@ -268,7 +271,7 @@ class LocalApiBoundaryTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             exported = Path(payload["path"])
             self.assertEqual(exported.parent, Path(temporary) / "Downloads")
-            self.assertEqual(json.loads(exported.read_text(encoding="utf-8")), server._apps_config)
+            self.assertEqual(json.loads(exported.read_text(encoding="utf-8")), profile_state.apps_config)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,243 @@
+"""Настройки приложения: путь, значения по умолчанию, загрузка и сохранение.
+
+Словарь app_settings создаётся один раз и никогда не перепривязывается —
+все, кто с ним работает, держат ссылку на один и тот же объект. Если его
+заменить целиком, блюпринты и ui/server.py разъедутся молча, поэтому
+сбрасывать его нужно через reset_for_tests(), а не присваиванием.
+"""
+import json
+import os
+
+from engine.core_config import CORES
+from engine.diagnostics import journal
+from engine.json_store import atomic_write_json
+from engine.paths import data_dir
+
+DATA_DIR = data_dir()
+SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
+PROFILE_DIR = os.path.join(DATA_DIR, "profile")
+
+# Порты, которые приложение занимает само: 45678 — локальный HTTP-бэкенд,
+# 9090 — Clash API ядра. Пользователь не может назначить их прокси.
+CLASH_PORT_DEFAULT = 9090
+RESERVED_LOCAL_PORTS = {45678, CLASH_PORT_DEFAULT}
+
+TUNNEL_KEYS = (
+    "kill_switch", "block_udp", "socks5_auth", "socks5_user", "socks5_pass",
+    "mux", "fakedns", "preferred_ip", "dns_preset", "custom_dns",
+    "ping_type", "ping_url", "ping_timeout", "server_sort", "core",
+)
+
+USER_APP_SETTING_KEYS = {
+    "startup", "autoconn", "silent", "lan", "mintray", "reconnect",
+    "animations", "petals", "favorite_servers", "onboarding_complete",
+    "avatar_file", "wallpaper_file",
+}
+
+DEFAULT_SETTINGS = {
+    "startup":          False,
+    "autoconn":         False,
+    "reconnect":        False,
+    "silent":           False,
+    "lan":              False,
+    "mintray":          False,
+    "animations":       True,
+    "petals":           True,
+    "onboarding_complete": False,
+    "avatar_file":      "",
+    "wallpaper_file":   "",
+    "favorite_servers": [],
+    "socks":            1080,
+    "http":             8080,
+    "selected_group":   None,
+    "selected_index":   None,
+    "selected_wg_group": None,
+    "selected_wg_index": None,
+    "active_protocol":  "vless",
+    "core":             "auto",
+    "hwid":             "",
+    "ping_type":        "tcp",
+    "ping_url":         "https://www.gstatic.com/generate_204",
+    "ping_timeout":     3000,
+    "kill_switch":      False,
+    "block_udp":        False,
+    "socks5_auth":      False,
+    "socks5_user":      "",
+    "socks5_pass":      "",
+    "mux":              False,
+    "fakedns":          False,
+    "preferred_ip":     "ipv4",
+    "dns_preset":       "cf_google",
+    "custom_dns":       "",
+    "server_sort":      "default",
+}
+
+
+def load_settings() -> dict:
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        if not isinstance(loaded, dict):
+            raise ValueError("Invalid settings")
+        settings = {**DEFAULT_SETTINGS, **loaded}
+        for key in (
+            "startup", "autoconn", "silent", "lan", "mintray", "animations", "reconnect",
+            "petals", "onboarding_complete", "kill_switch",
+            "block_udp", "socks5_auth", "mux", "fakedns",
+        ):
+            if not isinstance(settings.get(key), bool):
+                settings[key] = DEFAULT_SETTINGS[key]
+        for key in (
+            "socks5_user", "socks5_pass", "custom_dns", "ping_url",
+            "avatar_file", "wallpaper_file",
+        ):
+            if not isinstance(settings.get(key), str):
+                settings[key] = DEFAULT_SETTINGS[key]
+        if settings.get("lan") and not (
+            settings.get("socks5_auth")
+            and settings.get("socks5_user")
+            and settings.get("socks5_pass")
+        ):
+            settings["lan"] = False
+        if settings.get("preferred_ip") not in ("ipv4", "ipv6", "auto"):
+            settings["preferred_ip"] = "ipv4"
+        if settings.get("dns_preset") not in (
+            "cf_google", "google", "cloudflare", "adguard", "quad9",
+            "xbox", "xbox_dot", "comss", "comss_dot", "custom",
+        ):
+            settings["dns_preset"] = "cf_google"
+        if settings.get("ping_type") not in ("tcp", "icmp", "http_get", "http_head"):
+            settings["ping_type"] = "tcp"
+        favorites = settings.get("favorite_servers")
+        if not isinstance(favorites, list):
+            settings["favorite_servers"] = []
+        else:
+            settings["favorite_servers"] = [
+                item for item in favorites
+                if isinstance(item, str) and 0 < len(item) <= 128
+            ][:10000]
+        if settings.get("server_sort") not in ("default", "ping", "name"):
+            settings["server_sort"] = "default"
+        for key in ("selected_index", "selected_wg_index"):
+            if settings.get(key) is not None and not isinstance(settings.get(key), int):
+                settings[key] = None
+        for key in ("selected_group", "selected_wg_group"):
+            if settings.get(key) is not None and not isinstance(settings.get(key), str):
+                settings[key] = None
+        if settings.get("active_protocol") not in ("vless", "wg"):
+            settings["active_protocol"] = "vless"
+        if settings.get("core") not in CORES:
+            settings["core"] = "auto"
+        return settings
+    except Exception:
+        return dict(DEFAULT_SETTINGS)
+
+
+def save_settings(cfg: dict) -> bool:
+    try:
+        atomic_write_json(SETTINGS_PATH, cfg)
+        return True
+    except Exception as exc:
+        # В собранном приложении stdout никуда не ведёт: пишем в журнал,
+        # иначе отказ записи настроек остаётся невидимым.
+        journal.warning("Не удалось сохранить настройки: %s", exc)
+        return False
+
+
+def port_number(value, default=None) -> int:
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        if default is not None:
+            return default
+        raise ValueError("Порт должен быть числом")
+    if not 1 <= port <= 65535:
+        if default is not None:
+            return default
+        raise ValueError("Порт должен быть в диапазоне от 1 до 65535")
+    return port
+
+
+def normalize_tunnel_setting(key, value):
+    if key == "core":
+        if value not in CORES:
+            raise ValueError("Неизвестное ядро")
+        return value
+    if key in ("kill_switch", "block_udp", "socks5_auth", "mux", "fakedns"):
+        if not isinstance(value, bool):
+            raise ValueError(f"{key} must be true or false")
+        return value
+    if key in ("socks5_user", "socks5_pass", "custom_dns"):
+        if not isinstance(value, str) or len(value) > 2048:
+            raise ValueError(f"Invalid {key}")
+        return value
+    if key == "preferred_ip":
+        if value not in ("ipv4", "ipv6", "auto"):
+            raise ValueError("Invalid IP preference")
+        return value
+    if key == "dns_preset":
+        if value not in (
+            "cf_google", "google", "cloudflare", "adguard", "quad9",
+            "xbox", "xbox_dot", "comss", "comss_dot", "custom",
+        ):
+            raise ValueError("Invalid DNS preset")
+        return value
+    if key == "ping_type":
+        if value not in ("tcp", "icmp", "http_get", "http_head"):
+            raise ValueError("Invalid ping type")
+        return value
+    if key == "ping_url":
+        if not isinstance(value, str) or len(value) > 2048 or not value.startswith(("http://", "https://")):
+            raise ValueError("Invalid ping URL")
+        return value
+    if key == "ping_timeout":
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            raise ValueError("Invalid ping timeout") from None
+        if not 200 <= numeric <= 30000:
+            raise ValueError("Invalid ping timeout")
+        return value
+    if key == "server_sort":
+        if value not in ("default", "ping", "name"):
+            raise ValueError("Invalid server sorting mode")
+        return value
+    raise ValueError("Unknown tunnel setting")
+
+
+def normalize_app_setting(key, value):
+    if key in {
+        "startup", "autoconn", "silent", "lan", "mintray", "animations", "reconnect",
+        "petals", "onboarding_complete",
+    }:
+        if not isinstance(value, bool):
+            raise ValueError("Значение настройки должно быть true или false")
+        return value
+    if key in {"avatar_file", "wallpaper_file"}:
+        if not isinstance(value, str) or len(value) > 128:
+            raise ValueError("Некорректное имя файла оформления")
+        return value
+    if key == "favorite_servers":
+        if not isinstance(value, list):
+            raise ValueError("Некорректный список избранных серверов")
+        cleaned = []
+        for item in value:
+            if not isinstance(item, str) or not 0 < len(item) <= 128:
+                raise ValueError("Некорректный идентификатор сервера")
+            if item not in cleaned:
+                cleaned.append(item)
+        if len(cleaned) > 10000:
+            raise ValueError("Слишком много избранных серверов")
+        return cleaned
+    raise ValueError("Неизвестная настройка")
+
+
+
+app_settings = load_settings()
+
+
+def reset_for_tests(values=None):
+    """Заменить содержимое, сохранив тот же объект (см. примечание выше)."""
+    app_settings.clear()
+    app_settings.update(DEFAULT_SETTINGS if values is None else values)
+    return app_settings

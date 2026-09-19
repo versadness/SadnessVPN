@@ -1,0 +1,6 @@
+[Unit]
+Description=Reload only Sadness HTTPS to read renewed certificate
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl try-reload-or-restart sadness-updates.service

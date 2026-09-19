@@ -34,8 +34,15 @@ def read_pe_machine(path: str) -> int:
 
 
 def validate_runtime_binaries(bin_dir: str) -> dict[str, int]:
-    """Require matching 64-bit sing-box and Wintun runtime files."""
-    expected_files = ("sing-box.exe", "wintun.dll")
+    """Require matching 64-bit VPN engines and driver runtime files."""
+    expected_files = (
+        "sing-box.exe",
+        "mihomo.exe",
+        "wintun.dll",
+        os.path.join("amneziawg", "amneziawg.exe"),
+        os.path.join("amneziawg", "awg.exe"),
+        os.path.join("amneziawg", "wintun.dll"),
+    )
     machines = {
         name: read_pe_machine(os.path.join(bin_dir, name))
         for name in expected_files

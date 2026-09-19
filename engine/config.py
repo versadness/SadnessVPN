@@ -18,6 +18,11 @@ import re
 import urllib.parse
 import urllib.request
 
+from engine.app_meta import subscription_headers
+from engine.transports import xhttp_from_query
+from engine.subscriptions import (download_subscription, decode_subscription,
+                                  SubscriptionServers, no_servers_error)
+
 
 SUPPORTED_SCHEMES = ("vless://", "ss://", "trojan://", "hysteria2://", "hy2://")
 
@@ -37,6 +42,23 @@ DNS_PRESETS = {
     "xbox":     {"remote": ["udp://111.88.96.50", "udp://111.88.96.51"],       "local": "111.88.96.50"},
     # DoT вариант Xbox DNS (зашифрованный, более надёжный):
     "xbox_dot": {"remote": ["tls://xbox-dns.ru",  "tls://xbox-dns.ru"],        "local": "111.88.96.50"},
+    # Comss.one DNS — второй Smart DNS-провайдер (PowerDNS, бесплатный).
+    # Xbox применяет подмену только к заранее зарегистрированным IP клиентов,
+    # из-за чего у пользователей с динамическим адресом он молча перестаёт
+    # работать. Comss такой регистрации не требует.
+    "comss":     {"remote": ["udp://83.220.169.155", "udp://212.109.195.93"],  "local": "83.220.169.155"},
+    # DoT вариант Comss (зашифрованный):
+    "comss_dot": {"remote": ["tls://dns.comss.one",  "tls://dns.comss.one"],   "local": "83.220.169.155"},
+}
+
+# Бутстрап по raw IP для каждого Smart DNS: резолвить имя сервера через него
+# самого нельзя — получится петля. Ключи здесь же задают, какие пресеты
+# считаются Smart DNS и получают особую схему DNS в конфиге sing-box.
+SMART_DNS_BOOTSTRAP = {
+    "xbox":      "udp://111.88.96.50",
+    "xbox_dot":  "udp://111.88.96.50",
+    "comss":     "udp://83.220.169.155",
+    "comss_dot": "udp://83.220.169.155",
 }
 
 
@@ -77,7 +99,8 @@ def parse_vless_link(link: str) -> dict:
         "port":          port,
         "uuid":          user_id,
         "security":      params.get("security", "none"),
-        "type":          params.get("type", "tcp"),
+        "type":          "xhttp" if params.get("type") == "splithttp" else params.get("type", "tcp"),
+        **({"xhttp": xhttp_from_query(params)} if params.get("type") in ("xhttp", "splithttp") else {}),
         "sni":           params.get("sni", ""),
         "fp":            params.get("fp", ""),
         "pbk":           params.get("pbk", ""),
@@ -88,6 +111,8 @@ def parse_vless_link(link: str) -> dict:
         "serviceName":   params.get("serviceName", ""),
         "alpn":          params.get("alpn", ""),
         "allowInsecure": params.get("allowInsecure", "0"),
+        "pinned_cert":   params.get("pcs", params.get("pinnedPeerCertSha256", "")),
+        "verify_cert_name": params.get("vcn", params.get("verifyPeerCertByName", "")),
         "encryption":    params.get("encryption", "none"),
     }
 
@@ -201,51 +226,8 @@ def parse_trojan_link(link: str) -> dict:
 # ─── Парсинг Hysteria2 ────────────────────────────────────────────────────────
 
 def parse_hysteria2_link(link: str) -> dict:
-    link = link.strip()
-    if not (link.startswith("hysteria2://") or link.startswith("hy2://")):
-        raise ValueError("Ожидается hysteria2:// или hy2:// ссылка")
-    scheme = "hysteria2://" if link.startswith("hysteria2://") else "hy2://"
-    rest = link[len(scheme):]
-    remark = "Hysteria2"
-    if "#" in rest:
-        rest, remark_enc = rest.rsplit("#", 1)
-        remark = urllib.parse.unquote(remark_enc)
-
-    query_str = ""
-    if "?" in rest:
-        rest, query_str = rest.split("?", 1)
-
-    if "@" in rest:
-        auth, hostport = rest.rsplit("@", 1)
-        password = urllib.parse.unquote(auth)
-    else:
-        hostport = rest
-        password = ""
-
-    if hostport.startswith("["):
-        bracket_end = hostport.index("]")
-        host = hostport[1:bracket_end]
-        port = int(hostport[bracket_end + 2:])
-    elif ":" in hostport:
-        h, p = hostport.rsplit(":", 1)
-        host = h
-        port = int(p)
-    else:
-        host = hostport
-        port = 443
-
-    params = dict(urllib.parse.parse_qsl(query_str))
-    return {
-        "protocol":      "hysteria2",
-        "remark":        remark,
-        "host":          host,
-        "port":          port,
-        "password":      password,
-        "sni":           params.get("sni", ""),
-        "insecure":      params.get("insecure", "0") == "1",
-        "obfs":          params.get("obfs", ""),
-        "obfs_password": params.get("obfs-password", ""),
-    }
+    from engine.hysteria2 import parse_uri
+    return parse_uri(link)
 
 
 # ─── Универсальный парсер ─────────────────────────────────────────────────────
@@ -267,6 +249,8 @@ def parse_link(link: str) -> dict:
 # ─── Построение sing-box outbound ─────────────────────────────────────────────
 
 def _build_singbox_outbound(server: dict, mux: bool = False) -> dict:
+    if server.get("type") in ("xhttp", "splithttp"):
+        raise ValueError("XHTTP требует Mihomo. Выберите ядро Авто или Mihomo в настройках.")
     protocol = server.get("protocol", "vless")
 
     if protocol == "ss":
@@ -324,6 +308,10 @@ def _build_singbox_outbound(server: dict, mux: bool = False) -> dict:
         return outbound
 
     if protocol == "hysteria2":
+        from engine.hysteria2 import validate, requires_mihomo
+        validate(server)
+        if requires_mihomo(server):
+            raise ValueError("HY2: для этих параметров выберите Авто / Mihomo (sing-box 1.10.7 их не поддерживает)")
         tls_block = {
             "enabled":     True,
             "server_name": server.get("sni", server["host"]) or server["host"],
@@ -332,6 +320,9 @@ def _build_singbox_outbound(server: dict, mux: bool = False) -> dict:
             tls_block["pinned_peer_certificate_chain_sha256"] = [server["pinned_cert"]]
         else:
             tls_block["insecure"] = server.get("insecure", False)
+
+        if server.get("alpn"):
+            tls_block["alpn"] = [a.strip() for a in server["alpn"].split(",") if a.strip()]
 
         outbound = {
             "type":        "hysteria2",
@@ -416,10 +407,11 @@ def _build_singbox_outbound(server: dict, mux: bool = False) -> dict:
 
 # ─── Построение конфига sing-box TUN ─────────────────────────────────────────
 
-def build_xray_tun_config(
+def build_singbox_config(
     server         : dict,
     socks_port     : int  = 1080,
     http_port      : int  = 8080,
+    clash_port     : int  = 9090,
     routing_mode   : str  = "all",
     routed_apps    : list = None,
     # ── Параметры туннеля ──
@@ -440,7 +432,7 @@ def build_xray_tun_config(
     proxy_outbound = _build_singbox_outbound(server, mux=mux)
 
     # ── Определяем режим Xbox Smart DNS ──────────────────────────────
-    use_xbox_smartdns = dns_preset in ("xbox", "xbox_dot")
+    use_xbox_smartdns = dns_preset in SMART_DNS_BOOTSTRAP
 
     # ── DNS серверы ───────────────────────────────────────────────────
     if dns_preset == "custom" and custom_dns:
@@ -472,7 +464,7 @@ def build_xray_tun_config(
     #   ВАЖНО: Xbox DNS не отвечает на AAAA — блокируем их отдельным правилом.
 
     if use_xbox_smartdns:
-        xbox_ip_bootstrap = "udp://111.88.96.50"
+        xbox_ip_bootstrap = SMART_DNS_BOOTSTRAP[dns_preset]
         dns_servers = [
             # Бутстрап по raw IP — ТОЛЬКО direct, иначе петля через TUN
             {
@@ -555,17 +547,19 @@ def build_xray_tun_config(
 
     # ── Правила маршрутизации трафика ────────────────────────────────
     rules = []
-    # UDP/53 — стандартный DNS
-    rules.append({"network": "udp", "port": 53, "outbound": "dns-out"})
-    # TCP/853 — DNS over TLS (DoT), используется cloudflare/google/xbox_dot пресетами
-    rules.append({"network": "tcp", "port": 853, "outbound": "dns-out"})
+    # Plain DNS uses both UDP and TCP (including truncated-response fallback).
+    # Keep this before private-IP bypass so loopback DNS is also intercepted.
+    rules.append({"network": ["udp", "tcp"], "port": 53, "outbound": "dns-out"})
+    # DoT/853 is TLS, not a plain DNS packet. Route it normally; the DNS
+    # subsystem's own encrypted upstreams already have an explicit detour.
     rules.append({"ip_is_private": True, "outbound": "direct"})
 
     if block_udp:
         rules.append({"network": "udp", "outbound": "block"})
 
-    if routing_mode == "whitelist" and routed_apps:
-        rules.append({"process_name": routed_apps, "outbound": "proxy"})
+    if routing_mode == "whitelist":
+        if routed_apps:
+            rules.append({"process_name": routed_apps, "outbound": "proxy"})
         rules.append({"outbound": "direct"})
     elif routing_mode == "blacklist" and routed_apps:
         rules.append({"process_name": routed_apps, "outbound": "direct"})
@@ -598,7 +592,7 @@ def build_xray_tun_config(
         "log": {"level": "info", "timestamp": True},
         "experimental": {
             "clash_api": {
-                "external_controller": "127.0.0.1:9090",
+                "external_controller": f"127.0.0.1:{clash_port}",
                 "secret": "",
             }
         },
@@ -611,7 +605,7 @@ def build_xray_tun_config(
         "inbounds": [
             {
                 "type": "tun", "tag": "tun-in",
-                "inet4_address": "172.19.0.1/30",
+                "address": ["172.19.0.1/30"],
                 "auto_route":   True,
                 "strict_route": kill_switch,
                 "stack":  "system",
@@ -648,34 +642,8 @@ def build_xray_tun_config(
 # ─── Загрузка подписки ────────────────────────────────────────────────────────
 
 def fetch_subscription(url: str, hwid: str = "") -> list:
-    raw = ""
-    try:
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "Happ/2.9.1 (Windows; amd64)",
-            "Accept":     "*/*",
-            "HWID":       hwid,
-            "X-HWID":     hwid,
-            "Device-Id":  hwid,
-        })
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = resp.read(8 * 1024 * 1024 + 1)
-            if len(data) > 8 * 1024 * 1024:
-                raise ValueError("Subscription is larger than 8 MiB")
-            raw = data.decode("utf-8", errors="ignore")
-
-        if not any(x in raw[:200] for x in ("vless://", "proxies:", "---", "{")):
-            try:
-                raw = base64.b64decode(data + b"==").decode("utf-8", errors="ignore")
-            except Exception:
-                pass
-
-        if "не поддерживается" in raw or "0.0.0.0" in raw:
-            raw = ""
-    except Exception:
-        raw = ""
-
-    if not raw:
-        return []
+    data, metadata = download_subscription(url, hwid)
+    raw = decode_subscription(data)
 
     servers = []
 
@@ -690,104 +658,11 @@ def fetch_subscription(url: str, hwid: str = "") -> list:
                     pass
 
     # Парсим Clash YAML
-    elif "proxies:" in raw:
-        blocks = re.split(r'\n\s*-\s+', raw)
-        for block in blocks:
-            try:
-                btype = (re.search(r'type:\s*(\S+)', block) or re.search(r'type:(\S+)', block))
-                if not btype:
-                    continue
-                ptype = btype.group(1).lower().strip('"\'')
-
-                name   = re.search(r'name:\s*["\']?(.+?)["\']?\s*$', block, re.M)
-                server = re.search(r'server:\s*(\S+)', block)
-                port   = re.search(r'port:\s*(\d+)', block)
-                if not all([name, server, port]):
-                    continue
-
-                remark = name.group(1).strip()
-                host   = server.group(1).strip()
-                pport  = int(port.group(1))
-
-                if ptype == "vless":
-                    uuid    = re.search(r'uuid:\s*(\S+)', block)
-                    if not uuid:
-                        continue
-                    network = re.search(r'network:\s*(\S+)', block)
-                    sni     = re.search(r'servername:\s*(\S+)', block)
-                    tls     = 'tls: true' in block or "tls:true" in block
-                    flow    = re.search(r'flow:\s*(\S+)', block)
-                    pbk     = re.search(r'public-key:\s*(\S+)', block)
-                    sid     = re.search(r'short-id:\s*(\S+)', block)
-                    fp      = re.search(r'fingerprint:\s*(\S+)', block)
-                    servers.append({
-                        "remark":        remark,
-                        "host":          host,
-                        "port":          pport,
-                        "uuid":          uuid.group(1).strip(),
-                        "security":      "reality" if pbk else ("tls" if tls else "none"),
-                        "type":          network.group(1).strip() if network else "tcp",
-                        "sni":           sni.group(1).strip() if sni else "",
-                        "fp":            fp.group(1).strip() if fp else "",
-                        "pbk":           pbk.group(1).strip() if pbk else "",
-                        "sid":           sid.group(1).strip() if sid else "",
-                        "flow":          flow.group(1).strip() if flow else "",
-                        "path":          "",
-                        "host_header":   "",
-                        "serviceName":   "",
-                        "alpn":          "",
-                        "allowInsecure": "0",
-                        "encryption":    "none",
-                    })
-
-                elif ptype == "ss":
-                    cipher   = re.search(r'cipher:\s*(\S+)', block)
-                    password = re.search(r'password:\s*["\']?(.+?)["\']?\s*$', block, re.M)
-                    if not cipher or not password:
-                        continue
-                    servers.append({
-                        "protocol": "ss",
-                        "remark":   remark,
-                        "host":     host,
-                        "port":     pport,
-                        "method":   cipher.group(1).strip(),
-                        "password": password.group(1).strip(),
-                    })
-
-                elif ptype == "trojan":
-                    password = re.search(r'password:\s*["\']?(.+?)["\']?\s*$', block, re.M)
-                    sni      = re.search(r'sni:\s*(\S+)', block)
-                    if not password:
-                        continue
-                    servers.append({
-                        "protocol":      "trojan",
-                        "remark":        remark,
-                        "host":          host,
-                        "port":          pport,
-                        "password":      password.group(1).strip(),
-                        "sni":           sni.group(1).strip() if sni else "",
-                        "allowInsecure": "1" if ("skip-cert-verify: true" in block) else "0",
-                        "alpn": "", "fp": "", "type": "tcp", "path": "",
-                        "host_header": "", "serviceName": "",
-                    })
-
-                elif ptype in ("hysteria2", "hy2"):
-                    password = re.search(r'password:\s*["\']?(.+?)["\']?\s*$', block, re.M)
-                    sni      = re.search(r'sni:\s*(\S+)', block)
-                    if not password:
-                        continue
-                    servers.append({
-                        "protocol": "hysteria2",
-                        "remark":   remark,
-                        "host":     host,
-                        "port":     pport,
-                        "password": password.group(1).strip(),
-                        "sni":      sni.group(1).strip() if sni else "",
-                        "insecure": "skip-cert-verify: true" in block,
-                        "obfs": "", "obfs_password": "",
-                    })
-
-            except Exception:
-                pass
-
-    return servers
+    elif "proxies:" in raw or raw.lstrip().startswith("{"):
+        from engine.transports import parse_clash_nodes
+        servers = parse_clash_nodes(raw)
+    if not servers:
+        error = no_servers_error(raw)
+        error.metadata = metadata
+        raise error
+    return SubscriptionServers(servers, metadata)

@@ -1,0 +1,18 @@
+.route-tabs{display:flex;gap:8px;padding:5px;margin:2px 0 18px;border:1px solid #b9a2ff25;border-radius:15px;background:#0e0d1c80;flex-shrink:0}
+.route-tabs button{flex:1;min-width:0;border:0;border-radius:10px;padding:12px 14px;background:transparent;color:var(--text-2);font:inherit;cursor:pointer}
+.route-tabs button[aria-pressed=true]{background:linear-gradient(120deg,#7353b94d,#49387855);box-shadow:inset 0 0 0 1px #b49af545;color:#f4efff}
+.route-panel{display:flex;flex-direction:column;min-height:0;flex:1;gap:12px;overflow:auto}
+.route-panel[hidden]{display:none}
+.route-intro{padding:20px 22px;border-radius:18px;flex-shrink:0;background:linear-gradient(130deg,#302448b0,#121221c0)}
+.route-intro strong{font-size:19px;letter-spacing:-.3px;font-weight:600}
+.route-intro p{font-size:12px;line-height:1.7;color:var(--text-2);margin:8px 0 0;max-width:690px}
+#routeApps .scroll{flex:1;min-height:160px}
+#routeApps .rule-row{padding:16px;align-items:flex-start;border-radius:16px;background:linear-gradient(120deg,#25203890,#11111bcc);margin-bottom:10px}
+#routeApps .rule-meta{min-width:0;flex:1}
+.route-destination{display:flex;flex-direction:column;gap:6px;margin-top:13px;max-width:460px}
+.route-destination>span{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-3)}
+.route-destination select{width:100%;max-width:100%;font-size:12px;padding:10px 12px;background:#10101c;border-radius:11px}
+.route-tabs button:focus-visible,.route-destination select:focus-visible{outline:2px solid #b5a1ef;outline-offset:2px}
+#routeOverview .route-visual{min-height:125px;flex-shrink:0}
+@media(max-width:850px){#routeApps .rule-row{flex-wrap:wrap;gap:10px}#routeApps .rule-meta{flex-basis:60%}.route-intro{padding:15px}.route-tabs button{padding:10px 6px;font-size:12px}}
+@media(prefers-reduced-motion:reduce){#page-routing *{animation:none!important;transition:none!important}}

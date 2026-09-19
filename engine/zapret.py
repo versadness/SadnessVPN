@@ -1,6 +1,6 @@
 """
 engine/zapret.py — управление zapret (winws.exe + WinDivert)
-Стратегия: Flowseal general (ALT) — проверенная рабочая конфигурация
+Стратегии синхронизированы с актуальными профилями Flowseal main.
 """
 import subprocess
 import threading
@@ -8,7 +8,15 @@ import os
 import platform
 import time
 
+from engine.flowseal_profiles import FLOWSEAL_COMMIT, FLOWSEAL_PROFILES, PROFILE_BY_ID
 from engine.paths import bin_path
+
+
+PROFILE_ALIASES = {
+    "general": "flowseal_general",
+    "general_alt": "flowseal_alt",
+    "flowseal_fake_tls": "flowseal_fake_tls_auto_alt3",
+}
 
 
 class ZapretManager:
@@ -55,40 +63,49 @@ class ZapretManager:
 
     def _lists(self, filename: str) -> str:
         bin_dir = os.path.dirname(self._winws_path())
-        lists_dir = os.path.join(bin_dir, "lists")
-        if not os.path.isdir(lists_dir):
-            lists_dir = os.path.join(os.path.dirname(bin_dir), "lists")
-        return os.path.join(lists_dir, filename)
+        candidates = [
+            os.path.join(bin_dir, "lists"),
+            os.path.join(os.path.dirname(bin_dir), "lists"),
+            bin_dir,  # Backward compatibility with older SadnessVPN layouts.
+        ]
+        for lists_dir in candidates:
+            path = os.path.join(lists_dir, filename)
+            if os.path.isfile(path):
+                return path
+        return os.path.join(candidates[0], filename)
+
+    @staticmethod
+    def canonical_strategy_id(strategy_id: str) -> str:
+        return PROFILE_ALIASES.get(strategy_id, strategy_id)
+
+    def _profile(self, strategy_id: str):
+        return PROFILE_BY_ID.get(self.canonical_strategy_id(strategy_id))
 
     # ── Проверка файлов ───────────────────────────────────────────────────────
 
-    def _check_files(self) -> bool:
-        required_bin = [
-            "winws.exe",
-            "WinDivert.dll",
-            "WinDivert64.sys",
-            "quic_initial_www_google_com.bin",
-            "tls_clienthello_www_google_com.bin",
-            "stun.bin",
-            "tls_clienthello_max_ru.bin",
-        ]
+    def _check_files(self, strategy_id: str) -> bool:
+        profile = self._profile(strategy_id)
+        if not profile:
+            self.log_cb(f"Неизвестная стратегия: {strategy_id}", "err")
+            return False
+
+        required_bin = {"winws.exe", "WinDivert.dll", "WinDivert64.sys"}
+        required_lists = set()
+        for arg in profile["args"]:
+            if "%BIN%" in arg:
+                required_bin.add(arg.split("%BIN%", 1)[1])
+            if "%LISTS%" in arg:
+                required_lists.add(arg.split("%LISTS%", 1)[1])
+
         # Файлы которые нужны но могут отсутствовать — создаём пустыми автоматически
-        optional_lists = [
+        optional_lists = {
             "list-general-user.txt",
             "list-exclude-user.txt",
             "ipset-exclude-user.txt",
-        ]
-        # Файлы которые обязаны существовать
-        required_lists = [
-            "ipset-all.txt",
-            "list-general.txt",
-            "list-google.txt",
-            "list-exclude.txt",
-            "ipset-exclude.txt",
-        ]
+        }
 
         # Автосоздаём user-листы если их нет
-        for f in optional_lists:
+        for f in sorted(required_lists & optional_lists):
             path = self._lists(f)
             if not os.path.exists(path):
                 try:
@@ -99,10 +116,10 @@ class ZapretManager:
                     self.log_cb(f"Не удалось создать lists/{f}: {e}", "warn")
 
         missing = []
-        for f in required_bin:
+        for f in sorted(required_bin):
             if not os.path.exists(self._bin(f)):
                 missing.append(f"bin/{f}")
-        for f in required_lists:
+        for f in sorted(required_lists - optional_lists):
             if not os.path.exists(self._lists(f)):
                 missing.append(f"lists/{f}")
 
@@ -119,135 +136,30 @@ class ZapretManager:
     # ── Стратегии (для UI) ────────────────────────────────────────────────────
 
     def get_strategies(self) -> list:
+        public_fields = (
+            "id", "name", "category", "desc", "icon", "tags", "experimental", "source_file"
+        )
         return [
             {
-                "id":      "general_alt",
-                "name":    "Discord + YouTube (ALT)",
-                "desc":    "Рекомендуемая стратегия Flowseal",
-                "icon":    "🚀",
-                "targets": ["discord", "youtube"],
-            },
-            {
-                "id":      "general",
-                "name":    "Discord + YouTube (General)",
-                "desc":    "Базовая стратегия Flowseal",
-                "icon":    "🎮",
-                "targets": ["discord", "youtube"],
-            },
+                **{field: profile[field] for field in public_fields},
+                "upstream_commit": FLOWSEAL_COMMIT,
+            }
+            for profile in FLOWSEAL_PROFILES
         ]
 
     # ── Построение команды ────────────────────────────────────────────────────
 
     def _build_cmd(self, strategy_id: str) -> list:
-        winws = self._winws_path()
-        B = self._bin
-        L = self._lists
-
-        if strategy_id == "general_alt":
-            return [
-                winws,
-                "--wf-tcp=80,443,2053,2083,2087,2096,8443",
-                "--wf-udp=443,19294-19344,50000-50100",
-                "--filter-udp=443",
-                f"--hostlist={L('list-general.txt')}",
-                f"--hostlist={L('list-general-user.txt')}",
-                f"--hostlist-exclude={L('list-exclude.txt')}",
-                f"--hostlist-exclude={L('list-exclude-user.txt')}",
-                f"--ipset-exclude={L('ipset-exclude.txt')}",
-                f"--ipset-exclude={L('ipset-exclude-user.txt')}",
-                "--dpi-desync=fake",
-                "--dpi-desync-repeats=6",
-                f"--dpi-desync-fake-quic={B('quic_initial_www_google_com.bin')}",
-                "--new",
-                "--filter-udp=19294-19344,50000-50100",
-                "--filter-l7=discord,stun",
-                "--dpi-desync=fake",
-                "--dpi-desync-repeats=6",
-                "--new",
-                "--filter-tcp=2053,2083,2087,2096,8443",
-                "--hostlist-domains=discord.media",
-                "--dpi-desync=fake,fakedsplit",
-                "--dpi-desync-repeats=6",
-                "--dpi-desync-fooling=ts",
-                "--dpi-desync-fakedsplit-pattern=0x00",
-                f"--dpi-desync-fake-tls={B('tls_clienthello_www_google_com.bin')}",
-                "--new",
-                "--filter-tcp=443",
-                f"--hostlist={L('list-google.txt')}",
-                "--ip-id=zero",
-                "--dpi-desync=fake,fakedsplit",
-                "--dpi-desync-repeats=6",
-                "--dpi-desync-fooling=ts",
-                "--dpi-desync-fakedsplit-pattern=0x00",
-                f"--dpi-desync-fake-tls={B('tls_clienthello_www_google_com.bin')}",
-                "--new",
-                "--filter-tcp=80,443",
-                f"--hostlist={L('list-general.txt')}",
-                f"--hostlist={L('list-general-user.txt')}",
-                f"--hostlist-exclude={L('list-exclude.txt')}",
-                f"--hostlist-exclude={L('list-exclude-user.txt')}",
-                f"--ipset-exclude={L('ipset-exclude.txt')}",
-                f"--ipset-exclude={L('ipset-exclude-user.txt')}",
-                "--dpi-desync=fake,fakedsplit",
-                "--dpi-desync-repeats=6",
-                "--dpi-desync-fooling=ts",
-                "--dpi-desync-fakedsplit-pattern=0x00",
-                f"--dpi-desync-fake-tls={B('stun.bin')}",
-                f"--dpi-desync-fake-tls={B('tls_clienthello_www_google_com.bin')}",
-                f"--dpi-desync-fake-http={B('tls_clienthello_max_ru.bin')}",
-                "--new",
-                "--filter-udp=443",
-                f"--ipset={L('ipset-all.txt')}",
-                f"--hostlist-exclude={L('list-exclude.txt')}",
-                f"--hostlist-exclude={L('list-exclude-user.txt')}",
-                f"--ipset-exclude={L('ipset-exclude.txt')}",
-                f"--ipset-exclude={L('ipset-exclude-user.txt')}",
-                "--dpi-desync=fake",
-                "--dpi-desync-repeats=6",
-                f"--dpi-desync-fake-quic={B('quic_initial_www_google_com.bin')}",
-                "--new",
-                "--filter-tcp=80,443,8443",
-                f"--ipset={L('ipset-all.txt')}",
-                f"--hostlist-exclude={L('list-exclude.txt')}",
-                f"--hostlist-exclude={L('list-exclude-user.txt')}",
-                f"--ipset-exclude={L('ipset-exclude.txt')}",
-                f"--ipset-exclude={L('ipset-exclude-user.txt')}",
-                "--dpi-desync=fake,fakedsplit",
-                "--dpi-desync-repeats=6",
-                "--dpi-desync-fooling=ts",
-                "--dpi-desync-fakedsplit-pattern=0x00",
-                f"--dpi-desync-fake-tls={B('stun.bin')}",
-                f"--dpi-desync-fake-tls={B('tls_clienthello_www_google_com.bin')}",
-                f"--dpi-desync-fake-http={B('tls_clienthello_max_ru.bin')}",
-            ]
-
-        elif strategy_id == "general":
-            return [
-                winws,
-                "--wf-tcp=80,443",
-                "--wf-udp=443,50000-65535",
-                "--filter-tcp=443",
-                f"--hostlist={L('list-general.txt')}",
-                f"--hostlist={L('list-google.txt')}",
-                f"--hostlist-exclude={L('list-exclude.txt')}",
-                "--dpi-desync=fake,fakedsplit",
-                "--dpi-desync-repeats=6",
-                "--dpi-desync-fooling=ts",
-                f"--dpi-desync-fake-tls={B('tls_clienthello_www_google_com.bin')}",
-                "--new",
-                "--filter-udp=443",
-                f"--hostlist={L('list-general.txt')}",
-                f"--hostlist={L('list-google.txt')}",
-                "--dpi-desync=fake",
-                "--dpi-desync-repeats=6",
-                f"--dpi-desync-fake-quic={B('quic_initial_www_google_com.bin')}",
-                "--new",
-                "--filter-udp=50000-65535",
-                "--dpi-desync=fake",
-                "--dpi-desync-repeats=6",
-            ]
-
-        return []
+        profile = self._profile(strategy_id)
+        if not profile:
+            return []
+        bin_prefix = os.path.dirname(self._winws_path()) + os.sep
+        lists_prefix = os.path.dirname(self._lists("list-general.txt")) + os.sep
+        args = [
+            arg.replace("%BIN%", bin_prefix).replace("%LISTS%", lists_prefix)
+            for arg in profile["args"]
+        ]
+        return [self._winws_path(), *args]
 
     def _enable_tcp_timestamps(self):
         # Zapret использует --dpi-desync-fooling=ts, которому нужны TCP timestamps
@@ -265,7 +177,7 @@ class ZapretManager:
 
     # ── Start ─────────────────────────────────────────────────────────────────
 
-    def start(self, strategy_id: str = "general_alt") -> bool:
+    def start(self, strategy_id: str = "flowseal_general") -> bool:
         if self.process:
             if self.process.poll() is None:
                 self.stop()
@@ -291,10 +203,11 @@ class ZapretManager:
             )
             return False
 
-        if not self._check_files():
+        canonical_strategy = self.canonical_strategy_id(strategy_id)
+        if not self._check_files(canonical_strategy):
             return False
 
-        cmd = self._build_cmd(strategy_id)
+        cmd = self._build_cmd(canonical_strategy)
         if not cmd:
             self.log_cb(f"Неизвестная стратегия: {strategy_id}", "err")
             return False
@@ -313,7 +226,7 @@ class ZapretManager:
             self.process = process
             self._stop_requested = stop_requested
             self.running   = True
-            self._strategy = strategy_id
+            self._strategy = canonical_strategy
 
             time.sleep(0.8)
             if process.poll() is not None:
@@ -332,8 +245,8 @@ class ZapretManager:
                 daemon=True,
             ).start()
             strategy_name = next(
-                (s["name"] for s in self.get_strategies() if s["id"] == strategy_id),
-                strategy_id
+                (s["name"] for s in self.get_strategies() if s["id"] == canonical_strategy),
+                canonical_strategy
             )
             self.log_cb(f"zapret запущен: {strategy_name} (PID {self.process.pid})", "ok")
             return True

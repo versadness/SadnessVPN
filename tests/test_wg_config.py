@@ -34,16 +34,23 @@ class WireGuardParsingTests(unittest.TestCase):
             PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
             Address = 10.0.0.2/32
             Jc = 4
+            S3 = 32
+            I1 = <b 0x0c><r 16>
 
             [Peer]
             PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
             Endpoint = 198.51.100.30:51820
             AllowedIPs = 0.0.0.0/0
+            PersistentKeepalive = 19
             """
         )
 
         self.assertTrue(servers[0]["is_awg"])
         self.assertEqual(servers[0]["awg_fields"]["jc"], "4")
+        self.assertEqual(servers[0]["awg_fields"]["s3"], "32")
+        self.assertEqual(servers[0]["awg_fields"]["i1"], "<b 0x0c><r 16>")
+        self.assertEqual(servers[0]["persistent_keepalive"], 19)
+        self.assertEqual(servers[0]["source_allowed_ips"], ["0.0.0.0/0"])
 
 
 class WireGuardRoutingConfigTests(unittest.TestCase):
@@ -89,6 +96,11 @@ class WireGuardRoutingConfigTests(unittest.TestCase):
         self.assertEqual(listens["socks-in"], "0.0.0.0")
         self.assertEqual(listens["http-in"], "0.0.0.0")
         self.assertNotEqual(listens["tun-in"], "0.0.0.0")
+
+    def test_tun_uses_current_address_field(self):
+        inbound = build_wg_tun_config(self.server)["inbounds"][0]
+        self.assertEqual(inbound["address"], ["172.19.0.1/30"])
+        self.assertNotIn("inet4_address", inbound)
 
 
 if __name__ == "__main__":

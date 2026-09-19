@@ -1,0 +1,17 @@
+# Merge these locations into an existing HTTPS server after configuring its
+# certificate. Never replace unrelated VPS sites with this example wholesale.
+location ~ ^/updates/(beta|stable)\.json$ {
+    root /var/www/sadness-vpn;
+    add_header Cache-Control "no-store" always;
+    default_type application/json;
+    try_files $uri =404;
+}
+location ~ ^/updates/releases/[0-9]+\.[0-9]+\.[0-9]+/SadnessVPN-[A-Za-z0-9.-]+\.(msi|msp)$ {
+    root /var/www/sadness-vpn;
+    add_header Cache-Control "public, max-age=31536000, immutable";
+    add_header X-Content-Type-Options "nosniff" always;
+    default_type application/octet-stream;
+    try_files $uri =404;
+}
+# No listing, logs, incoming uploads, private keys or internal manifests.
+location /updates/ { return 404; }

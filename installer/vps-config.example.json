@@ -1,0 +1,9 @@
+{
+  "ssh_host": "YOUR_VPS_HOST",
+  "ssh_user": "sadness-release",
+  "patch_only": true,
+  "ssh_key": "C:/Users/YOUR_USER/.ssh/sadness-release",
+  "https_base": "https://YOUR_DOMAIN/updates",
+  "allowed_hosts": ["YOUR_DOMAIN"],
+  "public_key_base64": "INSERT_PUBLIC_ED25519_KEY"
+}

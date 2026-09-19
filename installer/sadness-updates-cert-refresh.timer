@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Sadness HTTPS certificate daily without changing certificate renewal
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

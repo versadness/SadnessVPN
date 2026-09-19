@@ -1,0 +1,52 @@
+{
+  "name": "sadness-vpn",
+  "productName": "Sadness VPN",
+  "version": "3.0.4",
+  "description": "Sadness Private Network — desktop client",
+  "main": "electron/main.js",
+  "author": "Sadness",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "pack:runtime": "electron-builder --win --x64 --dir"
+  },
+  "dependencies": {
+    "koffi": "^2.9.0"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.sadness.vpn",
+    "productName": "Sadness VPN",
+    "directories": {
+      "output": "dist/electron-runtime",
+      "buildResources": "."
+    },
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "app.ico",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "app.ico",
+        "to": "app.ico"
+      }
+    ]
+  }
+}

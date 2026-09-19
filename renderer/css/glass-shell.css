@@ -1,0 +1,1015 @@
+/* =====================================================================
+   Sadness VPN — оформление оболочки Electron.
+
+   Окно создаётся с transparent: true, поэтому сквозь него видно рабочий
+   стол ровно настолько, насколько прозрачны пиксели самой страницы.
+   Системный backdrop-filter тут не участвует: у страницы нет доступа
+   к тому, что за окном, размыть это может только Windows.
+
+   Переменные ставит главный процесс из настроек оформления:
+     --win-alpha    тонировка всего окна   (0 — стекло полностью чистое)
+     --panel-alpha  плотность карточек
+     --veil         затемнение ради читаемости
+     --glass-accent акцент (r,g,b) — выбирается палитрой
+     --deep-rgb     база фона (r,g,b) — выбирается палитрой
+     --panel-rgb    производная от базы, тон панелей
+   ===================================================================== */
+
+:root {
+  --win-alpha: .18;
+  --panel-alpha: .52;
+  --veil: .10;
+
+  --glass-accent: 168, 125, 248;
+  --panel-rgb: 30, 24, 56;
+  --deep-rgb: 10, 8, 22;
+
+  --panel: rgba(var(--panel-rgb), var(--panel-alpha));
+  --panel-strong: rgba(var(--panel-rgb), calc(var(--panel-alpha) + .14));
+  --panel-soft: rgba(var(--panel-rgb), calc(var(--panel-alpha) - .18));
+  --edge: rgba(255, 255, 255, .08);
+  --edge-bright: rgba(255, 255, 255, .16);
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, .07);
+
+  --radius-card: 18px;
+  --rail: 72px;
+  --rail-open: 216px;
+
+  --text-1: #f7f5ff;
+  --text-2: #c9c3dd;
+  --text-3: #948cad;
+}
+
+/* --- прозрачная основа --------------------------------------------- */
+
+html.shell-glass,
+html.shell-glass body,
+html.shell-glass .shell,
+html.shell-glass .body,
+html.shell-glass .main,
+html.shell-glass .pages,
+html.shell-glass .page {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+html.shell-glass body {
+  color: var(--text-1);
+}
+
+/* Единственный слой тонировки — под всем интерфейсом. */
+html.shell-glass body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(var(--deep-rgb), var(--veil)), rgba(var(--deep-rgb), var(--veil))),
+    rgba(var(--deep-rgb), var(--win-alpha));
+}
+
+html.shell-glass #aurora,
+html.shell-glass #vignette,
+html.shell-glass #petals,
+html.shell-glass #customWallpaper {
+  display: none !important;
+}
+
+html.shell-glass .shell {
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+}
+
+html.shell-glass.is-maximized .shell {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* --- титлбар ------------------------------------------------------- */
+
+html.shell-glass .titlebar {
+  -webkit-app-region: drag;
+  background: rgba(var(--panel-rgb), calc(var(--panel-alpha) * .45)) !important;
+  border-bottom: 1px solid var(--edge) !important;
+}
+
+html.shell-glass .titlebar button,
+html.shell-glass .titlebar .win-btns,
+html.shell-glass .titlebar input,
+html.shell-glass .titlebar select {
+  -webkit-app-region: no-drag;
+}
+
+html.shell-glass .win-btn {
+  border-radius: 8px;
+  transition: background-color .14s, color .14s;
+}
+
+html.shell-glass .win-btn:hover {
+  background: rgba(var(--glass-accent), .24);
+  color: #fff;
+}
+
+html.shell-glass .win-btn.cls:hover {
+  background: #e0484d;
+  color: #fff;
+}
+
+/* --- сайдбар: рельс, раскрывающийся по наведению --------------------
+   Сайдбар выведен из потока, а его место держит отступ у .main.
+   Поэтому раскрытие накрывает контент, а не расталкивает его. */
+
+html.shell-glass .body {
+  position: relative;
+}
+
+html.shell-glass .sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 60;
+  width: var(--rail);
+  padding: 16px 12px 14px;
+  align-items: stretch;
+  overflow: hidden;
+  background: rgba(var(--panel-rgb), calc(var(--panel-alpha) * .75)) !important;
+  border-right: 1px solid var(--edge) !important;
+  box-shadow: none !important;
+  transition: width .22s cubic-bezier(.32, .72, 0, 1), background-color .22s;
+}
+
+html.shell-glass .sidebar:hover,
+html.shell-glass .sidebar:focus-within {
+  width: var(--rail-open);
+  background: rgba(var(--panel-rgb), calc(var(--panel-alpha) + .3)) !important;
+  box-shadow: 18px 0 42px rgba(0, 0, 0, .32) !important;
+}
+
+html.shell-glass .main {
+  margin-left: var(--rail);
+  /* Та же кривая и длительность, что у сайдбара: движение читается
+     как одно, а не как два независимых. */
+  transition: margin-left .22s cubic-bezier(.32, .72, 0, 1);
+}
+
+/* .main — следующий сосед сайдбара, поэтому его можно подвинуть по ховеру
+   самого сайдбара, без JS. */
+html.shell-glass .sidebar:hover ~ .main,
+html.shell-glass .sidebar:focus-within ~ .main {
+  margin-left: var(--rail-open);
+}
+
+/* Подписи появляются только в раскрытом состоянии. */
+html.shell-glass .sidebar-brand > div,
+html.shell-glass .sidebar-caption,
+html.shell-glass .nav > span {
+  opacity: 0;
+  white-space: nowrap;
+  transition: opacity .16s;
+  pointer-events: none;
+}
+
+html.shell-glass .sidebar:hover .sidebar-brand > div,
+html.shell-glass .sidebar:hover .sidebar-caption,
+html.shell-glass .sidebar:hover .nav > span,
+html.shell-glass .sidebar:focus-within .nav > span {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+html.shell-glass .sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 22px;
+  padding-left: 2px;
+}
+
+html.shell-glass .brand-mark {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(var(--glass-accent), .95), rgba(var(--glass-accent), .55)) !important;
+  border: none !important;
+  box-shadow: 0 6px 18px rgba(var(--glass-accent), .3) !important;
+  color: #fff;
+}
+
+html.shell-glass .sidebar-caption {
+  margin: 14px 0 6px 14px;
+  font-size: 9px;
+  letter-spacing: .14em;
+  color: var(--text-3);
+}
+
+html.shell-glass .nav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: 44px;
+  flex-basis: 44px;
+  padding: 0 13px;
+  border-radius: 13px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background-color .14s, color .14s, border-color .14s;
+}
+
+html.shell-glass .nav svg {
+  flex: 0 0 20px;
+}
+
+html.shell-glass .nav:hover {
+  background: rgba(255, 255, 255, .07) !important;
+  color: var(--text-1);
+}
+
+html.shell-glass .nav.on {
+  color: #fff;
+  background: linear-gradient(
+      100deg,
+      rgba(var(--glass-accent), .52),
+      rgba(var(--glass-accent), .2)
+    ) !important;
+  border-color: rgba(var(--glass-accent), .45);
+  box-shadow: 0 6px 18px rgba(var(--glass-accent), .2) !important;
+}
+
+html.shell-glass .nav.on::before {
+  display: none;
+}
+
+html.shell-glass .sidebar-profile {
+  margin-top: auto;
+  align-self: flex-start;
+  border-color: var(--edge) !important;
+  background: rgba(255, 255, 255, .06) !important;
+}
+
+/* --- панели -------------------------------------------------------- */
+
+html.shell-glass .glass,
+html.shell-glass .hc,
+html.shell-glass .stat,
+html.shell-glass .ip-card,
+html.shell-glass .set-row,
+html.shell-glass .srv-row,
+html.shell-glass .mode-card,
+html.shell-glass .zap-card,
+html.shell-glass .preset-card,
+html.shell-glass .port-card,
+html.shell-glass .autostart-state,
+html.shell-glass .notice,
+html.shell-glass .search,
+html.shell-glass .add-box,
+html.shell-glass .route-visual,
+html.shell-glass .subscription-import,
+html.shell-glass .settings-search {
+  background: var(--panel) !important;
+  border: 1px solid var(--edge) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--sheen) !important;
+  transition: background-color .16s, border-color .16s, transform .16s;
+}
+
+html.shell-glass .hc:hover,
+html.shell-glass .stat:hover,
+html.shell-glass .srv-row:hover,
+html.shell-glass .set-row:hover,
+html.shell-glass .mode-card:hover,
+html.shell-glass .ip-card:hover {
+  background: var(--panel-strong) !important;
+  border-color: var(--edge-bright) !important;
+}
+
+/* Плитки-иконки в духе дашбордов: сплошной акцентный квадрат со скруглением. */
+html.shell-glass .hc-symbol,
+html.shell-glass .port-icon,
+html.shell-glass .preset-ico,
+html.shell-glass .mode-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: 0 0 14px;
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(var(--glass-accent), .9), rgba(var(--glass-accent), .5)) !important;
+  color: #fff !important;
+  font-size: 15px;
+  line-height: 1;
+  box-shadow: 0 6px 16px rgba(var(--glass-accent), .22);
+}
+
+html.shell-glass .port-icon,
+html.shell-glass .preset-ico,
+html.shell-glass .mode-icon {
+  margin: 0;
+}
+
+html.shell-glass .mode-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+html.shell-glass .stat-val {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+html.shell-glass .stat-lbl,
+html.shell-glass .hc-lbl {
+  color: var(--text-3);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+html.shell-glass .connection-hero {
+  background:
+    radial-gradient(ellipse at 50% 4%, rgba(var(--glass-accent), .24), transparent 62%),
+    var(--panel) !important;
+  border: 1px solid rgba(var(--glass-accent), .24) !important;
+  border-radius: 22px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1) !important;
+}
+
+html.shell-glass .connect-btn {
+  background:
+    radial-gradient(circle at 34% 20%, rgba(255, 255, 255, .18), transparent 58%),
+    rgba(var(--panel-rgb), calc(var(--panel-alpha) + .24)) !important;
+  border: 1px solid rgba(var(--glass-accent), .5) !important;
+  box-shadow:
+    inset 0 2px 8px rgba(255, 255, 255, .14),
+    0 0 34px rgba(var(--glass-accent), .24) !important;
+}
+
+html.shell-glass .connect-btn:hover {
+  border-color: rgba(var(--glass-accent), .85) !important;
+  box-shadow:
+    inset 0 2px 8px rgba(255, 255, 255, .18),
+    0 0 48px rgba(var(--glass-accent), .4) !important;
+}
+
+/* --- поля и элементы управления ------------------------------------ */
+
+html.shell-glass .inp,
+html.shell-glass .dd-trigger,
+html.shell-glass textarea.inp,
+html.shell-glass select.inp {
+  background: rgba(255, 255, 255, .05) !important;
+  border: 1px solid var(--edge) !important;
+  border-radius: 12px !important;
+  color: var(--text-1);
+}
+
+/* Выпадающий список селекта рисует сама Windows, и по умолчанию — в светлой
+   теме: на белом фоне наш светлый текст становился нечитаемым. color-scheme
+   переключает системный попап в тёмный, а явные цвета у option страхуют на
+   случай, если тема системы это проигнорирует. */
+html.shell-glass select.inp,
+html.shell-glass select {
+  color-scheme: dark;
+}
+
+html.shell-glass select option {
+  background-color: #1b1630;
+  color: #f2eeff;
+}
+
+html.shell-glass .inp:focus {
+  border-color: rgba(var(--glass-accent), .65) !important;
+  box-shadow: 0 0 0 3px rgba(var(--glass-accent), .15) !important;
+}
+
+html.shell-glass .btn-primary,
+html.shell-glass .btn-wg {
+  background: linear-gradient(
+      135deg,
+      rgba(var(--glass-accent), .95),
+      rgba(var(--glass-accent), .58)
+    ) !important;
+  border: 1px solid rgba(var(--glass-accent), .6) !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2) !important;
+}
+
+html.shell-glass .icon-btn,
+html.shell-glass .mini-btn {
+  background: rgba(255, 255, 255, .06) !important;
+  border: 1px solid var(--edge) !important;
+  border-radius: 12px !important;
+}
+
+html.shell-glass .toggle {
+  background: rgba(255, 255, 255, .1) !important;
+  border: 1px solid var(--edge) !important;
+}
+
+html.shell-glass .toggle.on {
+  background: rgba(var(--glass-accent), .85) !important;
+  border-color: rgba(var(--glass-accent), .9) !important;
+}
+
+/* Порт набирают с клавиатуры; стрелки-счётчики только мешают. */
+html.shell-glass input[type="number"]::-webkit-inner-spin-button,
+html.shell-glass input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+html.shell-glass input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* --- всплывающие слои ----------------------------------------------
+   Модалки и меню обязаны оставаться плотными: читать их поверх
+   рабочего стола иначе невозможно. */
+
+html.shell-glass .modal-backdrop {
+  background: rgba(var(--deep-rgb), .62) !important;
+}
+
+html.shell-glass .modal-card,
+html.shell-glass .dd-menu,
+html.shell-glass .notify-stack > * {
+  background: rgba(var(--panel-rgb), .97) !important;
+  border: 1px solid var(--edge-bright) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--sheen), 0 18px 44px rgba(0, 0, 0, .5) !important;
+}
+
+/* --- скроллбары ---------------------------------------------------- */
+
+/* Кнопки-стрелки. Одного display:none мало: Chromium оставляет для них
+   место, пока не обнулены размеры, и рисует их для вариантов :start/:end
+   по отдельности — поэтому перечисляем всё явно. */
+html.shell-glass::-webkit-scrollbar-button,
+html.shell-glass body::-webkit-scrollbar-button,
+html.shell-glass ::-webkit-scrollbar-button,
+html.shell-glass ::-webkit-scrollbar-button:start,
+html.shell-glass ::-webkit-scrollbar-button:end,
+html.shell-glass ::-webkit-scrollbar-button:vertical:start,
+html.shell-glass ::-webkit-scrollbar-button:vertical:end,
+html.shell-glass ::-webkit-scrollbar-button:horizontal:start,
+html.shell-glass ::-webkit-scrollbar-button:horizontal:end,
+html.shell-glass ::-webkit-scrollbar-button:single-button,
+html.shell-glass ::-webkit-scrollbar-button:double-button,
+html.shell-glass ::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+html.shell-glass ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html.shell-glass ::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+html.shell-glass ::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: rgba(var(--glass-accent), .34);
+  transition: background-color .14s;
+}
+
+html.shell-glass ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(var(--glass-accent), .6);
+}
+
+/* --- раздел «Оформление» в настройках ------------------------------ */
+
+html.shell-glass .glass-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+html.shell-glass .glass-row .set-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+html.shell-glass .glass-row input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 0 0 190px;
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--glass-accent), .9) var(--fill, 50%),
+    rgba(255, 255, 255, .14) var(--fill, 50%)
+  );
+  outline: none;
+}
+
+html.shell-glass .glass-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #f3ecff;
+  border: 1px solid rgba(var(--glass-accent), .9);
+  box-shadow: 0 2px 8px rgba(var(--glass-accent), .5);
+  cursor: pointer;
+}
+
+html.shell-glass .glass-row .glass-value {
+  flex: 0 0 46px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+html.shell-glass .glass-modes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+html.shell-glass .glass-mode {
+  padding: 9px 15px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--edge);
+  transition: border-color .14s, color .14s, background-color .14s;
+}
+
+html.shell-glass .glass-mode:hover {
+  border-color: var(--edge-bright);
+  color: var(--text-1);
+}
+
+html.shell-glass .glass-mode.on {
+  color: #fff;
+  background: rgba(var(--glass-accent), .36);
+  border-color: rgba(var(--glass-accent), .64);
+}
+
+html.shell-glass .glass-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+
+/* --- главный экран -------------------------------------------------
+   Порядок сверху вниз: кнопка питания, карточки сервера и режима,
+   скорость с таймером, внешний IP и в самом низу переключатели.
+   Строки заданы явно: автоматическое размещение шло бы по порядку
+   элементов в разметке, а он другой. */
+
+html.shell-glass .home-wrap {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-rows: min-content;
+  gap: 12px !important;
+  width: 100%;
+  max-width: 940px;
+  margin-inline: auto;
+}
+
+/* Сверху остаются только надстрочник и значок протокола: крупная строка
+   с подписью на главном экране лишняя — там всё говорит сама кнопка.
+   Блок собран в колонку по той же оси, что кнопка и карточки. */
+html.shell-glass #page-home > .home-heading {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px;
+  text-align: center;
+  width: 100%;
+  max-width: 940px;
+  margin-inline: auto;
+  padding: 4px 0 14px !important;
+  flex: 0 0 auto;
+}
+
+html.shell-glass .home-heading > div {
+  text-align: center;
+}
+
+html.shell-glass .home-heading h1,
+html.shell-glass .home-heading p {
+  display: none !important;
+}
+
+html.shell-glass .home-heading .eyebrow {
+  margin: 0 !important;
+}
+
+html.shell-glass .home-heading .proto-badge {
+  margin: 0 !important;
+}
+
+/* Герой больше не карточка: ни фона, ни рамки, ни тени. */
+html.shell-glass .connection-hero {
+  grid-row: 1 !important;
+  grid-column: 1 !important;
+  min-height: 0 !important;
+  padding: 6px 0 20px !important;
+  background: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+html.shell-glass .hero-orbit,
+html.shell-glass .hero-footnote {
+  display: none !important;
+}
+
+html.shell-glass .connection-hero .power-wrap {
+  width: 184px !important;
+  height: 184px !important;
+  flex-basis: 184px !important;
+  margin: 0 auto 16px !important;
+}
+
+html.shell-glass .connection-hero .status-title {
+  font-size: 23px !important;
+  text-align: center;
+}
+
+html.shell-glass .connection-hero .status-desc {
+  text-align: center;
+  max-width: 340px !important;
+}
+
+/* Сервер и режим — в одной строке, серверу больше места под имя. */
+html.shell-glass .home-cards {
+  grid-row: 2 !important;
+  grid-column: 1 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) !important;
+  gap: 12px !important;
+}
+
+html.shell-glass .hc {
+  padding: 14px 16px !important;
+}
+
+html.shell-glass .hc-symbol {
+  display: none !important;
+}
+
+html.shell-glass .hc-hint {
+  display: none !important;
+}
+
+html.shell-glass .hc-val {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  margin-top: 8px;
+}
+
+/* Флаг рисуется картинкой: эмодзи-флаги шрифты Windows показывают
+   как две буквы. */
+html.shell-glass .hc-val-server {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+html.shell-glass .hc-flag {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 19px;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .16);
+}
+
+/* Сервер не выбран — флага нет. Пустой контейнер иначе остаётся видимой
+   рамкой рядом с подписью. */
+html.shell-glass .hc-flag:empty {
+  display: none;
+}
+
+html.shell-glass .hc-flag img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+html.shell-glass .hc-val-server > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Скорость и таймер: крупное значение, под ним мелкая подпись. */
+html.shell-glass .home-stats {
+  grid-row: 3 !important;
+  grid-column: 1 !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+html.shell-glass .stat {
+  padding: 16px 10px !important;
+  text-align: center !important;
+}
+
+html.shell-glass .stat-val {
+  margin: 0 !important;
+  font-size: 28px !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+  color: rgba(var(--glass-accent), 1) !important;
+}
+
+html.shell-glass .stat-unit {
+  margin-top: 6px !important;
+  font-size: 11px !important;
+  color: var(--text-3) !important;
+}
+
+/* Внешний IP — во всю ширину. */
+/* Карточка — флекс-колонка, и в redesign.css содержимое прижато к левому
+   краю. Одного text-align мало: блоки там шириной по содержимому, поэтому
+   центрировать нужно сами элементы. */
+html.shell-glass .ip-card {
+  grid-row: 4 !important;
+  grid-column: 1 !important;
+  padding: 16px !important;
+  align-items: center !important;
+  text-align: center !important;
+}
+
+html.shell-glass .ip-val {
+  margin-top: 6px !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  letter-spacing: .06em;
+  text-align: center !important;
+}
+
+html.shell-glass .ip-note {
+  margin-top: 4px !important;
+  font-size: 11px !important;
+  color: var(--text-3) !important;
+  text-align: center !important;
+}
+
+/* Подпись карточки — тоже по центру: иначе она одна выбивается влево. */
+html.shell-glass .ip-card .ip-lbl {
+  text-align: center !important;
+}
+
+/* Переключатели — в самом низу. */
+html.shell-glass .home-toggles {
+  grid-row: 5 !important;
+  grid-column: 1 !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  margin: 0 !important;
+}
+
+html.shell-glass .htg {
+  height: 46px;
+  border-radius: 14px !important;
+  flex: none !important;
+}
+
+html.shell-glass .gemini-star {
+  color: rgba(var(--glass-accent), 1);
+  font-size: 13px;
+}
+
+html.shell-glass .htg.on .gemini-star {
+  color: #fff;
+}
+
+/* Автоотступы центрируют контент, когда в окне есть запас высоты, и
+   обнуляются, когда его нет — тогда экран просто прокручивается.
+   justify-content: center так не умеет: он срезал бы верх. */
+html.shell-glass #page-home > .home-heading {
+  margin-top: auto;
+}
+
+html.shell-glass #page-home > .home-wrap {
+  margin-bottom: auto;
+}
+
+/* --- активные состояния ---------------------------------------------
+   Раньше включённое состояние отличалось только оттенком текста и рамки —
+   на стекле это почти не читалось. Теперь активный элемент залит акцентом. */
+
+html.shell-glass .htg.on {
+  color: #fff !important;
+  background: linear-gradient(
+      135deg,
+      rgba(var(--glass-accent), .58),
+      rgba(var(--glass-accent), .26)
+    ) !important;
+  border-color: rgba(var(--glass-accent), .7) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .2),
+    0 6px 20px rgba(var(--glass-accent), .28) !important;
+}
+
+/* Точка слева от подписи: состояние видно даже боковым зрением. */
+html.shell-glass .htg.on::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, .9);
+  flex: 0 0 auto;
+}
+
+html.shell-glass .mode-card.active,
+html.shell-glass .mode-card.active.wl,
+html.shell-glass .mode-card.active.bl {
+  background: linear-gradient(
+      135deg,
+      rgba(var(--glass-accent), .3),
+      rgba(var(--glass-accent), .1)
+    ) !important;
+  border-color: rgba(var(--glass-accent), .6) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14) !important;
+}
+
+/* Выбранный сервер: акцентная полоса слева, заливка и галочка справа. */
+html.shell-glass .srv-row.sel {
+  background: linear-gradient(
+      100deg,
+      rgba(var(--glass-accent), .26),
+      rgba(var(--glass-accent), .08)
+    ) !important;
+  border-color: rgba(var(--glass-accent), .62) !important;
+  box-shadow:
+    inset 4px 0 0 rgba(var(--glass-accent), 1),
+    0 6px 20px rgba(var(--glass-accent), .18) !important;
+}
+
+html.shell-glass .srv-row.sel::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  border-radius: 50%;
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><path d='M2 7l3.5 3.5L12 3.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>") center / 12px 12px no-repeat,
+    rgba(var(--glass-accent), 1);
+  box-shadow: 0 2px 10px rgba(var(--glass-accent), .55);
+}
+
+/* --- история версий ------------------------------------------------ */
+
+html.shell-glass .history-head {
+  margin: 22px 2px 10px;
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--text-3);
+}
+
+html.shell-glass .history-list {
+  display: grid;
+  gap: 10px;
+}
+
+html.shell-glass .history-item {
+  padding: 14px 16px;
+}
+
+/* Выпуски новее установленного выделяются рамкой — их и ищут взглядом. */
+html.shell-glass .history-item.ahead {
+  border-color: rgba(var(--glass-accent), .45) !important;
+}
+
+html.shell-glass .history-item header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+html.shell-glass .history-item header strong {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+
+html.shell-glass .history-item header time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+html.shell-glass .history-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  color: #fff;
+  background: rgba(var(--glass-accent), .85);
+}
+
+html.shell-glass .history-badge.current {
+  background: rgba(255, 255, 255, .14);
+  color: var(--text-2);
+}
+
+html.shell-glass .history-item ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+}
+
+html.shell-glass .history-item li {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+/* --- палитра -------------------------------------------------------- */
+
+html.shell-glass .palette {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+html.shell-glass .swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, .2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25);
+  transition: transform .14s, box-shadow .14s;
+}
+
+html.shell-glass .swatch:hover {
+  transform: translateY(-2px);
+}
+
+html.shell-glass .swatch.on {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .75), 0 4px 12px rgba(0, 0, 0, .4);
+}
+
+/* Нативный выбор цвета: прячем служебную обводку, оставляем сам образец. */
+html.shell-glass .swatch-custom {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border-radius: 9px;
+  border: 1px dashed rgba(255, 255, 255, .35);
+  background: transparent;
+  cursor: pointer;
+}
+
+html.shell-glass .swatch-custom::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+html.shell-glass .swatch-custom::-webkit-color-swatch {
+  border: none;
+  border-radius: 7px;
+}
+
+/* --- режим «без стекла» -------------------------------------------- */
+
+html.shell-glass.shell-opaque body::before {
+  background: rgba(var(--deep-rgb), 1);
+}

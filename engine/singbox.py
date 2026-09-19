@@ -9,7 +9,11 @@ import tempfile
 import platform
 import socket
 import time
+import ipaddress
 from engine.paths import bin_path
+from engine.core_logs import core_log_tag
+
+SINGBOX_VERSION = "1.10.7"
 
 
 class SingBoxManager:
@@ -20,9 +24,19 @@ class SingBoxManager:
         self.exit_cb         = exit_callback or (lambda return_code: None)
         self._config_file    = None
         self._stop_requested = None
+        self._api_port       = 9090
 
     def _singbox_path(self):
         return bin_path("sing-box.exe" if platform.system() == "Windows" else "sing-box")
+
+    def _command(self, executable, path):
+        return [executable, "run", "-c", path]
+
+    def _has_tun(self, config):
+        return any(ib.get("type") == "tun" for ib in config.get("inbounds", []))
+
+    def _check_config(self, executable, path):
+        return True
 
     # ── Порты ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +54,121 @@ class SingBoxManager:
                 return True
             time.sleep(0.2)
         return False
+
+    @staticmethod
+    def _listener_ports(config: dict) -> list[tuple[str, int]]:
+        """Return every TCP listener that sing-box will create.
+
+        Checking only the Clash API is too late: sing-box can create the TUN and
+        then fail on a SOCKS/HTTP port, which makes Wintun tear down under load.
+        """
+        listeners = []
+        controller = config.get("experimental", {}).get("clash_api", {}).get("external_controller", "")
+        if isinstance(controller, str):
+            _host, separator, raw_port = controller.rpartition(":")
+            if separator and raw_port.isdigit():
+                listeners.append(("Clash API", int(raw_port)))
+        for inbound in config.get("inbounds", []):
+            if not isinstance(inbound, dict):
+                continue
+            port = inbound.get("listen_port")
+            if type(port) is int and 1 <= port <= 65535:
+                label = str(inbound.get("tag") or inbound.get("type") or "inbound")
+                listeners.append((label, port))
+        return listeners
+
+    @staticmethod
+    def _port_owner(port: int) -> str:
+        try:
+            import psutil
+            for connection in psutil.net_connections(kind="tcp"):
+                if connection.status != psutil.CONN_LISTEN or not connection.laddr:
+                    continue
+                if connection.laddr.port == port and connection.pid:
+                    try:
+                        return psutil.Process(connection.pid).name()
+                    except (psutil.Error, OSError):
+                        return f"PID {connection.pid}"
+        except (ImportError, OSError):
+            pass
+        return "другим приложением"
+
+    def is_alive(self) -> bool:
+        process = self.process
+        return process is not None and process.poll() is None
+
+    @staticmethod
+    def _assigned_ipv4_networks():
+        """Return IPv4 networks already attached to Windows interfaces."""
+        networks = []
+        try:
+            import psutil
+            for addresses in psutil.net_if_addrs().values():
+                for item in addresses:
+                    if item.family != socket.AF_INET or not item.address:
+                        continue
+                    netmask = item.netmask or "255.255.255.255"
+                    try:
+                        networks.append(
+                            ipaddress.ip_network(f"{item.address}/{netmask}", strict=False)
+                        )
+                    except ValueError:
+                        continue
+        except (ImportError, OSError):
+            pass
+        return networks
+
+    @staticmethod
+    def _replacement_tun_address(occupied_networks) -> str | None:
+        """Pick a small private subnet that does not overlap another adapter."""
+        occupied = list(occupied_networks)
+        for second_octet in (19, 29, 31, 22, 18, 20):
+            for third_octet in range(256):
+                candidate = ipaddress.ip_interface(
+                    f"172.{second_octet}.{third_octet}.1/30"
+                )
+                if not any(candidate.network.overlaps(network) for network in occupied):
+                    return str(candidate)
+        return None
+
+    def _prepare_tun_addresses(self, config: dict) -> bool:
+        """Avoid a Wintun crash/failure when another VPN owns our TUN subnet."""
+        occupied = self._assigned_ipv4_networks()
+        for inbound in config.get("inbounds", []):
+            if not isinstance(inbound, dict) or inbound.get("type") != "tun":
+                continue
+            raw_addresses = inbound.get("address", [])
+            scalar = isinstance(raw_addresses, str)
+            addresses = [raw_addresses] if scalar else list(raw_addresses or [])
+            for index, raw_address in enumerate(addresses):
+                try:
+                    interface = ipaddress.ip_interface(raw_address)
+                except (TypeError, ValueError):
+                    continue
+                if interface.version != 4:
+                    continue
+                conflict = any(
+                    interface.network.overlaps(network) for network in occupied
+                )
+                if conflict:
+                    replacement = self._replacement_tun_address(occupied)
+                    if replacement is None:
+                        self.log_cb(
+                            "sing-box не запущен: Windows не оставила свободную "
+                            "внутреннюю подсеть для TUN.",
+                            "err",
+                        )
+                        return False
+                    addresses[index] = replacement
+                    self.log_cb(
+                        f"Подсеть TUN {raw_address} уже используется другим "
+                        f"сетевым интерфейсом; выбрана свободная {replacement}.",
+                        "warn",
+                    )
+                    interface = ipaddress.ip_interface(replacement)
+                occupied.append(interface.network)
+            inbound["address"] = addresses[0] if scalar else addresses
+        return True
 
     def start(self, config: dict) -> bool:
         if self.process:
@@ -59,7 +188,7 @@ class SingBoxManager:
             return False
 
         # wintun.dll нужен только при TUN inbound
-        has_tun = any(ib.get("type") == "tun" for ib in config.get("inbounds", []))
+        has_tun = self._has_tun(config)
         if has_tun:
             wintun = bin_path("wintun.dll")
             if not os.path.exists(wintun):
@@ -69,26 +198,45 @@ class SingBoxManager:
                     "err"
                 )
                 return False
+            if not self._prepare_tun_addresses(config):
+                return False
 
-        if not self._port_free(9090):
+        listeners = list(self._listener_ports(config))
+        # Порт Clash API выбирает вызывающая сторона; stop() должен дождаться
+        # освобождения именно его, а не прежнего жёстко зашитого 9090.
+        self._api_port = next((port for label, port in listeners if label == "Clash API"), self._api_port)
+        conflicts = []
+        seen = set()
+        for label, port in listeners:
+            if port in seen:
+                conflicts.append(f"{label}: {port} дублируется в конфигурации")
+            elif not self._port_free(port):
+                conflicts.append(f"{label}: порт {port} занят ({self._port_owner(port)})")
+            seen.add(port)
+        if conflicts:
             self.log_cb(
-                "Порт 9090 уже занят другим процессом. "
-                "SadnessVPN не будет завершать чужой процесс.",
+                "sing-box не запущен: " + "; ".join(conflicts) + ". "
+                "TUN не создавался, чужие процессы не завершались.",
                 "err",
             )
             return False
 
         fd, path = tempfile.mkstemp(suffix=".json", prefix="singbox_cfg_")
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
         self._config_file = path
 
         try:
+            if not self._check_config(singbox, path):
+                self._cleanup()
+                return False
             process = subprocess.Popen(
-                [singbox, "run", "-c", path],
+                self._command(singbox, path),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=os.path.dirname(singbox),  # wintun.dll должен быть рядом
                 creationflags=subprocess.CREATE_NO_WINDOW
                     if platform.system() == "Windows" else 0
@@ -154,7 +302,7 @@ class SingBoxManager:
                 self.running = False
                 self._cleanup(process)
         # Убеждаемся, что порт освобождён для следующего подключения
-        self._wait_port_free(9090, timeout=3.0)
+        self._wait_port_free(self._api_port, timeout=3.0)
         self.log_cb("sing-box остановлен", "info")
 
     def _cleanup(self, expected_process=None):
@@ -176,16 +324,7 @@ class SingBoxManager:
                 line = line.rstrip()
                 if not line:
                     continue
-                low = line.lower()
-                if any(w in low for w in ["error", "failed", "fatal"]):
-                    tag = "err"
-                elif "warn" in low:
-                    tag = "warn"
-                elif any(w in low for w in ["started", "listening", "tun"]):
-                    tag = "ok"
-                else:
-                    tag = "log"
-                self.log_cb(line, tag)
+                self.log_cb(line, core_log_tag(line))
         except Exception:
             pass
 

@@ -1,47 +1,22 @@
-import hashlib
-import os
-import platform
-import socket
-import subprocess
-import uuid
+"""Privacy-preserving, stable client identifiers.
 
-def _get_smbios_uuid() -> str:
-    """Возвращает настоящий аппаратный UUID материнской платы."""
-    try:
-        r = subprocess.run(
-            ["wmic", "csproduct", "get", "uuid"],
-            capture_output=True, text=True, timeout=2, creationflags=0x08000000
-        )
-        for line in r.stdout.splitlines():
-            line = line.strip()
-            if line and line.lower() != "uuid":
-                return line
-    except Exception:
-        return ""
+The value is generated once and persisted by ui.server. It deliberately does not
+contain motherboard, registry, MAC-address, user-name, or host-name data.
+"""
 
-def _get_machine_guid() -> str:
-    """Читает MachineGuid из реестра Windows."""
-    try:
-        import winreg
-        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography")
-        guid, _ = winreg.QueryValueEx(key, "MachineGuid")
-        winreg.CloseKey(key)
-        return guid
-    except Exception:
-        return ""
+import secrets
+
+
+HWID_PREFIX = "svpn-"
+
 
 def generate_hwid() -> str:
-    # Сначала пробуем железный UUID (к которому скорее всего привязана подписка)
-    guid = _get_smbios_uuid() or _get_machine_guid()
-    if guid:
-        return guid
+    """Return a new opaque 128-bit client identifier."""
+    return HWID_PREFIX + secrets.token_hex(16)
 
-    # Фолбэк
-    try:
-        mac = uuid.getnode()
-        if not (mac >> 40 & 1):
-            return ":".join(f"{(mac >> (5 - i) * 8) & 0xff:02x}" for i in range(6))
-    except Exception:
-        pass
-        
-    return str(uuid.uuid1())
+
+def is_private_hwid(value: str) -> bool:
+    if not isinstance(value, str) or not value.startswith(HWID_PREFIX):
+        return False
+    suffix = value[len(HWID_PREFIX):]
+    return len(suffix) == 32 and all(ch in "0123456789abcdef" for ch in suffix)

@@ -24,6 +24,14 @@ class ConnectionCoordinator:
             self._state = "connecting"
             return self._generation
 
+    def run_if_idle(self, callback: StateCallback) -> bool:
+        """Commit downloaded configuration only while no tunnel is starting/running."""
+        with self._lock:
+            if self._state != "off":
+                return False
+            callback()
+            return True
+
     def is_current(self, attempt: int) -> bool:
         with self._lock:
             return self._state == "connecting" and attempt == self._generation

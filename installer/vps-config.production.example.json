@@ -1,0 +1,9 @@
+{
+  "ssh_host": "193.233.75.219",
+  "ssh_user": "root",
+  "ssh_auth": "password",
+  "patch_only": true,
+  "https_base": "https://mygermany2.duckdns.org:8444/updates",
+  "allowed_hosts": ["mygermany2.duckdns.org:8444"],
+  "public_key_base64": "7iL7vQXJeae1vx0yhHAfuST3nXuEUgk2ZemSoG8QvHM="
+}

@@ -3,15 +3,46 @@ engine/wg_config.py — парсинг WireGuard/AmneziaWG конфигов и �
 Новое: kill_switch, block_udp, socks5_auth, dns_preset, custom_dns, fakedns, preferred_ip
 """
 import base64
+import ipaddress
 import json
 import re
 import urllib.request
 
+from engine.app_meta import subscription_headers
 from engine.config import DNS_PRESETS
 
 
-# AWG-специфичные поля которые не поддерживает sing-box
-AWG_FIELDS = {"jc", "jmin", "jmax", "s1", "s2", "h1", "h2", "h3", "h4"}
+# AmneziaWG-поля. Классические Jc..H4 нужны конфигам AWG 1.x/2.x,
+# остальные используются новым форматом AWG 3.x.
+AWG_INTERFACE_FIELDS = {
+    "jc": "Jc",
+    "jmin": "Jmin",
+    "jmax": "Jmax",
+    "s1": "S1",
+    "s2": "S2",
+    "s3": "S3",
+    "s4": "S4",
+    "h1": "H1",
+    "h2": "H2",
+    "h3": "H3",
+    "h4": "H4",
+    "i1": "I1",
+    "i2": "I2",
+    "i3": "I3",
+    "i4": "I4",
+    "i5": "I5",
+    "headerprotectionkey": "HeaderProtectionKey",
+    "contentpaddingaddition": "ContentPaddingAddition",
+    "rekeyaftertime": "RekeyAfterTime",
+    "rekeytimeout": "RekeyTimeout",
+    "rejectaftertime": "RejectAfterTime",
+    "keepalivetimeout": "KeepaliveTimeout",
+    "maxhandshakeattempts": "MaxHandshakeAttempts",
+    "randomtrailers": "RandomTrailers",
+    "disablecookies": "DisableCookies",
+}
+AWG_PEER_FIELDS = {"advancedsecurity": "AdvancedSecurity"}
+AWG_FIELDS = set(AWG_INTERFACE_FIELDS) | set(AWG_PEER_FIELDS)
 
 
 def _parse_conf_text(text: str) -> dict:
@@ -25,6 +56,8 @@ def _parse_conf_text(text: str) -> dict:
         "endpoint"         : "",
         "port"             : 51820,
         "allowed_ips"      : ["0.0.0.0/0", "::/0"],
+        "source_allowed_ips": [],
+        "persistent_keepalive": 0,
         "mtu"              : 1280,
         "awg_fields"       : {},
         "is_awg"           : False,
@@ -33,6 +66,7 @@ def _parse_conf_text(text: str) -> dict:
     }
 
     section = None
+    peer_count = 0
     raw_allowed_ips = []
 
     for line in text.splitlines():
@@ -41,6 +75,10 @@ def _parse_conf_text(text: str) -> dict:
             continue
         if line.startswith("["):
             section = line.strip("[]").lower()
+            if section == "peer":
+                peer_count += 1
+                if peer_count > 1:
+                    raise ValueError("Несколько Peer пока не поддерживаются. Импортируйте отдельные конфиги.")
             continue
         if "=" not in line:
             continue
@@ -76,15 +114,21 @@ def _parse_conf_text(text: str) -> dict:
                     try:
                         result["port"] = int(port)
                     except ValueError:
-                        pass
+                        raise ValueError("Неверный порт Endpoint")
                 else:
-                    result["endpoint"] = val
+                    raise ValueError("Endpoint должен содержать адрес и порт")
             elif key == "allowedips":
                 raw_allowed_ips = [a.strip() for a in val.split(",")]
+            elif key == "persistentkeepalive":
+                try:
+                    result["persistent_keepalive"] = max(0, min(65535, int(val)))
+                except ValueError:
+                    pass
             elif key in AWG_FIELDS:
                 result["awg_fields"][key] = val
                 result["is_awg"] = True
 
+    result["source_allowed_ips"] = list(raw_allowed_ips)
     has_full_ipv4 = any(ip in ("0.0.0.0/0", "0.0.0.0/1") for ip in raw_allowed_ips)
 
     if raw_allowed_ips and not has_full_ipv4:
@@ -93,7 +137,7 @@ def _parse_conf_text(text: str) -> dict:
     else:
         result["allowed_ips"] = raw_allowed_ips if raw_allowed_ips else ["0.0.0.0/0", "::/0"]
 
-    dns_clean = [d for d in result["dns"] if ":" not in d]
+    dns_clean = [d for d in result["dns"] if d]
     if not dns_clean:
         dns_clean = ["1.1.1.1"]
     result["dns"] = dns_clean
@@ -106,7 +150,33 @@ def _parse_conf_text(text: str) -> dict:
     if result["is_awg"]:
         result["remark"] = "[AWG] " + result["remark"]
 
+    validate_wg_server(result)
     return result
+
+
+def validate_wg_server(server):
+    for key in ("private_key", "peer_public_key", "pre_shared_key"):
+        value = server.get(key, "")
+        if key == "pre_shared_key" and not value:
+            continue
+        try:
+            if len(base64.b64decode(value, validate=True)) != 32:
+                raise ValueError()
+        except Exception:
+            raise ValueError(f"Некорректный {key}: нужен ключ WireGuard из 32 байт") from None
+    addresses = server.get("address") or []
+    if isinstance(addresses, str):
+        addresses = [addresses]
+    if not addresses:
+        raise ValueError("Address не задан")
+    for address in addresses:
+        ipaddress.ip_interface(address)
+    endpoint = server.get("endpoint", "")
+    if not isinstance(endpoint, str) or not endpoint or any(c.isspace() for c in endpoint):
+        raise ValueError("Endpoint не задан или некорректен")
+    if not 1 <= int(server.get("port", 0)) <= 65535:
+        raise ValueError("Порт Endpoint должен быть от 1 до 65535")
+    return server
 
 
 def parse_wg_conf(text: str) -> list:
@@ -125,20 +195,15 @@ def parse_wg_conf(text: str) -> list:
                 last_error = "PrivateKey не найден в конфиге"
         except Exception as e:
             last_error = str(e)
-    if not results and last_error:
+    if last_error:
         raise ValueError(f"Ошибка парсинга: {last_error}")
     return results
 
 
-def fetch_wg_subscription(url: str) -> list:
+def fetch_wg_subscription(url: str, hwid: str = "") -> list:
+    from engine.subscriptions import download_subscription, SubscriptionServers, SubscriptionError
     url = url.strip()
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "SadnessVPN/1.0", "Accept": "*/*"}
-    )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        raw = resp.read(8 * 1024 * 1024 + 1)
-    if len(raw) > 8 * 1024 * 1024:
-        raise ValueError("WireGuard subscription is larger than 8 MiB")
+    raw, metadata = download_subscription(url, hwid)
 
     text = None
 
@@ -166,21 +231,23 @@ def fetch_wg_subscription(url: str) -> list:
                 if isinstance(item, str) and "[INTERFACE]" in item.upper():
                     servers.extend(parse_wg_conf(item))
                 elif isinstance(item, dict):
-                    servers.append(item)
-            return servers
+                    servers.append(validate_wg_server(item))
+            if servers:
+                return SubscriptionServers(servers, metadata)
         except Exception:
             pass
 
     if not text:
-        return []
+        raise SubscriptionError("В подписке нет WG/AWG-конфигураций. Попробуйте импорт как VLESS / Clash в разделе Подписки.")
 
-    return parse_wg_conf(text)
+    return SubscriptionServers(parse_wg_conf(text), metadata)
 
 
 def build_wg_tun_config(
     server         : dict,
     socks_port     : int  = 1080,
     http_port      : int  = 8080,
+    clash_port     : int  = 9090,
     routing_mode   : str  = "all",
     routed_apps    : list = None,
     # ── Параметры туннеля ──
@@ -235,13 +302,13 @@ def build_wg_tun_config(
     dns_servers = [
         {
             "tag"             : "remote",
-            "address"         : f"https://{primary_remote}/dns-query",
+            "address"         : primary_remote if "://" in primary_remote else f"tls://{primary_remote}",
             "address_resolver": "bootstrap",
             "detour"          : "proxy",   # основной DNS — через VPN
         },
         {
             "tag"             : "remote2",
-            "address"         : f"https://{secondary_remote}/dns-query",
+            "address"         : secondary_remote if "://" in secondary_remote else f"tls://{secondary_remote}",
             "address_resolver": "bootstrap",
             "detour"          : "proxy",   # резервный DNS — через VPN
         },
@@ -263,9 +330,14 @@ def build_wg_tun_config(
     # ── Routing rules ─────────────────────────────────────────────────
     base_rules = [
         {"protocol": ["dns"], "outbound": "dns-out"},
-        {"ip_cidr": [f"{server['endpoint']}/32"], "outbound": "direct"},
         {"ip_is_private": True, "outbound": "direct"},
     ]
+
+    try:
+        endpoint_ip = ipaddress.ip_address(server["endpoint"])
+        base_rules.insert(1, {"ip_cidr": [f"{endpoint_ip}/{endpoint_ip.max_prefixlen}"], "outbound": "direct"})
+    except ValueError:
+        base_rules.insert(1, {"domain": [server["endpoint"]], "outbound": "direct"})
 
     # Блокировка UDP (кроме DNS)
     if block_udp:
@@ -276,6 +348,8 @@ def build_wg_tun_config(
             {"process_name": routed_apps, "outbound": "proxy"},
             {"outbound": "direct"},
         ]
+    elif routing_mode == "whitelist":
+        app_rules = [{"outbound": "direct"}]
     elif routing_mode == "blacklist" and routed_apps:
         app_rules = [
             {"process_name": routed_apps, "outbound": "direct"},
@@ -314,7 +388,7 @@ def build_wg_tun_config(
         "log": {"level": "info", "timestamp": True},
         "experimental": {
             "clash_api": {
-                "external_controller": "127.0.0.1:9090",
+                "external_controller": f"127.0.0.1:{clash_port}",
                 "secret": "",
             }
         },
@@ -329,7 +403,7 @@ def build_wg_tun_config(
             {
                 "type"                      : "tun",
                 "tag"                       : "tun-in",
-                "inet4_address"             : "172.19.0.1/30",
+                "address"                   : ["172.19.0.1/30"],
                 "mtu"                       : 9000,
                 "auto_route"                : True,
                 "strict_route"              : kill_switch,

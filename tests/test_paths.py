@@ -104,7 +104,12 @@ class PackagingSafetyTests(unittest.TestCase):
         project_root = Path(__file__).resolve().parents[1]
         spec = project_root.joinpath("SadnessVPN.spec").read_text(encoding="utf-8")
 
-        self.assertIn("excludes=['backups']", spec)
+        import ast
+        tree = next(node for node in ast.walk(ast.parse(spec))
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Tree")
+        excluded = ast.literal_eval(next(item.value for item in tree.keywords if item.arg == "excludes"))
+        self.assertIn("backups", excluded)
+        self.assertIn("*.bat", excluded)
 
 
 if __name__ == "__main__":

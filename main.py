@@ -1,185 +1,131 @@
-import sys, os, threading, time, ctypes, ctypes.wintypes, json
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ui.server import SERVER_INSTANCE_ID, run as run_server
-from engine.paths import data_dir
-import webview
+"""Desktop entry point. Native window operations run on the WinForms UI thread."""
+import ctypes
+import json
+import os
+import sys
+import threading
+import time
 import urllib.request
 
-# Переопределяем иконку процесса в таскбаре
-ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SadnessVPN.App")
+from engine.paths import data_dir
+from engine.diagnostics import journal
+from engine.webview_runtime import prepare_webview_runtime
+from ui.server import SERVER_INSTANCE_ID, run as run_server, shutdown_engines, close_to_tray_enabled
+from ui import window_control
+from ui.tray import WindowsTray
+from engine.startup_diagnostics import notify_ready
+import webview
 
-BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ICON_PATH = os.path.join(BASE_DIR, "app.ico")
+W, H = 980, 700
 
-W, H = 920, 620
 
-
-def load_startup_preferences() -> dict:
+def load_startup_preferences():
     try:
-        with open(os.path.join(data_dir(), "settings.json"), "r", encoding="utf-8") as file:
+        with open(os.path.join(data_dir(), "settings.json"), encoding="utf-8") as file:
             settings = json.load(file)
-        if not isinstance(settings, dict):
-            raise ValueError("Invalid settings")
-    except Exception:
-        settings = {}
-    return {
-        "silent": settings.get("silent") is True,
-    }
-
-def start_server():
-    run_server(host="127.0.0.1", port=45678)
+        return {"silent": settings.get("silent") is True}
+    except (OSError, ValueError, AttributeError):
+        return {"silent": False}
 
 
-def show_startup_error(message: str) -> None:
-    try:
-        ctypes.windll.user32.MessageBoxW(None, message, "Sadness VPN", 0x10)
-    except Exception:
-        print(message)
+def show_startup_error(message):
+    journal.error(message)
+    ctypes.windll.user32.MessageBoxW(None, message, "Sadness VPN", 0x10)
 
-def wait_for_server(
-    host="127.0.0.1",
-    port=45678,
-    timeout=10.0,
-    expected_instance=SERVER_INSTANCE_ID,
-) -> bool:
+
+def wait_for_server(host="127.0.0.1", port=45678, timeout=10.0,
+                    expected_instance=SERVER_INSTANCE_ID):
     deadline = time.perf_counter() + timeout
-    url = f"http://{host}:{port}/api/health"
     while time.perf_counter() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=0.3) as response:
+            with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=.3) as response:
                 payload = json.load(response)
-            if (
-                payload.get("app") == "SadnessVPN"
-                and payload.get("instance") == expected_instance
-            ):
+            if payload.get("app") == "SadnessVPN" and payload.get("instance") == expected_instance:
                 return True
         except Exception:
             pass
-        time.sleep(0.05)
+        time.sleep(.05)
     return False
 
-def get_work_area():
-    rect = ctypes.wintypes.RECT()
-    ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0)
-    return rect
 
-def find_hwnd(title="Sadness VPN", attempts=60, delay=0.1):
-    user32 = ctypes.windll.user32
-    for _ in range(attempts):
-        hwnd = user32.FindWindowW(None, title)
-        if hwnd:
-            return hwnd
-        time.sleep(delay)
-    return None
+class SingleInstance:
+    """OS-owned mutex and activation event; released automatically on a crash."""
+    def __init__(self):
+        import ctypes.wintypes as wt
+        self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.kernel.CreateMutexW.argtypes = [ctypes.c_void_p, wt.BOOL, wt.LPCWSTR]
+        self.kernel.CreateMutexW.restype = wt.HANDLE
+        self.kernel.CreateEventW.argtypes = [ctypes.c_void_p, wt.BOOL, wt.BOOL, wt.LPCWSTR]
+        self.kernel.CreateEventW.restype = wt.HANDLE
+        self.kernel.SetEvent.argtypes = [wt.HANDLE]
+        self.kernel.WaitForSingleObject.argtypes = [wt.HANDLE, wt.DWORD]
+        self.event = self.kernel.CreateEventW(None, False, False, "Local\\SadnessVPN.Activate.v1")
+        self.mutex = self.kernel.CreateMutexW(None, False, "Local\\SadnessVPN.Instance.v1")
+        self.existing = ctypes.get_last_error() == 183
+        if not self.event or not self.mutex:
+            raise ctypes.WinError(ctypes.get_last_error())
 
-def fix_window(minimize_after=False):
-    hwnd = find_hwnd()
-    if not hwnd:
+    def notify(self):
+        self.kernel.SetEvent(self.event)
+
+    def listen(self):
+        while True:
+            result = self.kernel.WaitForSingleObject(self.event, 1000)
+            if result == 0:
+                window_control.controller.show()
+            elif result != 258:
+                return
+
+
+def main():
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SadnessVPN.App")
+    instance = SingleInstance()
+    if instance.existing:
+        instance.notify()
+        notify_ready()
         return
-
-    user32 = ctypes.windll.user32
-    wa = get_work_area()
-    x  = wa.left + (wa.right  - wa.left - W) // 2
-    y  = wa.top  + (wa.bottom - wa.top  - H) // 2
-
-    FLAGS = 0x0004 | 0x0010  # SWP_NOZORDER | SWP_NOACTIVATE
-
-    for delay in [0, 0.1, 0.3, 0.6, 1.0]:
-        time.sleep(delay)
-        buf = ctypes.create_string_buffer(44)
-        ctypes.memmove(buf, (44).to_bytes(4, 'little'), 4)
-        user32.GetWindowPlacement(hwnd, buf)
-        show_cmd = int.from_bytes(buf.raw[8:12], 'little')
-        if show_cmd == 3:
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-        user32.SetWindowPos(hwnd, 0, x, y, W, H, FLAGS)
-    if minimize_after:
-        user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
-
-def set_icon():
-    if not os.path.exists(ICON_PATH):
-        print(f"[icon] Файл не найден: {ICON_PATH}")
-        return
-
-    hwnd = find_hwnd()
-    if not hwnd:
-        print("[icon] hwnd не найден")
-        return
-
+    journal.info("Sadness VPN: запуск")
     try:
-        user32 = ctypes.windll.user32
+        runtime = prepare_webview_runtime(BASE_DIR, webview.settings)
+        journal.info("WebView2: %s", runtime or "системный (режим разработки)")
+    except Exception as exc:
+        show_startup_error(str(exc))
+        return
+    threading.Thread(target=run_server, kwargs={"host": "127.0.0.1", "port": 45678}, daemon=True).start()
+    if not wait_for_server():
+        show_startup_error("Не удалось открыть локальный порт 45678. Закройте предыдущую версию Sadness VPN или приложение, занимающее этот порт.")
+        return
+    window = webview.create_window(
+        "Sadness VPN", "http://127.0.0.1:45678?desktop=1", width=W, height=H,
+        min_size=(780, 600), background_color="#0D1018", frameless=False,
+        easy_drag=False, resizable=True, shadow=False,
+    )
+    controller = window_control.WindowController(window, shutdown_engines, ICON_PATH)
+    window_control.controller = controller
+    tray = WindowsTray(ICON_PATH, controller.show, controller.close)
+    tray_ok = tray.start(wait=True)
+    controller.close_to_tray = lambda: tray_ok and close_to_tray_enabled()
+    if not tray_ok:
+        journal.warning("Трей недоступен: %s", tray.error)
+    # Explicit launcher/desktop activation must open an actual window even if
+    # background startup is configured. Autostart retains the saved preference.
+    controller.silent = load_startup_preferences()["silent"] and tray_ok and "--show" not in sys.argv
+    window.events.before_show += controller.before_show
+    window.events.loaded += controller.loaded
+    window.events.loaded += notify_ready
+    window.events.closing += controller.on_closing
+    threading.Thread(target=instance.listen, daemon=True).start()
+    webview.start(controller.watch_startup, gui="edgechromium", private_mode=False,
+                  storage_path=os.path.join(data_dir(), "webview"))
+    shutdown_engines()
 
-        # Задаём argtypes явно для корректной передачи 64-битных HANDLE на x64
-        HANDLE  = ctypes.c_void_p
-        HWND    = ctypes.wintypes.HWND
-        UINT    = ctypes.wintypes.UINT
-        WPARAM  = ctypes.c_size_t   # 64-bit на x64
-        LPARAM  = ctypes.c_ssize_t  # 64-bit на x64
-
-        user32.LoadImageW.restype  = HANDLE
-        user32.LoadImageW.argtypes = [
-            HANDLE, ctypes.c_wchar_p, UINT, ctypes.c_int, ctypes.c_int, UINT
-        ]
-        user32.SendMessageW.restype  = LPARAM
-        user32.SendMessageW.argtypes = [HWND, UINT, WPARAM, LPARAM]
-
-        user32.SetClassLongPtrW.restype  = ctypes.c_size_t
-        user32.SetClassLongPtrW.argtypes = [HWND, ctypes.c_int, ctypes.c_ssize_t]
-
-        path_w = ctypes.c_wchar_p(ICON_PATH)
-        LR_LOADFROMFILE = 0x0010
-
-        hbig   = user32.LoadImageW(None, path_w, 1,  0,  0, LR_LOADFROMFILE)
-        hsmall = user32.LoadImageW(None, path_w, 1, 16, 16, LR_LOADFROMFILE)
-
-        # Иконка окна (заголовок)
-        if hbig:   user32.SendMessageW(hwnd, 0x0080, 1, hbig)
-        if hsmall: user32.SendMessageW(hwnd, 0x0080, 0, hsmall)
-
-        # Иконка класса окна (таскбар)
-        if hbig:   user32.SetClassLongPtrW(hwnd, -14, hbig)   # GCLP_HICON
-        if hsmall: user32.SetClassLongPtrW(hwnd, -34, hsmall) # GCLP_HICONSM
-
-        print(f"[icon] big={hbig} small={hsmall} — готово")
-    except Exception as e:
-        print(f"[icon] Ошибка: {e}")
-
-def on_loaded():
-    # Ждём пока EdgeChromium закончит инициализацию и перестанет сбрасывать иконку
-    time.sleep(1.5)
-    set_icon()
 
 if __name__ == "__main__":
-    print(f"[icon] Путь: {ICON_PATH}")
-    print(f"[icon] Существует: {os.path.exists(ICON_PATH)}")
-
-    threading.Thread(target=start_server, daemon=True).start()
-    if not wait_for_server():
-        message = "Не удалось запустить локальный сервер SadnessVPN. Возможно, порт 45678 уже занят."
-        show_startup_error(message)
-        raise SystemExit(message)
-
-    startup_preferences = load_startup_preferences()
-    threading.Thread(
-        target=fix_window,
-        kwargs={"minimize_after": startup_preferences["silent"]},
-        daemon=True,
-    ).start()
-
-    window = webview.create_window(
-        "Sadness VPN",
-        "http://127.0.0.1:45678",
-        width=W,
-        height=H,
-        min_size=(760, 500),
-        background_color="#0D0810",
-        frameless=True,
-        easy_drag=False,
-        resizable=True,
-    )
-
-    # Устанавливаем иконку ПОСЛЕ того как Edge полностью загрузился
-    window.events.loaded += lambda: threading.Thread(target=on_loaded, daemon=True).start()
-
-    webview.start(icon=ICON_PATH)
+    try:
+        main()
+    except Exception as exc:
+        journal.exception("Ошибка запуска приложения")
+        from engine.startup_diagnostics import report_failure
+        report_failure(exc)

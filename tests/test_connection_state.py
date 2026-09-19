@@ -133,7 +133,7 @@ class ServerConnectionSafetyTests(unittest.TestCase):
 
     def test_ui_can_cancel_a_connecting_attempt(self):
         path = Path(__file__).resolve().parents[1].joinpath(
-            "ui", "templates", "index.html"
+            "ui", "static", "js", "app.js"
         )
         source = path.read_text(encoding="utf-8")
 

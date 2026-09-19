@@ -10,6 +10,9 @@ import subprocess
 import platform
 import urllib.request
 import urllib.error
+import http.client
+import json
+from urllib.parse import urlencode
 from concurrent.futures import ThreadPoolExecutor
 
 def tcp_ping(host: str, port: int, timeout: float = 3.0):
@@ -84,6 +87,32 @@ def http_ping(url: str, method: str = "GET", timeout: float = 3.0):
         return None
 
 
+def tunnel_ping(test_url="https://www.gstatic.com/generate_204", timeout=3.0,
+                native_awg=False, clash_port=9090):
+    """Measure the proxy outbound, not the local TUN TCP accept latency.
+
+    Both sing-box and Mihomo expose a delay test for the owned 'proxy' outbound.
+    Native AWG has no Clash API, so use an HTTPS response through its system route.
+    Never fall back to a TCP connect, which may only reach a local TUN listener.
+    """
+    if native_awg:
+        return http_ping(test_url, timeout=timeout)
+    conn = http.client.HTTPConnection("127.0.0.1", clash_port, timeout=timeout + 1)
+    try:
+        query = urlencode({"url": test_url, "timeout": int(timeout * 1000)})
+        conn.request("GET", "/proxies/proxy/delay?" + query)
+        response = conn.getresponse()
+        body = response.read(4096)
+        if response.status != 200:
+            return None
+        delay = json.loads(body).get("delay")
+        return delay if type(delay) is int and delay >= 0 else None
+    except (OSError, ValueError, AttributeError, http.client.HTTPException):
+        return None
+    finally:
+        conn.close()
+
+
 # Пресеты URL для HTTP-пинга
 PING_URL_PRESETS = {
     "google204":  "https://www.gstatic.com/generate_204",
@@ -114,15 +143,12 @@ def ping_server(
     else:
         return tcp_ping(host, port, timeout=timeout)
 
-def wg_ping(host: str, port: int, timeout: float = 3.0):
-    ms = icmp_ping(host, timeout)
-    if ms is not None:
-        return ms
-    for p in [443, 80]:
-        ms = tcp_ping(host, p, timeout=1.5)
-        if ms is not None:
-            return ms
-    return tcp_ping(host, port, timeout=1.5)
+def wg_ping(host: str, port: int, timeout: float = 3.0,
+            ping_type: str = "icmp", test_url: str = ""):
+    # Reachability probe only, not proof of a WireGuard handshake.
+    if ping_type == "icmp":
+        return icmp_ping(host, timeout)
+    return ping_server(host, port, ping_type=ping_type, timeout=timeout, test_url=test_url)
 
 def ping_color(ms) -> str:
     if ms is None:

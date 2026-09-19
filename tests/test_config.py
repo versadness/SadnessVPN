@@ -1,7 +1,7 @@
 import base64
 import unittest
 
-from engine.config import build_xray_tun_config, parse_link
+from engine.config import build_singbox_config, parse_link
 
 
 class ProxyLinkParsingTests(unittest.TestCase):
@@ -62,7 +62,7 @@ class ProxyRoutingConfigTests(unittest.TestCase):
         }
 
     def test_whitelist_routes_selected_process_to_proxy(self):
-        config = build_xray_tun_config(
+        config = build_singbox_config(
             self.server,
             routing_mode="whitelist",
             routed_apps=["chrome.exe"],
@@ -77,7 +77,7 @@ class ProxyRoutingConfigTests(unittest.TestCase):
         self.assertTrue(config["route"]["find_process"])
 
     def test_blacklist_routes_selected_process_directly(self):
-        config = build_xray_tun_config(
+        config = build_singbox_config(
             self.server,
             routing_mode="blacklist",
             routed_apps=["game.exe"],
@@ -90,7 +90,7 @@ class ProxyRoutingConfigTests(unittest.TestCase):
         self.assertEqual(config["route"]["final"], "proxy")
 
     def test_lan_mode_exposes_only_proxy_inbounds(self):
-        config = build_xray_tun_config(self.server, allow_lan=True)
+        config = build_singbox_config(self.server, allow_lan=True)
         listens = {
             inbound["tag"]: inbound.get("listen")
             for inbound in config["inbounds"]
@@ -100,8 +100,13 @@ class ProxyRoutingConfigTests(unittest.TestCase):
         self.assertEqual(listens["http-in"], "0.0.0.0")
         self.assertNotEqual(listens["tun-in"], "0.0.0.0")
 
+    def test_tun_uses_current_address_field(self):
+        inbound = build_singbox_config(self.server)["inbounds"][0]
+        self.assertEqual(inbound["address"], ["172.19.0.1/30"])
+        self.assertNotIn("inet4_address", inbound)
+
     def test_adguard_ui_preset_builds_adguard_dns_servers(self):
-        config = build_xray_tun_config(self.server, dns_preset="adguard")
+        config = build_singbox_config(self.server, dns_preset="adguard")
         addresses = [item["address"] for item in config["dns"]["servers"]]
 
         self.assertIn("tls://94.140.14.14", addresses)

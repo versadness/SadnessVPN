@@ -100,6 +100,7 @@ class StatsTracker:
         self._running       : bool  = False
         self._timer         : threading.Timer = None
         self._base_data     : dict  = {}  # in-memory cache, avoids disk reads in get_snapshot()
+        self._reset_offsets = {"total": (0, 0, 0), "today": (0, 0, 0)}
 
     def start(self):
         with _lock:
@@ -107,6 +108,7 @@ class StatsTracker:
             self._last_up       = 0
             self._last_down     = 0
             self._running       = True
+            self._reset_offsets = {"total": (0, 0, 0), "today": (0, 0, 0)}
             data = load_stats()
             data["total_sessions"] += 1
             _save(data)
@@ -132,27 +134,31 @@ class StatsTracker:
             today   = _today_str()
 
             # Суммарно
-            data["total_up"]   += up
-            data["total_down"] += down
-            data["total_secs"] += elapsed
+            tu, td, ts = self._reset_offsets["total"]
+            du, dd, ds = self._reset_offsets["today"]
+            data["total_up"]   += max(0, up-tu)
+            data["total_down"] += max(0, down-td)
+            data["total_secs"] += max(0, elapsed-ts)
 
             # Сегодня
             if data["today"]["date"] != today:
                 data["today"] = {"date": today, "up": 0, "down": 0, "secs": 0}
-            data["today"]["up"]   += up
-            data["today"]["down"] += down
-            data["today"]["secs"] += elapsed
+            data["today"]["up"]   += max(0, up-du)
+            data["today"]["down"] += max(0, down-dd)
+            data["today"]["secs"] += max(0, elapsed-ds)
 
             # Недельный буфер
             data["weekly"].setdefault(today, {"up": 0, "down": 0})
-            data["weekly"][today]["up"]   += up
-            data["weekly"][today]["down"] += down
+            data["weekly"][today]["up"]   += max(0, up-du)
+            data["weekly"][today]["down"] += max(0, down-dd)
 
             _save(data)
             self._base_data = data
 
     def reset_today(self):
         with _lock:
+            if self._running:
+                self._reset_offsets["today"] = (self._last_up, self._last_down, int(time.time()-self._session_start))
             data = load_stats()
             data["today"] = {"date": _today_str(), "up": 0, "down": 0, "secs": 0}
             today = _today_str()
@@ -163,6 +169,9 @@ class StatsTracker:
 
     def reset_all(self):
         with _lock:
+            if self._running:
+                baseline = (self._last_up, self._last_down, int(time.time()-self._session_start))
+                self._reset_offsets = {"total": baseline, "today": baseline}
             data = {
                 "total_up": 0, "total_down": 0,
                 "total_secs": 0, "total_sessions": 0,
@@ -172,8 +181,12 @@ class StatsTracker:
             _save(data)
             self._base_data = data
 
-    def get_snapshot(self) -> dict:
-        """Возвращает текущую статистику включая незавершённую сессию."""
+    def get_snapshot(self, include_weekly: bool = True) -> dict:
+        """Возвращает текущую статистику включая незавершённую сессию.
+
+        include_weekly=False пропускает пересборку недельного массива: в цикле
+        опроса трафика он строится каждые две секунды, а интерфейс его не читает.
+        """
         with _lock:
             today = _today_str()
             # Use cached data; reload only if cache is empty or the date rolled over
@@ -181,38 +194,41 @@ class StatsTracker:
                 self._base_data = load_stats()
             data    = self._base_data
             elapsed = int(time.time() - self._session_start) if self._running else 0
-            up      = self._last_up
-            down    = self._last_down
+            up      = self._last_up if self._running else 0
+            down    = self._last_down if self._running else 0
+            tu, td, ts = self._reset_offsets["total"]
+            du, dd, ds = self._reset_offsets["today"]
 
             # Временно добавляем текущую сессию
-            snap_today_secs = data["today"]["secs"] + elapsed
-            snap_today_up   = data["today"]["up"]   + up
-            snap_today_down = data["today"]["down"]  + down
-            snap_total_secs = data["total_secs"] + elapsed
-            snap_total_up   = data["total_up"]   + up
-            snap_total_down = data["total_down"] + down
+            snap_today_secs = data["today"]["secs"] + max(0, elapsed-ds)
+            snap_today_up   = data["today"]["up"]   + max(0, up-du)
+            snap_today_down = data["today"]["down"]  + max(0, down-dd)
+            snap_total_secs = data["total_secs"] + max(0, elapsed-ts)
+            snap_total_up   = data["total_up"]   + max(0, up-tu)
+            snap_total_down = data["total_down"] + max(0, down-td)
 
-            # Недельный буфер с текущей сессией
-            weekly = {}
-            for d, v in data["weekly"].items():
-                weekly[d] = dict(v)
-            today = _today_str()
-            weekly.setdefault(today, {"up": 0, "down": 0})
-            weekly[today]["up"]   += up
-            weekly[today]["down"] += down
-
-            # Строим массив за 7 дней (Mon → Sun)
             week_list = []
-            for i in range(6, -1, -1):
-                d = (date.today() - timedelta(days=i)).isoformat()
-                v = weekly.get(d, {"up": 0, "down": 0})
-                week_list.append({
-                    "date":  d,
-                    "up":    v["up"],
-                    "down":  v["down"],
-                    "total": v["up"] + v["down"],
-                    "label": (date.today() - timedelta(days=i)).strftime("%a").upper(),
-                })
+            if include_weekly:
+                # Недельный буфер с текущей сессией
+                weekly = {}
+                for d, v in data["weekly"].items():
+                    weekly[d] = dict(v)
+                today = _today_str()
+                weekly.setdefault(today, {"up": 0, "down": 0})
+                weekly[today]["up"]   += max(0, up-du)
+                weekly[today]["down"] += max(0, down-dd)
+
+                # Строим массив за 7 дней (Mon → Sun)
+                for i in range(6, -1, -1):
+                    d = (date.today() - timedelta(days=i)).isoformat()
+                    v = weekly.get(d, {"up": 0, "down": 0})
+                    week_list.append({
+                        "date":  d,
+                        "up":    v["up"],
+                        "down":  v["down"],
+                        "total": v["up"] + v["down"],
+                        "label": (date.today() - timedelta(days=i)).strftime("%a").upper(),
+                    })
 
             return {
                 "session_time": elapsed,
