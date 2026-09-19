@@ -47,7 +47,11 @@ def collect():
 def main():
     entries = collect()
     TARGET.parent.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(json.dumps(entries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    TARGET.write_text(
+        json.dumps(entries, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     print(json.dumps({"file": str(TARGET), "versions": len(entries)}, ensure_ascii=False))
 
 

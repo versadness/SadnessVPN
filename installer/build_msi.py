@@ -56,7 +56,7 @@ def add_ui(db):
     welcome = Dialog(db, "WelcomeDlg", 50, 50, 370, 250, 3, "Sadness VPN Setup", "Install", "Install", "Cancel")
     welcome.text("Heading", 20, 20, 330, 30, 3, "{\\Heading}Install Sadness VPN " + APP_VERSION + " Beta")
     welcome.text("Message", 20, 65, 330, 90, 3,
-                 "Offline package for Windows 10/11 x64. Python, WebView2 and VPN cores are included.\n\n"
+                 "Offline package for Windows 10/11 x64. Electron, Python and VPN cores are included.\n\n"
                  "Close Sadness VPN before installing. Personal subscriptions and settings are not included or removed.\n\n"
                  "This package does not disable Windows security.")
     welcome.text("Path", 20, 168, 330, 30, 3, "Install folder: [INSTALLDIR]")
@@ -127,6 +127,10 @@ def main():
     generated = ROOT / "build" / ("Launcher-" + APP_VERSION + ".cs")
     launcher_text = launcher_source.read_text(encoding="utf-8")
     launcher_text = re.sub(r'AssemblyVersion\("[\d.]+"\)', 'AssemblyVersion("' + APP_VERSION + '.0")', launcher_text, count=1)
+    launcher_text = re.sub(r'AssemblyFileVersion\("[\d.]+"\)', 'AssemblyFileVersion("' + APP_VERSION + '.0")', launcher_text, count=1)
+    for attribute in ('AssemblyVersion', 'AssemblyFileVersion'):
+        if f'{attribute}("{APP_VERSION}.0")' not in launcher_text:
+            raise RuntimeError('Launcher version substitution failed: ' + attribute)
     generated.parent.mkdir(parents=True, exist_ok=True)
     generated.write_text(launcher_text, encoding="utf-8")
     subprocess.run([str(compiler), "/nologo", "/target:winexe", "/platform:x64", "/optimize+",
@@ -233,6 +237,10 @@ def main():
                               ("MenuShortcut", "AppMenu", "SADNES~1|Sadness VPN", launcher_component, "[INSTALLDIR]SadnessVPN.exe", None, "Sadness VPN", None, "AppIcon", 0, 1, "INSTALLDIR"),
                               ("DiagnosticsShortcut", "AppMenu", "DIAGNO~1|Diagnostics", launcher_component, "[INSTALLDIR]SadnessVPN.exe", "--diagnostics", "Check files and open startup logs", None, "AppIcon", 0, 1, "INSTALLDIR")])
     add_data(db, "RemoveFile", [("RemoveAppMenu", launcher_component, None, "AppMenu", 2)])
+    # A minor MSI upgrade does not remove obsolete files automatically.
+    # Remove only the retired bundled executable, never another Xray installation.
+    legacy_bin = directories[Path('runtime/_internal/bin')].logical
+    add_data(db, "RemoveFile", [("RemoveLegacyXray", launcher_component, "xray.exe", legacy_bin, 1)])
     # Commit action: cache the exact administrator-approved offline setup source.
     # Never runs on patching, repair or removal; those paths retain their cache.
     add_data(db,'CustomAction',[('CacheRecoveryMsi',3602,updater_file,'--cache-installed "[OriginalDatabase]"')])

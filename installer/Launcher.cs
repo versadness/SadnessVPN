@@ -33,7 +33,7 @@ internal static class Launcher {
                     File.Copy(file, file + ".previous", true);
                     File.WriteAllText(file, "");
                 }
-                File.AppendAllText(file, DateTime.Now.ToString("s") + " Launcher 2.0.24 started\r\n");
+                File.AppendAllText(file, DateTime.Now.ToString("s") + " Launcher " + Assembly.GetExecutingAssembly().GetName().Version.ToString(3) + " started\r\n");
                 logDir = dir; return;
             } catch { }
         }
