@@ -101,7 +101,7 @@ VPN-клиент для Windows с подписками, TUN, маршрутиз
 - Файл: `SadnessVPN-3.0.9-Setup-x64.exe`
 - Версия: **3.0.9.0**
 - Размер: **188 992 535 байт**
-- SHA256: `9cc55af94700332c5914409da478c23bcc2ebf281c3c363b269a556b19bad9d0`
+- SHA256: `e90297c954337ef29bd31c422ab74ce7dc839626b6ebd370730b8c4ebfbb1d85`
 
 Проверка в PowerShell:
 
