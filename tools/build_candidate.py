@@ -24,7 +24,9 @@ def main():
     if any(version(base)>=version(APP_VERSION) for base in bases):raise ValueError('Base must be older')
     if not args.msi_only and (ROOT/'dist/candidate'/APP_VERSION).exists():raise ValueError('Candidate already exists; do not overwrite tested files')
     commands=[
-        [sys.executable,'-m','unittest','discover','-s','tests','-q'],
+        # -t . импортирует tests как пакет: tests/__init__.py подменяет каталог
+        # данных, и сборка не трогает профиль разработчика в ./data.
+        [sys.executable,'-m','unittest','discover','-s','tests','-t','.','-q'],
         [sys.executable,'tools/test_rule_config_live.py'],
         [sys.executable,'tools/build_version_history.py'],
         [sys.executable,'-m','PyInstaller','--noconfirm','--workpath','build/pyinstaller-updater-'+APP_VERSION,'--distpath','dist/updater','SadnessUpdater.spec'],
