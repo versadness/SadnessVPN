@@ -7,30 +7,36 @@
 
 ![Status: Beta](https://img.shields.io/badge/status-BETA-orange)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_10%2F11_x64-0078D4)
-![Release: 3.1.5 Beta](https://img.shields.io/badge/release-3.1.5_Beta-8b5cf6)
+![Release: 3.1.6 Beta](https://img.shields.io/badge/release-3.1.6_Beta-8b5cf6)
 
 VPN-клиент для Windows с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
 
-## Скачать 3.1.5 Beta
+## Скачать 3.1.6 Beta
 
-### [Скачать полный Setup.exe для Windows x64 · около 166 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.1.5-beta/SadnessVPN-3.1.5-Setup-x64.exe)
+### [Скачать полный Setup.exe для Windows x64 · около 166 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.1.6-beta/SadnessVPN-3.1.6-Setup-x64.exe)
 
-[Описание версии 3.1.5](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.5-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
+[Описание версии 3.1.6](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.6-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
 
-Файл **`SadnessVPN-3.1.5-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется.
+Файл **`SadnessVPN-3.1.6-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется.
 
 Архивы **Source code** на странице релиза — снимки репозитория дистрибутивов, а не установщики клиента.
 
-## Что нового в 3.1.5
+## Что нового в 3.1.6
 
-- **Telegram WS Proxy** на вкладке Zapret — локальный MTProto-прокси для Telegram Desktop. Соединения идут к Telegram через WebSocket, как у веб-версии; VPN и Zapret для этого не нужны.
-- Порт прокси задаётся вручную (по умолчанию 1443). Занятый порт или порт самого приложения отклоняется с объяснением.
-- Кнопка «Добавить в Telegram» открывает ссылку прокси в Telegram Desktop, её можно и скопировать. Ключ можно сменить.
-- Включённый прокси поднимается вместе с приложением. Прокси слушает только этот компьютер (127.0.0.1).
+- **Раздел «Telegram»**: Telegram WS Proxy переехал в отдельный раздел боковой панели, сразу под Zapret.
+- **WireGuard из файла**: кнопка «Выбрать файл .conf» или перетаскивание файла на поле конфига, сразу несколько штук. Название сервера берётся из имени файла.
+- **Правила и WireGuard**: правила маршрутизации больше не мешают подключению — обычный WireGuard выполняет их так же, как TUN. К AmneziaWG правила не применяются, приложение об этом предупреждает.
+- **Исправлено**: сайты в браузерах со встроенным DNS (например, Opera) обрывались с ошибкой `ERR_CONNECTION_CLOSED` в режиме IPv4.
 
-Подробности перечислены на [странице релиза 3.1.5](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.5-beta).
+Подробности перечислены на [странице релиза 3.1.6](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.6-beta).
 
 ## Изменения предыдущих версий
+
+### 3.1.5
+
+- Telegram WS Proxy — локальный MTProto-прокси для Telegram Desktop со своим портом и ключом.
+
+[Подробнее о 3.1.5](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.5-beta)
 
 ### 3.1.4
 
@@ -111,7 +117,7 @@ VPN-клиент для Windows с подписками, TUN, маршрутиз
 
 1. Используйте Windows 10/11 x64.
 2. Отключите VPN и полностью закройте клиент, включая значок в трее.
-3. Скачайте `SadnessVPN-3.1.5-Setup-x64.exe` только из Assets официального релиза.
+3. Скачайте `SadnessVPN-3.1.6-Setup-x64.exe` только из Assets официального релиза.
 4. Запустите файл и подтвердите системный запрос, если доверяете источнику.
 5. После установки запускайте Sadness VPN через созданный ярлык.
 
@@ -125,15 +131,15 @@ VPN-клиент для Windows с подписками, TUN, маршрутиз
 
 ## Проверка загрузки
 
-- Файл: `SadnessVPN-3.1.5-Setup-x64.exe`
-- Версия: **3.1.5.0**
+- Файл: `SadnessVPN-3.1.6-Setup-x64.exe`
+- Версия: **3.1.6.0**
 - Размер: **174 622 231 байт**
-- SHA256: `013e72c8be1f465d2c0d8397e24e9cf1fc3e6e44c6ff65ba6409f5de9d169532`
+- SHA256: `d31fa1a3760bf618f8195f18c44c03d9f9afbbc22740de10be9cd78dd7186775`
 
 Проверка в PowerShell:
 
 ```powershell
-Get-FileHash -LiteralPath '.\SadnessVPN-3.1.5-Setup-x64.exe' -Algorithm SHA256
+Get-FileHash -LiteralPath '.\SadnessVPN-3.1.6-Setup-x64.exe' -Algorithm SHA256
 ```
 
 Совпадение SHA256 подтверждает соответствие опубликованному файлу, но не заменяет цифровую подпись. Установщик пока не подписан сертификатом издателя, поэтому SmartScreen может показать предупреждение «Неизвестный издатель».
