@@ -5,7 +5,7 @@ import ipaddress
 from pathlib import Path
 from unittest import mock
 
-from engine.singbox import SingBoxManager
+from engine.mihomo import MihomoManager
 from engine.zapret import ZapretManager
 
 
@@ -13,39 +13,37 @@ class ProcessSourceSafetyTests(unittest.TestCase):
     def test_managers_never_use_global_taskkill(self):
         engine_dir = Path(__file__).resolve().parents[1].joinpath("engine")
 
-        for name in ("singbox.py", "mihomo.py", "zapret.py", "amneziawg.py"):
+        for name in ("mihomo.py", "zapret.py", "amneziawg.py"):
             with self.subTest(name=name):
                 source = engine_dir.joinpath(name).read_text(encoding="utf-8")
                 self.assertNotIn("taskkill", source.lower())
 
-    def test_singbox_never_deletes_network_adapters(self):
-        path = Path(__file__).resolve().parents[1].joinpath("engine", "singbox.py")
+    def test_core_never_deletes_network_adapters(self):
+        path = Path(__file__).resolve().parents[1].joinpath("engine", "mihomo.py")
         source = path.read_text(encoding="utf-8").lower()
 
         self.assertNotIn("remove-netadapter", source)
         self.assertNotIn('"interface", "delete"', source)
 
 
-class SingBoxConflictSafetyTests(unittest.TestCase):
+class MihomoConflictSafetyTests(unittest.TestCase):
     def test_start_refuses_occupied_clash_port_without_spawning(self):
         messages = []
-        manager = SingBoxManager(
+        manager = MihomoManager(
             log_callback=lambda message, tag: messages.append((message, tag))
         )
 
         with tempfile.TemporaryDirectory() as root:
-            executable = Path(root, "sing-box.exe")
+            executable = Path(root, "mihomo.exe")
             executable.touch()
 
             with (
-                mock.patch.object(manager, "_singbox_path", return_value=str(executable)),
+                mock.patch.object(manager, "_core_path", return_value=str(executable)),
                 mock.patch.object(manager, "_port_free", return_value=False),
-                mock.patch("engine.singbox.platform.system", return_value="Windows"),
-                mock.patch("engine.singbox.subprocess.Popen") as popen,
+                mock.patch.object(manager, "_check_config", return_value=True),
+                mock.patch("engine.mihomo.subprocess.Popen") as popen,
             ):
-                result = manager.start({
-                    "experimental": {"clash_api": {"external_controller": "127.0.0.1:9090"}}
-                })
+                result = manager.start({"external-controller": "127.0.0.1:9090"})
 
         self.assertFalse(result)
         popen.assert_not_called()
@@ -53,27 +51,28 @@ class SingBoxConflictSafetyTests(unittest.TestCase):
 
     def test_start_refuses_occupied_auxiliary_port_before_tun_is_created(self):
         messages = []
-        manager = SingBoxManager(
+        manager = MihomoManager(
             log_callback=lambda message, tag: messages.append((message, tag))
         )
         config = {
-            "experimental": {"clash_api": {"external_controller": "127.0.0.1:9090"}},
-            "inbounds": [
-                {"type": "tun", "tag": "tun-in"},
-                {"type": "socks", "tag": "socks-in", "listen_port": 1080},
-                {"type": "http", "tag": "http-in", "listen_port": 8080},
-            ],
+            "external-controller": "127.0.0.1:9090",
+            "socks-port": 1080,
+            "port": 8080,
+            "tun": {"enable": True},
+            "dns": {"enhanced-mode": "redir-host", "fake-ip-range": "172.19.0.1/30"},
         }
         with tempfile.TemporaryDirectory() as root:
-            executable = Path(root, "sing-box.exe")
+            executable = Path(root, "mihomo.exe")
             executable.touch()
             Path(root, "wintun.dll").touch()
             with (
-                mock.patch.object(manager, "_singbox_path", return_value=str(executable)),
-                mock.patch("engine.singbox.bin_path", side_effect=lambda name: str(Path(root, name))),
+                mock.patch.object(manager, "_core_path", return_value=str(executable)),
+                mock.patch("engine.mihomo.bin_path", side_effect=lambda name: str(Path(root, name))),
                 mock.patch.object(manager, "_port_free", side_effect=lambda port: port != 1080),
                 mock.patch.object(manager, "_port_owner", return_value="TgSocksLocal.exe"),
-                mock.patch("engine.singbox.subprocess.Popen") as popen,
+                mock.patch.object(manager, "_assigned_ipv4_networks", return_value=[]),
+                mock.patch.object(manager, "_check_config", return_value=True),
+                mock.patch("engine.mihomo.subprocess.Popen") as popen,
             ):
                 result = manager.start(config)
 
@@ -86,28 +85,22 @@ class SingBoxConflictSafetyTests(unittest.TestCase):
 
     def test_listener_ports_are_derived_from_config(self):
         self.assertEqual(
-            SingBoxManager._listener_ports({
-                "experimental": {"clash_api": {"external_controller": "127.0.0.1:9191"}},
-                "inbounds": [
-                    {"tag": "socks-in", "listen_port": 1081},
-                    {"tag": "tun-in"},
-                    {"tag": "invalid", "listen_port": "8080"},
-                ],
+            MihomoManager._listener_ports({
+                "external-controller": "127.0.0.1:9191",
+                "socks-port": 1081,
+                "port": "8080",
             }),
-            [("Clash API", 9191), ("socks-in", 1081)],
+            [("Clash API", 9191), ("socks-port", 1081)],
         )
 
     def test_occupied_tun_subnet_is_replaced_without_deleting_adapter(self):
         messages = []
-        manager = SingBoxManager(
+        manager = MihomoManager(
             log_callback=lambda message, tag: messages.append((message, tag))
         )
         config = {
-            "inbounds": [{
-                "type": "tun",
-                "tag": "tun-in",
-                "address": ["172.19.0.1/30"],
-            }]
+            "tun": {"enable": True},
+            "dns": {"enhanced-mode": "redir-host", "fake-ip-range": "172.19.0.1/30"},
         }
 
         with mock.patch.object(
@@ -117,13 +110,13 @@ class SingBoxConflictSafetyTests(unittest.TestCase):
         ):
             self.assertTrue(manager._prepare_tun_addresses(config))
 
-        replacement = config["inbounds"][0]["address"][0]
+        replacement = config["dns"]["fake-ip-range"]
         self.assertNotEqual(replacement, "172.19.0.1/30")
         self.assertEqual(replacement, "172.19.1.1/30")
         self.assertTrue(any("Подсеть TUN" in message for message, _tag in messages))
 
     def test_stop_terminates_only_managed_process(self):
-        manager = SingBoxManager()
+        manager = MihomoManager()
         process = mock.Mock()
         process.poll.return_value = None
         manager.process = process
@@ -157,10 +150,10 @@ class ZapretConflictSafetyTests(unittest.TestCase):
         self.assertTrue(any("winws.exe" in message for message, _tag in messages))
 
 
-class SingBoxExitNotificationTests(unittest.TestCase):
+class MihomoExitNotificationTests(unittest.TestCase):
     def test_unexpected_current_process_exit_notifies_and_cleans_up(self):
         exit_codes = []
-        manager = SingBoxManager(exit_callback=exit_codes.append)
+        manager = MihomoManager(exit_callback=exit_codes.append)
         process = mock.Mock()
         process.stdout = ["fatal: test failure\n"]
         process.poll.return_value = 17
@@ -182,7 +175,7 @@ class SingBoxExitNotificationTests(unittest.TestCase):
 
     def test_expected_process_exit_does_not_notify(self):
         exit_codes = []
-        manager = SingBoxManager(exit_callback=exit_codes.append)
+        manager = MihomoManager(exit_callback=exit_codes.append)
         process = mock.Mock()
         process.stdout = []
         process.poll.return_value = 0
@@ -199,7 +192,7 @@ class SingBoxExitNotificationTests(unittest.TestCase):
 
     def test_old_reader_cannot_clear_or_report_new_process(self):
         exit_codes = []
-        manager = SingBoxManager(exit_callback=exit_codes.append)
+        manager = MihomoManager(exit_callback=exit_codes.append)
         old_process = mock.Mock()
         old_process.stdout = []
         old_process.poll.return_value = 9

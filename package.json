@@ -1,7 +1,7 @@
 {
   "name": "sadness-vpn",
   "productName": "Sadness VPN",
-  "version": "3.0.5",
+  "version": "3.0.12",
   "description": "Sadness Private Network — desktop client",
   "main": "electron/main.js",
   "author": "Sadness",
@@ -26,10 +26,15 @@
       "output": "dist/electron-runtime",
       "buildResources": "."
     },
+    "afterPack": "tools/electron-afterpack.js",
     "files": [
       "electron/**/*",
       "renderer/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/koffi/build/koffi/*/**",
+      "node_modules/koffi/build/koffi/win32_x64/**",
+      "!node_modules/koffi/doc/**",
+      "!node_modules/koffi/src/**"
     ],
     "win": {
       "icon": "app.ico",

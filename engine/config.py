@@ -1,19 +1,13 @@
 """
-engine/config.py — парсинг VLESS ссылок и генерация конфигов sing-box
-Новое: kill_switch, block_udp, socks5_auth, dns_preset, fakedns,
-       mux (мультиплексирование), preferred_ip, фрагментация
+engine/config.py — разбор ссылок подписки и общие сетевые пресеты.
 
-ИСПРАВЛЕНИЯ:
-  - dns-xbox-bootstrap: detour изменён с proxy → direct
-    (raw IP не требует резолва, proxy создавал петлю UDP/53 через TUN)
-  - Все Xbox DNS серверы используют detour: direct вместо proxy
-  - dns-proxy в Xbox режиме использует отдельный чистый сервер (tls://8.8.8.8)
-  - Добавлен перехват TCP/853 (DoT) в routing rules
-  - Xbox DNS не поддерживает AAAA: добавлен блок AAAA→dns-block для xbox/xbox_dot
-  - preferred_ip: "auto" теперь принудительно prefer_ipv4 во всех пресетах
+Генерация конфигурации ядра живёт в engine/core_config.py: sing-box удалён,
+единственное ядро — Mihomo. Здесь остались парсеры ссылок, DNS-пресеты и
+загрузка подписки — всё, что не зависит от конкретного ядра.
 """
 
 import base64
+import json
 import re
 import urllib.parse
 import urllib.request
@@ -21,10 +15,10 @@ import urllib.request
 from engine.app_meta import subscription_headers
 from engine.transports import xhttp_from_query
 from engine.subscriptions import (download_subscription, decode_subscription,
-                                  SubscriptionServers, no_servers_error)
+                                  SubscriptionError, SubscriptionServers, no_servers_error)
 
 
-SUPPORTED_SCHEMES = ("vless://", "ss://", "trojan://", "hysteria2://", "hy2://")
+SUPPORTED_SCHEMES = ("vless://", "vmess://", "ss://", "trojan://", "hysteria2://", "hy2://")
 
 
 # ─── DNS пресеты ──────────────────────────────────────────────────────────────
@@ -53,7 +47,7 @@ DNS_PRESETS = {
 
 # Бутстрап по raw IP для каждого Smart DNS: резолвить имя сервера через него
 # самого нельзя — получится петля. Ключи здесь же задают, какие пресеты
-# считаются Smart DNS и получают особую схему DNS в конфиге sing-box.
+# считаются Smart DNS и требуют бутстрапа по своему же raw IP.
 SMART_DNS_BOOTSTRAP = {
     "xbox":      "udp://111.88.96.50",
     "xbox_dot":  "udp://111.88.96.50",
@@ -114,6 +108,63 @@ def parse_vless_link(link: str) -> dict:
         "pinned_cert":   params.get("pcs", params.get("pinnedPeerCertSha256", "")),
         "verify_cert_name": params.get("vcn", params.get("verifyPeerCertByName", "")),
         "encryption":    params.get("encryption", "none"),
+    }
+
+
+# ─── Парсинг VMess ────────────────────────────────────────────────────────────
+
+def parse_vmess_link(link: str) -> dict:
+    """Разбор vmess://<base64 JSON> — формат v2rayN, который отдают подписки.
+
+    Раньше VMess молча отбрасывался и парсером, и импортом Clash: sing-box
+    выпуска в проекте его не собирал. Mihomo поддерживает VMess нативно,
+    поэтому сервер больше не исчезает из подписки без объяснения.
+    """
+    link = link.strip()
+    if not link.startswith("vmess://"):
+        raise ValueError("Ожидается vmess:// ссылка")
+    payload = link[len("vmess://"):].split("#", 1)[0].strip()
+    try:
+        raw = base64.b64decode(payload + "=" * (-len(payload) % 4)).decode("utf-8")
+        node = json.loads(raw)
+    except Exception:
+        raise ValueError("VMess: ссылка должна содержать base64 с JSON") from None
+    if not isinstance(node, dict):
+        raise ValueError("VMess: ожидается JSON-объект")
+    host = str(node.get("add", "")).strip()
+    if not host:
+        raise ValueError("VMess: не указан адрес сервера")
+    try:
+        port = int(node.get("port", 443))
+    except (TypeError, ValueError):
+        raise ValueError("VMess: некорректный порт") from None
+    if not 1 <= port <= 65535:
+        raise ValueError("VMess: порт должен быть от 1 до 65535")
+    if not str(node.get("id", "")).strip():
+        raise ValueError("VMess: не указан UUID")
+    network = str(node.get("net", "tcp") or "tcp").lower()
+    if network == "splithttp":
+        network = "xhttp"
+    tls = str(node.get("tls", "") or "").lower()
+    return {
+        "protocol":      "vmess",
+        "remark":        str(node.get("ps") or "VMess"),
+        "host":          host,
+        "port":          port,
+        "uuid":          str(node["id"]).strip(),
+        "alter_id":      int(node.get("aid") or 0),
+        "method":        str(node.get("scy") or "auto"),
+        "security":      "reality" if tls == "reality" else "tls" if tls == "tls" else "none",
+        "type":          network,
+        "sni":           str(node.get("sni") or ""),
+        "fp":            str(node.get("fp") or ""),
+        "pbk":           str(node.get("pbk") or ""),
+        "sid":           str(node.get("sid") or ""),
+        "path":          str(node.get("path") or ""),
+        "host_header":   str(node.get("host") or ""),
+        "serviceName":   str(node.get("path") or "") if network == "grpc" else "",
+        "alpn":          str(node.get("alpn") or ""),
+        "allowInsecure": "1" if str(node.get("allowInsecure", "")) in ("1", "true") else "0",
     }
 
 
@@ -236,6 +287,8 @@ def parse_link(link: str) -> dict:
     link = link.strip()
     if link.startswith("vless://"):
         return parse_vless_link(link)
+    elif link.startswith("vmess://"):
+        return parse_vmess_link(link)
     elif link.startswith("ss://"):
         return parse_ss_link(link)
     elif link.startswith("trojan://"):
@@ -243,426 +296,69 @@ def parse_link(link: str) -> dict:
     elif link.startswith(("hysteria2://", "hy2://")):
         return parse_hysteria2_link(link)
     else:
-        raise ValueError(f"Неподдерживаемый протокол. Ожидается: vless://, ss://, trojan://, hysteria2://")
-
-
-# ─── Построение sing-box outbound ─────────────────────────────────────────────
-
-def _build_singbox_outbound(server: dict, mux: bool = False) -> dict:
-    if server.get("type") in ("xhttp", "splithttp"):
-        raise ValueError("XHTTP требует Mihomo. Выберите ядро Авто или Mihomo в настройках.")
-    protocol = server.get("protocol", "vless")
-
-    if protocol == "ss":
-        outbound = {
-            "type":        "shadowsocks",
-            "tag":         "proxy",
-            "server":      server["host"],
-            "server_port": int(server["port"]),
-            "method":      server["method"],
-            "password":    server["password"],
-        }
-        if mux:
-            outbound["multiplex"] = {
-                "enabled": True, "protocol": "smux",
-                "max_connections": 4, "min_streams": 4, "padding": False,
-            }
-        return outbound
-
-    if protocol == "trojan":
-        tls_block = {
-            "enabled":     True,
-            "server_name": server.get("sni", server["host"]) or server["host"],
-        }
-        if server.get("pinned_cert"):
-            tls_block["pinned_peer_certificate_chain_sha256"] = [server["pinned_cert"]]
-        else:
-            tls_block["insecure"] = server.get("allowInsecure", "0") == "1"
-
-        if server.get("fp"):
-            tls_block["utls"] = {"enabled": True, "fingerprint": server["fp"]}
-        if server.get("alpn"):
-            tls_block["alpn"] = [a.strip() for a in server["alpn"].split(",")]
-        outbound = {
-            "type":        "trojan",
-            "tag":         "proxy",
-            "server":      server["host"],
-            "server_port": int(server["port"]),
-            "password":    server["password"],
-            "tls":         tls_block,
-        }
-        net_type = server.get("type", "tcp")
-        if net_type == "ws":
-            outbound["transport"] = {
-                "type": "ws",
-                "path": server.get("path", "/"),
-                "headers": {"Host": server.get("host_header") or server.get("sni") or server["host"]},
-            }
-        elif net_type == "grpc":
-            outbound["transport"] = {"type": "grpc", "service_name": server.get("serviceName", "")}
-        if mux:
-            outbound["multiplex"] = {
-                "enabled": True, "protocol": "smux",
-                "max_connections": 4, "min_streams": 4, "padding": False,
-            }
-        return outbound
-
-    if protocol == "hysteria2":
-        from engine.hysteria2 import validate, requires_mihomo
-        validate(server)
-        if requires_mihomo(server):
-            raise ValueError("HY2: для этих параметров выберите Авто / Mihomo (sing-box 1.10.7 их не поддерживает)")
-        tls_block = {
-            "enabled":     True,
-            "server_name": server.get("sni", server["host"]) or server["host"],
-        }
-        if server.get("pinned_cert"):
-            tls_block["pinned_peer_certificate_chain_sha256"] = [server["pinned_cert"]]
-        else:
-            tls_block["insecure"] = server.get("insecure", False)
-
-        if server.get("alpn"):
-            tls_block["alpn"] = [a.strip() for a in server["alpn"].split(",") if a.strip()]
-
-        outbound = {
-            "type":        "hysteria2",
-            "tag":         "proxy",
-            "server":      server["host"],
-            "server_port": int(server["port"]),
-            "password":    server["password"],
-            "tls":         tls_block,
-        }
-        if server.get("obfs") == "salamander":
-            outbound["obfs"] = {"type": "salamander", "password": server.get("obfs_password", "")}
-        # Hysteria2 has its own multiplexing — skip sing-box mux
-        return outbound
-
-    # ── VLESS (default) ───────────────────────────────────────────────────────
-    security = server.get("security", "none")
-    net_type = server.get("type", "tcp")
-    outbound = {
-        "type":            "vless",
-        "tag":             "proxy",
-        "server":          server["host"],
-        "server_port":     int(server["port"]),
-        "uuid":            server["uuid"],
-        "flow":            server.get("flow", ""),
-        "packet_encoding": "xudp",
-    }
-    if security == "reality":
-        outbound["tls"] = {
-            "enabled":     True,
-            "server_name": server.get("sni", server["host"]),
-            "utls":    {"enabled": True, "fingerprint": server.get("fp", "chrome")},
-            "reality": {"enabled": True, "public_key": server.get("pbk", ""), "short_id": server.get("sid", "")},
-        }
-    elif security == "tls":
-        tls_block = {
-            "enabled":     True,
-            "server_name": server.get("sni", server["host"]),
-        }
-        if server.get("pinned_cert"):
-            tls_block["pinned_peer_certificate_chain_sha256"] = [server["pinned_cert"]]
-        else:
-            tls_block["insecure"] = server.get("allowInsecure", "0") == "1"
-
-        if server.get("fp"):
-            tls_block["utls"] = {"enabled": True, "fingerprint": server["fp"]}
-        if server.get("alpn"):
-            tls_block["alpn"] = [a.strip() for a in server["alpn"].split(",")]
-        outbound["tls"] = tls_block
-    if net_type == "ws":
-        outbound["transport"] = {
-            "type": "ws",
-            "path": server.get("path", "/"),
-            "headers": {"Host": server.get("host_header") or server.get("sni") or server["host"]},
-        }
-    elif net_type == "grpc":
-        outbound["transport"] = {"type": "grpc", "service_name": server.get("serviceName", "")}
-    elif net_type == "http":
-        outbound["transport"] = {
-            "type": "http",
-            "path": server.get("path", "/"),
-            "host": [server.get("host_header") or server["host"]],
-        }
-    elif net_type == "httpupgrade":
-        outbound["transport"] = {
-            "type": "httpupgrade",
-            "path": server.get("path", "/"),
-            "host": server.get("host_header") or server["host"],
-        }
-
-    # Мультиплексирование — не совместимо с Reality/flow
-    if mux and not server.get("flow") and security != "reality":
-        outbound["multiplex"] = {
-            "enabled":         True,
-            "protocol":        "smux",
-            "max_connections": 4,
-            "min_streams":     4,
-            "padding":         False,
-        }
-
-    return outbound
-
-
-# ─── Построение конфига sing-box TUN ─────────────────────────────────────────
-
-def build_singbox_config(
-    server         : dict,
-    socks_port     : int  = 1080,
-    http_port      : int  = 8080,
-    clash_port     : int  = 9090,
-    routing_mode   : str  = "all",
-    routed_apps    : list = None,
-    # ── Параметры туннеля ──
-    kill_switch    : bool = False,
-    block_udp      : bool = False,
-    socks5_auth    : dict = None,
-    dns_preset     : str  = "cf_google",
-    custom_dns     : list = None,
-    fakedns        : bool = False,
-    mux            : bool = False,
-    preferred_ip   : str  = "ipv4",
-    allow_lan      : bool = False,
-) -> dict:
-    routed_apps = routed_apps or []
-
-    need_process_routing = routing_mode in ("whitelist", "blacklist") and bool(routed_apps)
-
-    proxy_outbound = _build_singbox_outbound(server, mux=mux)
-
-    # ── Определяем режим Xbox Smart DNS ──────────────────────────────
-    use_xbox_smartdns = dns_preset in SMART_DNS_BOOTSTRAP
-
-    # ── DNS серверы ───────────────────────────────────────────────────
-    if dns_preset == "custom" and custom_dns:
-        remote_dns = [
-            f"tls://{d}" if not d.startswith(("tls://", "https://", "udp://")) else d
-            for d in custom_dns
-        ]
-        local_dns = custom_dns[0] if custom_dns else "8.8.8.8"
-    else:
-        preset     = DNS_PRESETS.get(dns_preset, DNS_PRESETS["cf_google"])
-        remote_dns = preset["remote"]
-        local_dns  = preset["local"]
-
-    # IP-стратегия
-    # "auto" и "ipv4" оба дают prefer_ipv4 — Xbox DNS не поддерживает AAAA,
-    # поэтому IPv6 запросы принудительно блокируются в xbox/xbox_dot режиме ниже.
-    ip_strategy_map = {"ipv4": "prefer_ipv4", "ipv6": "prefer_ipv6", "auto": "prefer_ipv4"}
-    ip_strategy = ip_strategy_map.get(preferred_ip, "prefer_ipv4")
-
-    # ── DNS блок ─────────────────────────────────────────────────────
-    #
-    # Архитектура Xbox Smart DNS (Вариант Б):
-    #
-    # dns-xbox-bootstrap → raw IP (udp://111.88.96.50), detour: direct
-    #   Не требует резолва, поэтому безопасен с direct — не создаёт петлю через TUN.
-    #
-    # dns-direct / dns-direct2 → tls://xbox-dns.ru, через bootstrap, detour: direct
-    #   Xbox DNS подменяет IP в ответах для разблокировки сервисов.
-    #   ВАЖНО: Xbox DNS не отвечает на AAAA — блокируем их отдельным правилом.
-
-    if use_xbox_smartdns:
-        xbox_ip_bootstrap = SMART_DNS_BOOTSTRAP[dns_preset]
-        dns_servers = [
-            # Бутстрап по raw IP — ТОЛЬКО direct, иначе петля через TUN
-            {
-                "tag":     "dns-xbox-bootstrap",
-                "address": xbox_ip_bootstrap,
-                "detour":  "direct",
-            },
-            # Основной DNS (Xbox Smart DNS) — резолвит через бутстрап напрямую
-            {
-                "tag":              "dns-direct",
-                "address":          remote_dns[0],
-                "address_resolver": "dns-xbox-bootstrap",
-                "detour":           "direct",
-            },
-            # Резервный DNS (Xbox Smart DNS)
-            {
-                "tag":              "dns-direct2",
-                "address":          remote_dns[1] if len(remote_dns) > 1 else remote_dns[0],
-                "address_resolver": "dns-xbox-bootstrap",
-                "detour":           "direct",
-            },
-            # Локальный DNS
-            {
-                "tag":              "dns-local",
-                "address":          xbox_ip_bootstrap,
-                "address_resolver": "dns-xbox-bootstrap",
-                "detour":           "direct",
-            },
-            # Блокировщик AAAA — Xbox DNS не поддерживает IPv6 запросы,
-            # они падают с "context canceled". Возвращаем пустой ответ.
-            {
-                "tag":     "dns-block-aaaa",
-                "address": "rcode://success",
-            },
-        ]
-    else:
-        dns_servers = [
-            {
-                "tag":     "dns-direct",
-                "address": remote_dns[0],
-                "detour":  "direct",
-            },
-            {
-                "tag":     "dns-direct2",
-                "address": remote_dns[1] if len(remote_dns) > 1 else remote_dns[0],
-                "detour":  "direct",
-            },
-            {
-                "tag":     "dns-local",
-                "address": f"udp://{local_dns}",
-                "detour":  "direct",
-            },
-        ]
-
-    dns_rules = []
-
-    if fakedns:
-        dns_servers.append({
-            "tag":     "dns-fake",
-            "address": "fakeip",
-        })
-        dns_rules.insert(0, {
-            "query_type": ["A", "AAAA"],
-            "server":     "dns-fake",
-        })
-
-    # ── Блокировка AAAA в Xbox DNS режиме ────────────────────────────
-    # Xbox DNS (111.88.96.50 / xbox-dns.ru) обрабатывает только A записи.
-    # AAAA запросы зависают и падают с "exchange6: context canceled".
-    # Решение: перехватываем все AAAA запросы и возвращаем пустой успешный ответ
-    # через специальный dns-block-aaaa сервер (rcode://success).
-    if use_xbox_smartdns:
-        dns_rules.insert(0, {
-            "query_type": ["AAAA"],
-            "server":     "dns-block-aaaa",
-        })
-
-    # Базовое правило: все остальные DNS запросы — напрямую
-    dns_rules.append({"outbound": "any", "server": "dns-direct"})
-
-    # ── Правила маршрутизации трафика ────────────────────────────────
-    rules = []
-    # Plain DNS uses both UDP and TCP (including truncated-response fallback).
-    # Keep this before private-IP bypass so loopback DNS is also intercepted.
-    rules.append({"network": ["udp", "tcp"], "port": 53, "outbound": "dns-out"})
-    # DoT/853 is TLS, not a plain DNS packet. Route it normally; the DNS
-    # subsystem's own encrypted upstreams already have an explicit detour.
-    rules.append({"ip_is_private": True, "outbound": "direct"})
-
-    if block_udp:
-        rules.append({"network": "udp", "outbound": "block"})
-
-    if routing_mode == "whitelist":
-        if routed_apps:
-            rules.append({"process_name": routed_apps, "outbound": "proxy"})
-        rules.append({"outbound": "direct"})
-    elif routing_mode == "blacklist" and routed_apps:
-        rules.append({"process_name": routed_apps, "outbound": "direct"})
-
-    # ── SOCKS5 / HTTP inbounds ────────────────────────────────────────
-    auth_users = []
-    if socks5_auth and socks5_auth.get("user") and socks5_auth.get("pass"):
-        auth_users = [{"username": socks5_auth["user"], "password": socks5_auth["pass"]}]
-
-    proxy_listen = "0.0.0.0" if allow_lan else "127.0.0.1"
-    socks_inbound = {
-        "type": "socks", "tag": "socks-in",
-        "listen": proxy_listen, "listen_port": socks_port,
-        "sniff": True,
-        "sniff_override_destination": True,
-    }
-    if auth_users:
-        socks_inbound["users"] = auth_users
-
-    http_inbound = {
-        "type": "http", "tag": "http-in",
-        "listen": proxy_listen, "listen_port": http_port,
-        "sniff": True,
-        "sniff_override_destination": True,
-    }
-    if auth_users:
-        http_inbound["users"] = auth_users
-
-    cfg = {
-        "log": {"level": "info", "timestamp": True},
-        "experimental": {
-            "clash_api": {
-                "external_controller": f"127.0.0.1:{clash_port}",
-                "secret": "",
-            }
-        },
-        "dns": {
-            "servers":  dns_servers,
-            "rules":    dns_rules,
-            "final":    "dns-direct",
-            "strategy": ip_strategy,
-        },
-        "inbounds": [
-            {
-                "type": "tun", "tag": "tun-in",
-                "address": ["172.19.0.1/30"],
-                "auto_route":   True,
-                "strict_route": kill_switch,
-                "stack":  "system",
-                "sniff":  True,
-                "sniff_override_destination": True,
-            },
-            socks_inbound,
-            http_inbound,
-        ],
-        "outbounds": [
-            proxy_outbound,
-            {"type": "direct", "tag": "direct"},
-            {"type": "block",  "tag": "block"},
-            {"type": "dns",    "tag": "dns-out"},
-        ],
-        "route": {
-            "rules":                 rules,
-            "final":                 "proxy",
-            "auto_detect_interface": True,
-            "find_process":          need_process_routing,
-        },
-    }
-
-    if fakedns:
-        cfg["dns"]["fakeip"] = {
-            "enabled":     True,
-            "inet4_range": "198.18.0.0/15",
-            "inet6_range": "fc00::/18",
-        }
-
-    return cfg
+        raise ValueError(f"Неподдерживаемый протокол. Ожидается: vless://, vmess://, ss://, trojan://, hysteria2://")
 
 
 # ─── Загрузка подписки ────────────────────────────────────────────────────────
+
+_LINK_SCHEME = re.compile(r"^([a-z][a-z0-9+.-]{1,20})://", re.I)
+_MAX_REJECTED = 50
+
+
+def _link_label(line: str) -> str:
+    """Имя узла из #фрагмента — без UUID, паролей и адреса."""
+    name = urllib.parse.unquote(line.rsplit("#", 1)[1]) if "#" in line else ""
+    name = "".join(c for c in name if c.isprintable()).strip()[:80]
+    return name or line.split("://", 1)[0] + "-узел"
+
+
+def parse_share_links(raw: str):
+    """Разобрать список ссылок. Возвращает (серверы, отклонённые, получено).
+
+    Раньше ошибка разбора одной ссылки глоталась молча, и сервер пропадал из
+    подписки без объяснения. Теперь каждый отказ записывается с причиной, а
+    остальные серверы импортируются как обычно.
+    """
+    servers, rejected, received = [], [], 0
+    for line in raw.splitlines():
+        line = line.strip()
+        match = _LINK_SCHEME.match(line)
+        if not match:
+            continue
+        received += 1
+        if not line.startswith(SUPPORTED_SCHEMES):
+            rejected.append({"name": _link_label(line),
+                             "reason": f"протокол {match.group(1).lower()} не поддерживается ядром Mihomo"})
+            continue
+        try:
+            server = parse_link(line)
+            from engine.core_config import ensure_supported
+            ensure_supported(server)
+            servers.append(server)
+        except Exception as exc:
+            reason = str(exc) if isinstance(exc, ValueError) else "ссылка повреждена"
+            rejected.append({"name": _link_label(line), "reason": reason[:200]})
+    return servers, rejected, received
+
 
 def fetch_subscription(url: str, hwid: str = "") -> list:
     data, metadata = download_subscription(url, hwid)
     raw = decode_subscription(data)
 
-    servers = []
-
-    # Парсим ссылки всех поддерживаемых протоколов
-    if any(s in raw for s in SUPPORTED_SCHEMES):
-        for line in raw.splitlines():
-            line = line.strip()
-            if any(line.startswith(s) for s in SUPPORTED_SCHEMES):
-                try:
-                    servers.append(parse_link(line))
-                except Exception:
-                    pass
-
-    # Парсим Clash YAML
+    servers, rejected, received = [], [], 0
+    if _LINK_SCHEME.search(raw.lstrip()) or any(s in raw for s in SUPPORTED_SCHEMES):
+        servers, rejected, received = parse_share_links(raw)
     elif "proxies:" in raw or raw.lstrip().startswith("{"):
         from engine.transports import parse_clash_nodes
-        servers = parse_clash_nodes(raw)
+        servers = parse_clash_nodes(raw, rejected=rejected)
+        received = len(servers) + len(rejected)
+    metadata = {**metadata, "received": received, "accepted": len(servers),
+                "rejected": rejected[:_MAX_REJECTED]}
     if not servers:
-        error = no_servers_error(raw)
+        error = no_servers_error(raw) if not rejected else SubscriptionError(
+            "Ни один сервер подписки не поддерживается: " + "; ".join(
+                f"{item['name']} — {item['reason']}" for item in rejected[:3]
+            ) + ". Текущие серверы сохранены.")
         error.metadata = metadata
         raise error
     return SubscriptionServers(servers, metadata)

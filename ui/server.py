@@ -27,10 +27,10 @@ from flask import Flask, jsonify, request, render_template, send_file
 from flask_sock import Sock
 from PIL import Image, UnidentifiedImageError
 
-from engine.singbox import SingBoxManager, SINGBOX_VERSION
-from engine.mihomo import MultiCoreManager, MIHOMO_VERSION
-from engine.core_config import build_proxy_config, choose_core, CORES
+from engine.mihomo import MihomoManager, MIHOMO_VERSION
+from engine.core_config import build_proxy_config, ensure_supported
 from engine.route_info import observed_app_routes, observed_rule_routes
+from engine.connection_health import blocked_message
 from engine.amneziawg import AmneziaWGManager
 from engine.config import parse_link, fetch_subscription
 from engine.storage import load_groups, save_groups
@@ -67,7 +67,8 @@ from ui.app_state import (  # noqa: E402
     RESERVED_LOCAL_PORTS as _RESERVED_LOCAL_PORTS,
 )
 
-SING_BOX_VERSION = "1.10.x"
+# Единственное ядро VPN. Строка показывается в «О программе».
+CORE_LABEL = f"Mihomo {MIHOMO_VERSION}"
 
 # ── Traffic stats ────────────────────────────────────────────
 import http.client
@@ -228,7 +229,7 @@ def _awg_traffic_loop(attempt, stop_event):
         stop_event.wait(timeout=2.0)
 
 
-def _start_traffic_monitor(attempt, backend="singbox"):
+def _start_traffic_monitor(attempt, backend="mihomo"):
     global _traffic_thread, _traffic_stop
     _traffic_stop.set()
     stop_event = threading.Event()
@@ -416,10 +417,32 @@ def _replace_group_servers(group, servers, wireguard=False):
     selected_group = _app_settings["selected_wg_group"] if wireguard else _app_settings["selected_group"]
     selected_index = _app_settings["selected_wg_index"] if wireguard else _app_settings["selected_index"]
     selected_id = old[selected_index].get("ui_id") if selected_group == group["id"] and type(selected_index) is int and 0 <= selected_index < len(old) else None
+    unmatched = []
     for item in servers:
         pool = identities.get(profile_state.server_fingerprint(item), [])
         if pool:
             item["ui_id"] = pool.pop(0)
+        else:
+            unmatched.append(item)
+    # Провайдер поменял параметр узла (адрес, путь, ключ), но имя и протокол
+    # прежние — это тот же сервер. Без этого выбор и маршруты, привязанные к
+    # ui_id, терялись при каждой правке на стороне панели. Сопоставляем только
+    # однозначные имена: дубликаты не угадываем.
+    used = {item.get("ui_id") for item in servers if item.get("ui_id")}
+    def remark_key(item):
+        return (item.get("protocol", "vless"), item.get("remark", ""))
+    old_by_remark = {}
+    for item in old:
+        if item.get("ui_id") and item.get("ui_id") not in used:
+            old_by_remark.setdefault(remark_key(item), []).append(item["ui_id"])
+    new_counts = {}
+    for item in servers:
+        new_counts[remark_key(item)] = new_counts.get(remark_key(item), 0) + 1
+    for item in unmatched:
+        key = remark_key(item)
+        candidates = old_by_remark.get(key, [])
+        if key[1] and len(candidates) == 1 and new_counts[key] == 1:
+            item["ui_id"] = candidates.pop()
     group["servers"] = servers
     profile_state.ensure_server_ids([group])
     if selected_group == group["id"]:
@@ -472,10 +495,122 @@ _wg_ping_scans = BackgroundTaskCoordinator()
 _subscription_lock = threading.Lock()
 
 
+def _subscription_scope(wireguard):
+    return ((profile_state.wg_groups, profile_state.save_wireguard_groups, _broadcast_wg_groups)
+            if wireguard else
+            (profile_state.groups, profile_state.save_proxy_groups, _broadcast_groups))
+
+
+def _update_one_subscription(target, url, name, is_new, wireguard):
+    """Загрузить и атомарно применить одну подписку. Вызывается под _subscription_lock."""
+    groups, save, broadcast = _subscription_scope(wireguard)
+    label = target.get("name") or name or "подписка"
+    _log(f"Загрузка подписки «{label}»…", "info")
+    error = ""
+    metadata = {}
+    servers = None
+    not_modified = False
+    try:
+        fetch = fetch_wg_subscription if wireguard else fetch_subscription
+        servers = fetch(url, hwid=_app_settings.get("hwid", ""))
+        metadata = getattr(servers, "metadata", {})
+        if not servers:
+            raise ValueError("Провайдер не передал ни одного поддерживаемого сервера")
+    except Exception as exc:
+        from engine.subscriptions import SubscriptionError, SubscriptionNotModified
+        metadata = getattr(exc, "metadata", {})
+        not_modified = isinstance(exc, SubscriptionNotModified) and not is_new
+        if not not_modified:
+            error = str(exc) if isinstance(exc, SubscriptionError) else "Не удалось прочитать подписку. Проверьте формат ссылки и доступность сервиса."
+    previous = copy.deepcopy(target)
+    previous_settings = copy.deepcopy(_app_settings)
+    previous_indices = (_app_settings["selected_index"], _app_settings["selected_wg_index"])
+
+    def commit():
+        if _stopping:
+            raise ValueError("VPN отключается; повторите обновление после остановки")
+        now = int(time.time())
+        if not_modified:
+            # 304 — провайдер подтвердил, что список не изменился: это успех,
+            # а не пустая подписка.
+            target.setdefault("subscription", {}).update(updated_at=now, checked_at=now, error="")
+        elif error:
+            # Последняя рабочая подписка остаётся: меняются только время
+            # попытки и причина. updated_at — время последнего успеха.
+            target.setdefault("subscription", {}).update({k: v for k, v in metadata.items() if k != "updated_at"})
+            target["subscription"].update(error=error, checked_at=now)
+        else:
+            _replace_group_servers(target, servers, wireguard=wireguard)
+            target["subscription"] = {**metadata, "updated_at": now, "checked_at": now, "error": ""}
+        if is_new:
+            if not name and metadata.get("provider_name"):
+                target["name"] = metadata["provider_name"]
+            groups.append(target)
+        save()
+
+    try:
+        if not _connection.run_if_idle(commit):
+            raise ValueError("VPN был включён во время загрузки. Отключите его и повторите обновление.")
+    except Exception:
+        if is_new and target in groups:
+            groups.remove(target)
+        target.clear()
+        target.update(previous)
+        _app_settings["selected_index"], _app_settings["selected_wg_index"] = previous_indices
+        _app_settings.clear()
+        _app_settings.update(previous_settings)
+        _save_settings(_app_settings)
+        raise
+    broadcast()
+    if error:
+        _log(f"«{label}»: {error}", "err")
+        return False
+    if not_modified:
+        _log(f"Подписка «{label}» не изменилась", "ok")
+        return True
+    rejected = metadata.get("rejected") or []
+    summary = f"Подписка «{target.get('name') or label}» обновлена: принято {len(servers)}"
+    if metadata.get("received"):
+        summary += f" из {metadata['received']}"
+    _log(summary, "ok")
+    for item in rejected[:10]:
+        _log(f"«{item.get('name')}» не импортирован: {item.get('reason')}", "warn")
+    # Провайдер мог убрать сервер, на который ссылался маршрут.
+    _repair_saved_routes("обновление подписки")
+    return True
+
+
+def _run_subscription_jobs(jobs):
+    """Выполнить обновления строго по очереди в одном фоновом потоке.
+
+    Раньше «Обновить подписки» запускал запросы параллельно, бэкенд принимал
+    только первый, а остальные получали 409 — обновлялась лишь первая группа.
+    """
+    if not _subscription_lock.acquire(blocking=False):
+        return jsonify(ok=False, error="Подписка уже обновляется"), 409
+
+    def work():
+        try:
+            _broadcast({"type": "subscription_busy", "busy": True})
+            for job in jobs:
+                try:
+                    _update_one_subscription(*job)
+                except Exception as exc:
+                    _log("Не удалось применить обновление подписки: " + (str(exc) if isinstance(exc, ValueError) else "ошибка сохранения данных"), "err")
+        finally:
+            _subscription_lock.release()
+            _broadcast({"type": "subscription_busy", "busy": False})
+
+    try:
+        threading.Thread(target=work, daemon=True).start()
+    except Exception:
+        _subscription_lock.release()
+        raise
+    return jsonify(ok=True, queued=len(jobs))
+
+
 def _start_subscription_update(data, refresh=False, wireguard=False):
-    groups = profile_state.wg_groups if wireguard else profile_state.groups
-    save = profile_state.save_wireguard_groups if wireguard else profile_state.save_proxy_groups
-    broadcast = _broadcast_wg_groups if wireguard else _broadcast_groups
+    groups, _save, _broadcast_fn = _subscription_scope(wireguard)
     target = next((g for g in groups if g["id"] == data.get("id")), None) if refresh else None
     url = target.get("url", "") if target else data.get("url", "").strip()
     if (refresh and not target) or not url.startswith(("https://", "http://")):
@@ -489,72 +624,18 @@ def _start_subscription_update(data, refresh=False, wireguard=False):
     if is_new:
         target = {"id": ("wg-" if wireguard else "") + str(_uuid_mod.uuid4())[:8],
                   "name": name or ("WG Подписка" if wireguard else "Подписка"), "url": url, "servers": []}
-    if not _subscription_lock.acquire(blocking=False):
-        return jsonify(ok=False, error="Подписка уже обновляется"), 409
+    return _run_subscription_jobs([(target, url, name, is_new, wireguard)])
 
-    def work():
-        try:
-            _broadcast({"type": "subscription_busy", "busy": True})
-            _log("Загрузка подписки…", "info")
-            error = ""
-            metadata = {}
-            servers = None
-            try:
-                fetch = fetch_wg_subscription if wireguard else fetch_subscription
-                servers = fetch(url, hwid=_app_settings.get("hwid", ""))
-                metadata = getattr(servers, "metadata", {})
-                if not servers:
-                    raise ValueError("Провайдер не передал ни одного поддерживаемого сервера")
-            except Exception as exc:
-                from engine.subscriptions import SubscriptionError
-                metadata = getattr(exc, "metadata", {})
-                error = str(exc) if isinstance(exc, SubscriptionError) else "Не удалось прочитать подписку. Проверьте формат ссылки и доступность сервиса."
-            previous = copy.deepcopy(target)
-            previous_settings = copy.deepcopy(_app_settings)
-            previous_indices = (_app_settings["selected_index"], _app_settings["selected_wg_index"])
 
-            def commit():
-                if _stopping:
-                    raise ValueError("VPN отключается; повторите обновление после остановки")
-                if error:
-                    target.setdefault("subscription", {}).update({k: v for k, v in metadata.items() if k != "updated_at"})
-                    target["subscription"].update(error=error, checked_at=int(time.time()))
-                else:
-                    _replace_group_servers(target, servers, wireguard=wireguard)
-                    target["subscription"] = {**metadata, "updated_at": int(time.time()), "error": ""}
-                if is_new:
-                    if not name and metadata.get("provider_name"):
-                        target["name"] = metadata["provider_name"]
-                    groups.append(target)
-                save()
-
-            try:
-                if not _connection.run_if_idle(commit):
-                    raise ValueError("VPN был включён во время загрузки. Отключите его и повторите обновление.")
-            except Exception:
-                if is_new and target in groups:
-                    groups.remove(target)
-                target.clear()
-                target.update(previous)
-                _app_settings["selected_index"], _app_settings["selected_wg_index"] = previous_indices
-                _app_settings.clear()
-                _app_settings.update(previous_settings)
-                _save_settings(_app_settings)
-                raise
-            broadcast()
-            _log(error, "err") if error else _log(f"Подписка обновлена: {len(servers)} серверов", "ok")
-        except Exception as exc:
-            _log("Не удалось применить обновление подписки: " + (str(exc) if isinstance(exc, ValueError) else "ошибка сохранения данных"), "err")
-        finally:
-            _subscription_lock.release()
-            _broadcast({"type": "subscription_busy", "busy": False})
-
-    try:
-        threading.Thread(target=work, daemon=True).start()
-    except Exception:
-        _subscription_lock.release()
-        raise
-    return jsonify(ok=True)
+def _start_subscription_refresh_all():
+    """Все подписки (VLESS и WireGuard) одной очередью."""
+    jobs = [(g, g["url"], "", False, wireguard)
+            for wireguard in (False, True)
+            for g in _subscription_scope(wireguard)[0]
+            if str(g.get("url") or "").startswith(("https://", "http://"))]
+    if not jobs:
+        return jsonify(ok=False, error="Нет подписок для обновления"), 400
+    return _run_subscription_jobs(jobs)
 
 def _get_selected_server():
     if _app_settings["selected_group"] is None or _app_settings["selected_index"] is None:
@@ -688,6 +769,101 @@ def _broadcast_wg_groups():
     })
 
 
+def _repair_saved_routes(reason: str) -> dict:
+    """Свести маршруты с актуальными серверами и показать это пользователю.
+
+    Одно уведомление на всю починку, а не по одному на каждое правило.
+    """
+    report = profile_state.repair_saved_routes()
+    if not report["changed"]:
+        return report
+    _log(f"{report['message']} ({reason})", "info")
+    if report.get("saved") is False:
+        _log("Восстановленная маршрутизация не записана на диск — правила можно исправить вручную", "warn")
+    _broadcast({"type": "apps_config", "config": profile_state.apps_config})
+    _broadcast({"type": "routing_repaired", "message": report["notice"], "total": report["total"]})
+    return report
+
+
+def verify_routing_with_core(candidate) -> tuple:
+    """Транзакционная проверка маршрутов средствами самого Mihomo.
+
+    Конфигурация собирается из кандидата и отдаётся ядру на `-t`. Пока ядро не
+    приняло её, на диск ничего не пишется: пользователь не должен увидеть
+    «сохранено и применено» там, где ядро откажется стартовать.
+
+    Отсутствие выбранного сервера — не ошибка правил: проверять нечего, и
+    редактировать маршруты до выбора сервера мы не запрещаем.
+    """
+    server = _get_selected_server()
+    if not server or _app_settings.get("active_protocol") == "wg":
+        return True, ""
+    from engine.app_routes import assignments, build_multi_route_config
+    from engine.routing_rules import resolve_rules
+    try:
+        ensure_supported(server)
+        routes = resolve_rules(candidate.get("rules", []), profile_state.groups) +             assignments(candidate.get("apps", []), profile_state.groups)
+        builder = (lambda node, **kwargs: build_multi_route_config(node, routes, **kwargs))             if routes else build_proxy_config
+        config = builder(
+            server,
+            socks_port=_app_settings["socks"],
+            http_port=_app_settings["http"],
+            clash_port=_CLASH_PORT_DEFAULT,
+            routing_mode=candidate.get("mode", "all"),
+            routed_apps=[a["exe"] for a in candidate.get("apps", [])
+                         if a.get("enabled", True) and a.get("destination", "default") == "default"],
+            **_tunnel_kwargs(),
+        )
+    except ValueError as exc:
+        return False, str(exc)
+    # TUN и Clash API не поднимаются: проверяется только сама конфигурация.
+    config["tun"]["enable"] = False
+    config.pop("external-controller", None)
+    ok, message = vpn_engine.validate(config)
+    if ok:
+        return True, ""
+    return False, "Ядро отклонило конфигурацию маршрутов. " + (message or "")
+
+
+def _active_vpn_mode():
+    """Режим маршрутизации, если VPN действительно работает, иначе None.
+
+    Нужен Zapret: при полном туннеле обход применяется не ко всему ПК, и
+    интерфейс обязан сказать это прямо.
+    """
+    if not (_connection.connected or vpn_engine.running or awg_engine.running):
+        return None
+    if _app_settings.get("active_protocol") == "wg" or awg_engine.running:
+        return "all"
+    return (profile_state.apps_config or {}).get("mode", "all")
+
+
+def _vpn_endpoints() -> list:
+    """Серверы, к которым приложение действительно подключается.
+
+    Только выбранный сервер и серверы явных маршрутов: резолвить всю подписку
+    ради списка исключений Zapret и долго, и незачем.
+    """
+    servers = []
+    selected = _get_selected_server()
+    if selected:
+        servers.append(selected)
+    lookup = {
+        server.get("ui_id"): server
+        for group in profile_state.groups or []
+        for server in group.get("servers", []) or []
+        if isinstance(server, dict) and server.get("ui_id")
+    }
+    config = profile_state.apps_config or {}
+    for item in list(config.get("apps") or []) + list(config.get("rules") or []):
+        destination = item.get("destination") if isinstance(item, dict) else None
+        if isinstance(destination, str) and destination.startswith("server:"):
+            server = lookup.get(destination[len("server:"):])
+            if server is not None and server not in servers:
+                servers.append(server)
+    return servers
+
+
 def _get_routed_exes() -> list:
     exes = []
     for a in profile_state.apps_config.get("apps", []):
@@ -720,7 +896,7 @@ _reconnector = Reconnector(_reconnect_selected, lambda: _connection.state,
     lambda message: _log(message, 'warn'))
 
 
-vpn_engine = MultiCoreManager(
+vpn_engine = MihomoManager(
     log_callback=_log,
     exit_callback=_handle_vpn_exit,
 )
@@ -820,7 +996,7 @@ def _stop_vpn_engine():
 def _activate_vpn_attempt(
     attempt: int,
     server_name: str,
-    backend: str = "singbox",
+    backend: str = "mihomo",
 ) -> bool:
     def activate():
         global _conn_server
@@ -942,7 +1118,7 @@ def ws_handler(ws):
         "http"           : _app_settings["http"],
         "appSettings"    : _app_settings,
         "core"           : "AmneziaWG" if _app_settings["active_protocol"] == "wg" and awg_engine.running else vpn_engine.name,
-        "coreVersions"   : f"sing-box {SINGBOX_VERSION} · Mihomo {MIHOMO_VERSION}",
+        "coreVersions"   : f"Mihomo {MIHOMO_VERSION}",
         "tunnelSettings" : {k: _app_settings.get(k) for k in _TUNNEL_KEYS},
         "appsConfig"      : profile_state.apps_config,
         "hwid"            : _app_settings.get("hwid", ""),
@@ -951,8 +1127,19 @@ def ws_handler(ws):
         "zapretState"     : zapret_service.state,
         "zapretStrategy"  : zapret_service.strategy,
         "zapretStrategies": zapret_service.strategies(),
+        "zapretGameFilter": _app_settings.get("zapret_game_filter"),
+        "zapretGameFilterSummary": zapret_service.game_filter_summary(
+            _app_settings.get("zapret_game_filter"),
+            _app_settings.get("zapret_strategy"),
+        ),
+        "zapretCoverage"  : zapret_service.coverage(
+            _app_settings.get("zapret_game_filter"),
+            _app_settings.get("zapret_strategy"),
+            _active_vpn_mode(),
+        ),
+        "zapretSelected"  : _app_settings.get("zapret_strategy"),
         "appVersion"       : APP_VERSION,
-        "engineVersion"    : SING_BOX_VERSION,
+        "engineVersion"    : MIHOMO_VERSION,
     }))
     try:
         while True:
@@ -979,11 +1166,21 @@ def _ping_loop(attempt, stop_event):
             value = "—"
             color = "red"
 
+        health = None if _app_settings["active_protocol"] == "wg" else vpn_engine.health.check()
+
         def publish():
             global _ping_value, _ping_color
             _ping_value = value
             _ping_color = color
             _broadcast({"type": "ping", "value": value, "color": color})
+            if health and health.get("blocked"):
+                message = blocked_message(_conn_server or "выбранный", health, _alternative_servers())
+                _log(message, "err")
+                _broadcast({"type": "connection_health", "state": "blocked", "message": message})
+                _broadcast({"type": "operation_error", "message": message})
+            elif health and health.get("recovered"):
+                _log("Сервер снова принимает соединения", "ok")
+                _broadcast({"type": "connection_health", "state": "ok"})
 
         if stop_event.is_set() or not _connection.run_if_connected(
             attempt,
@@ -991,6 +1188,19 @@ def _ping_loop(attempt, stop_event):
         ):
             break
         stop_event.wait(timeout=5.0)
+
+
+def _alternative_servers(limit=3):
+    """Серверы той же подписки на другом транспорте: при блокировке одного
+    протокола (TCP/XHTTP) другой (QUIC/HY2) часто продолжает работать."""
+    selected = _get_selected_server()
+    if not selected:
+        return ""
+    transport = lambda item: "quic" if item.get("protocol") == "hysteria2" else item.get("type", "tcp")
+    group = next((g for g in profile_state.groups if g["id"] == _app_settings["selected_group"]), None)
+    names = [item.get("remark", "") for item in (group or {}).get("servers", [])
+             if item is not selected and transport(item) != transport(selected) and item.get("remark")]
+    return ", ".join(names[:limit])
 
 
 def _start_ping_monitor(attempt):
@@ -1286,7 +1496,7 @@ def api_connect():
 
     if proto == "wg":
         if any(r.get("enabled", True) for r in profile_state.apps_config.get("rules", [])):
-            return jsonify(ok=False, error="Пользовательские правила требуют TUN / Mihomo"), 400
+            return jsonify(ok=False, error="Пользовательские правила работают только в режиме TUN. Переключите протокол на TUN на главном экране — смена ядра в настройках здесь не помогает: WG/AWG поднимает системный туннель без ядра."), 400
         if any(a.get("enabled") is not False and a.get("destination", "default") != "default" for a in profile_state.apps_config.get("apps", [])):
             return jsonify(ok=False, error="Индивидуальные серверы требуют TUN с ядром Авто / Mihomo. В режиме WG/AWG верните назначения на основной маршрут."), 400
         server = _get_selected_wg_server()
@@ -1309,7 +1519,8 @@ def api_connect():
                     **_tunnel_kwargs(),
                 )
             except ValueError as exc:
-                return jsonify(ok=False, error=str(exc)), 500
+                _log("Не удалось подготовить подключение: " + str(exc), "err")
+                return jsonify(ok=False, error=str(exc)), 422
         attempt = _connection.begin()
         if attempt is None:
             error = "Уже подключено" if _connection.connected else "Подключение уже выполняется"
@@ -1342,6 +1553,10 @@ def api_connect():
         server = _get_selected_server()
         if not server:
             return jsonify({"ok": False, "error": "Сервер не выбран"})
+        # Последняя защита перед сборкой: подписка могла потерять сервер уже
+        # после того, как маршрут был сохранён. Чиним и продолжаем — повторно
+        # жать «Подключить» пользователь не должен.
+        _repair_saved_routes("подготовка подключения")
         mode        = profile_state.apps_config.get("mode", "all")
         routed_exes = _get_routed_exes()
         from engine.app_routes import assignments, build_multi_route_config
@@ -1350,10 +1565,10 @@ def api_connect():
             _ensure_local_proxy_ports()
             explicit_routes = resolve_rules(profile_state.apps_config.get("rules", []), profile_state.groups) + \
                 assignments(profile_state.apps_config.get("apps", []), profile_state.groups)
+            ensure_supported(server)
             config_builder = (lambda server, **kwargs: build_multi_route_config(server, explicit_routes, **kwargs)) if explicit_routes else build_proxy_config
             cfg = config_builder(
                 server,
-                preference   = "mihomo" if explicit_routes else _app_settings.get("core", "auto"),
                 socks_port   = _app_settings["socks"],
                 http_port    = _app_settings["http"],
                 clash_port   = _ensure_clash_port(),
@@ -1362,7 +1577,10 @@ def api_connect():
                 **_tunnel_kwargs(),
             )
         except ValueError as exc:
-            return jsonify(ok=False, error=str(exc)), 500
+            # Отказ пользовательской конфигурации, а не сбой сервиса: раньше
+            # он уходил безымянным HTTP 500 и не попадал в журнал вовсе.
+            _log("Не удалось подготовить подключение: " + str(exc), "err")
+            return jsonify(ok=False, error=str(exc)), 422
         proto_label = server.get("protocol", "vless").upper()
         attempt = _connection.begin()
         if attempt is None:
@@ -1373,9 +1591,16 @@ def api_connect():
             def announce():
                 _broadcast({"type": "status", "state": "connecting"})
                 _log(f"Подключение к {server['remark']} [{proto_label}] ...", "info")
-                selected_core = "mihomo (индивидуальные маршруты)" if explicit_routes else choose_core(server, _app_settings.get('core', 'auto'))
-                _log(f"Ядро: {selected_core} | транспорт: {server.get('type', 'tcp')} | Reality: {'да' if server.get('security') == 'reality' else 'нет'}", "info")
+                routes_note = " (индивидуальные маршруты)" if explicit_routes else ""
+                _log(f"Ядро: Mihomo {MIHOMO_VERSION}{routes_note} | транспорт: {server.get('type', 'tcp')} | Reality: {'да' if server.get('security') == 'reality' else 'нет'}", "info")
                 _log(f"Режим: TUN | маршрутизация: {mode} ({len(routed_exes)} приложений)", "info")
+                if not zapret_service.running and zapret_engine._foreign_winws_running():
+                    # Исключения адресов VPN-серверов пишутся только в списки
+                    # собственного winws; сторонний экземпляр (служба zapret)
+                    # их не читает и может обрабатывать соединения с сервером.
+                    _log("Запущен сторонний winws (например, служба zapret): Sadness VPN не может исключить "
+                         "из его обработки адрес VPN-сервера. Если соединение нестабильно, добавьте адрес "
+                         "сервера в ipset-exclude этой сборки zapret или остановите её.", "warn")
                 if mode == "whitelist" and routed_exes:
                     shown = ", ".join(routed_exes[:5]) + ("..." if len(routed_exes) > 5 else "")
                     _log(f"Через VPN: {shown}", "info")
@@ -1484,7 +1709,8 @@ from ui.routes import zapret as _zapret_routes  # noqa: E402
 _system_routes.init(broadcast=_broadcast, window_command=_window_command)
 app.register_blueprint(_system_routes.bp)
 
-_zapret_routes.init(service=zapret_service, broadcast=_broadcast, log=_log)
+_zapret_routes.init(service=zapret_service, broadcast=_broadcast, log=_log,
+                    vpn_servers=_vpn_endpoints, vpn_mode=_active_vpn_mode)
 app.register_blueprint(_zapret_routes.bp)
 
 _appearance_routes.init(broadcast=_broadcast)
@@ -1498,6 +1724,8 @@ _servers_routes.init(_log=_Late("_log"), _broadcast_groups=_Late("_broadcast_gro
                      _groups_for_ui=_Late("_groups_for_ui"),
                      _ensure_manual_group=_Late("_ensure_manual_group"),
                      _start_subscription_update=_Late("_start_subscription_update"),
+                     _start_subscription_refresh_all=_Late("_start_subscription_refresh_all"),
+                     _repair_saved_routes=_Late("_repair_saved_routes"),
                      _save_settings=_Late("_save_settings"))
 app.register_blueprint(_servers_routes.bp)
 
@@ -1511,7 +1739,8 @@ _wireguard_routes.init(_log=_Late("_log"), _broadcast=_Late("_broadcast"),
 app.register_blueprint(_wireguard_routes.bp)
 
 _apps_routes.init(_log=_Late("_log"), _broadcast=_Late("_broadcast"),
-                  _connection=_Late("_connection"), save_apps=_Late("save_apps"))
+                  _connection=_Late("_connection"), save_apps=_Late("save_apps"),
+                  verify_with_core=_Late("verify_routing_with_core"))
 app.register_blueprint(_apps_routes.bp)
 
 

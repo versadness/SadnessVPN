@@ -8,7 +8,9 @@ import os
 import platform
 import time
 
+from engine import game_filter, zapret_exclusions
 from engine.flowseal_profiles import FLOWSEAL_COMMIT, FLOWSEAL_PROFILES, PROFILE_BY_ID
+from engine.game_filter import GameFilterError
 from engine.paths import bin_path
 
 
@@ -26,6 +28,7 @@ class ZapretManager:
         self.log_cb    = log_callback or (lambda msg, tag: None)
         self.exit_cb   = exit_callback or (lambda return_code: None)
         self._strategy = None
+        self._game_filter = game_filter.summary(None)
         self._stop_requested = None
 
     # ── Пути ──────────────────────────────────────────────────────────────────
@@ -149,15 +152,58 @@ class ZapretManager:
 
     # ── Построение команды ────────────────────────────────────────────────────
 
-    def _build_cmd(self, strategy_id: str) -> list:
+    @staticmethod
+    def _apply_game_filter(args, config) -> list:
+        """Подставить проверенные игровые диапазоны вместо плейсхолдеров.
+
+        Секции профиля разделены ``--new``. Игровой считается та, чей
+        ``--filter-tcp`` / ``--filter-udp`` пришёл из плейсхолдера: только в
+        ней режим IPSet «все адреса» снимает ограничение по ipset-all.
+        Исключения (``--ipset-exclude``) остаются всегда — они защищают
+        локальные и служебные адреса.
+        """
+        ports = game_filter.substitutions(config)
+        ipset_all = game_filter.normalize(config)["ipset"] == "all"
+        enabled = game_filter.enabled(config)
+
+        sections, current = [], []
+        for arg in args:
+            if arg == "--new":
+                sections.append(current)
+                current = []
+            else:
+                current.append(arg)
+        sections.append(current)
+
+        result = []
+        for index, section in enumerate(sections):
+            is_game = any(
+                arg.startswith(("--filter-tcp=", "--filter-udp="))
+                and any(token in arg for token in ports)
+                for arg in section
+            )
+            rendered = []
+            for arg in section:
+                for placeholder, value in ports.items():
+                    arg = arg.replace(placeholder, value)
+                if is_game and enabled and ipset_all and arg.startswith("--ipset="):
+                    continue
+                rendered.append(arg)
+            if index:
+                result.append("--new")
+            result.extend(rendered)
+        return result
+
+    def _build_cmd(self, strategy_id: str, game_filter_config=None) -> list:
         profile = self._profile(strategy_id)
         if not profile:
             return []
         bin_prefix = os.path.dirname(self._winws_path()) + os.sep
         lists_prefix = os.path.dirname(self._lists("list-general.txt")) + os.sep
+        args = self._apply_game_filter(profile["args"], game_filter_config)
         args = [
             arg.replace("%BIN%", bin_prefix).replace("%LISTS%", lists_prefix)
-            for arg in profile["args"]
+            for arg in args
         ]
         return [self._winws_path(), *args]
 
@@ -177,7 +223,31 @@ class ZapretManager:
 
     # ── Start ─────────────────────────────────────────────────────────────────
 
-    def start(self, strategy_id: str = "flowseal_general") -> bool:
+    def protect_vpn_endpoints(self, servers) -> list:
+        """Исключить адреса VPN-серверов из перехвата WinDivert.
+
+        Без этого winws десинхронизирует внешнее соединение с VPN-сервером —
+        оно идёт по тем же портам, что и обычный трафик, — и рвёт туннель.
+        """
+        path = self._lists("ipset-exclude-user.txt")
+        addresses = zapret_exclusions.write(path, servers)
+        if addresses:
+            self.log_cb(
+                f"Zapret: адреса VPN-серверов исключены из перехвата ({len(addresses)})",
+                "info",
+            )
+        return addresses
+
+    def start(self, strategy_id: str = "flowseal_general", game_filter_config=None,
+              vpn_servers=None) -> bool:
+        # Проверяем настройку до всего остального: winws не должен стартовать
+        # с наполовину собранной конфигурацией.
+        try:
+            game_filter_config = game_filter.normalize(game_filter_config)
+        except GameFilterError as exc:
+            self.log_cb(f"Игровой фильтр Zapret: {exc}", "err")
+            return False
+
         if self.process:
             if self.process.poll() is None:
                 self.stop()
@@ -191,6 +261,10 @@ class ZapretManager:
                 "err",
             )
             return False
+
+        # Порядок важен: исключения должны лежать на диске до того, как
+        # winws прочитает их при старте.
+        self.protect_vpn_endpoints(vpn_servers)
 
         self._enable_tcp_timestamps()
 
@@ -207,7 +281,7 @@ class ZapretManager:
         if not self._check_files(canonical_strategy):
             return False
 
-        cmd = self._build_cmd(canonical_strategy)
+        cmd = self._build_cmd(canonical_strategy, game_filter_config)
         if not cmd:
             self.log_cb(f"Неизвестная стратегия: {strategy_id}", "err")
             return False
@@ -249,6 +323,14 @@ class ZapretManager:
                 canonical_strategy
             )
             self.log_cb(f"zapret запущен: {strategy_name} (PID {self.process.pid})", "ok")
+            effective = game_filter.summary(game_filter_config, strategy_name)
+            self.log_cb(
+                "Игровой фильтр: " + effective["mode_label"]
+                + (f" · TCP {effective['tcp_label']} · UDP {effective['udp_label']}"
+                   f" · IPSet: {effective['ipset_label']}" if effective["enabled"] else ""),
+                "info",
+            )
+            self._game_filter = effective
             return True
 
         except PermissionError:

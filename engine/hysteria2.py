@@ -1,4 +1,6 @@
 """Hysteria 2 URI normalization and capabilities of the bundled cores."""
+import base64
+import binascii
 import re
 from urllib.parse import unquote, urlsplit, parse_qsl
 
@@ -21,13 +23,37 @@ def fingerprint(value):
     return normalized
 
 
+def ech_opts(value):
+    """Normalize an ech= link parameter or a Clash ech-opts block for Mihomo.
+
+    Mihomo 1.19.30 takes ech-opts as {enable, config}, where config is the
+    base64 ECHConfigList; a share link carries just that base64 string.
+    Returns None when ECH is present but switched off.
+    """
+    config = value.get("config", "") if isinstance(value, dict) else value
+    if isinstance(value, dict) and not value.get("enable", True):
+        return None
+    config = str(config or "").strip()
+    if not config:
+        return None
+    try:
+        base64.b64decode(config, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("HY2: ECH-конфиг должен быть строкой base64") from None
+    return {"enable": True, "config": config}
+
+
 def validate(server):
     if server.get("obfs") not in (None, "", "salamander"):
         raise ValueError("HY2: эта сборка поддерживает только obfs=salamander")
     if server.get("obfs") and not server.get("obfs_password"):
         raise ValueError("HY2: для Salamander необходим obfs-password")
-    if server.get("ech") or server.get("realm-opts"):
-        raise ValueError("HY2: ECH / Realm пока не поддерживаются этой сборкой")
+    # Realm needs a control-server URL that no share link carries, and Mihomo
+    # refuses the proxy without it ("control server URL is required").
+    if server.get("realm-opts"):
+        raise ValueError("HY2: Realm требует адрес control-сервера и пока не поддерживается")
+    if server.get("ech"):
+        ech_opts(server["ech"])
     ports(server.get("port", 443))
     if server.get("ports"):
         ports(server["ports"])
@@ -36,8 +62,10 @@ def validate(server):
 
 
 def requires_mihomo(server):
-    # sing-box 1.10.7 has neither HY2 hopping nor certificate fingerprint pinning.
-    return any(server.get(k) for k in ("ports", "pinned_cert", "up", "down", "hop_interval", "verify_cert_name"))
+    # sing-box 1.10.7 has neither HY2 hopping, certificate fingerprint pinning
+    # nor ECH.
+    return any(server.get(k) for k in ("ports", "pinned_cert", "up", "down",
+                                       "hop_interval", "verify_cert_name", "ech"))
 
 
 def parse_uri(link):

@@ -34,9 +34,9 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(len(config['proxies']),2)
         self.assertLess(config['rules'].index('NETWORK,UDP,REJECT'),config['rules'].index('PROCESS-NAME,a.exe,DIRECT'))
 
-    def test_unsupported_core_rejected(self):
-        with self.assertRaisesRegex(ValueError,'Mihomo'):
-            build_multi_route_config(self.first,[],preference='singbox')
+    def test_unsupported_protocol_rejected_with_a_clear_reason(self):
+        with self.assertRaisesRegex(ValueError,'не поддерживается ядром Mihomo'):
+            build_multi_route_config({**self.first,'protocol':'wireguard'},[])
 
     def test_observed_custom_tag_is_proxy(self):
         rows=observed_app_routes([{'metadata':{'process':'chrome.exe','network':'tcp'},'chains':['app-aabb']}])

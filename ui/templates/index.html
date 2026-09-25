@@ -10,11 +10,27 @@
 <link rel="stylesheet" href="/static/css/subscriptions.css">
 <link rel="stylesheet" href="/static/css/server-groups.css">
 <link rel="stylesheet" href="/static/css/route-details.css">
+<link rel="stylesheet" href="/static/css/routing-workspace.css">
+<link rel="stylesheet" href="/static/css/settings-workspace.css">
+<link rel="stylesheet" href="/static/css/routing-editor.css">
+<link rel="stylesheet" href="/static/css/process-picker.css">
+<!-- defer: загрузка идёт параллельно разбору страницы, порядок выполнения
+     сохраняется, а код запускается после готовности DOM — как и раньше,
+     когда теги стояли в конце body вперемешку с таблицами стилей. -->
+<script defer src="/static/js/server-groups.js"></script>
+<script defer src="/static/js/app.js"></script>
+<script defer src="/static/js/route-details.js"></script>
+<script defer src="/static/js/subscriptions.js"></script>
+<script defer src="/static/js/routing-workspace.js"></script>
+<script defer src="/static/js/settings-workspace.js"></script>
+<script defer src="/static/js/process-picker.js"></script>
+<script defer src="/static/js/routing-editor.js"></script>
+<script defer src="/static/js/updates.js"></script>
 </head>
 <body>
 <div id="customWallpaper" aria-hidden="true"></div>
 <div id="aurora"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
-<div id="vignette"></div><div id="petals"></div><div class="notify-stack" id="notifyStack"></div>
+<div id="vignette"></div><div class="notify-stack" id="notifyStack"></div>
 <div class="shell">
   <div class="titlebar pywebview-drag-region"><div class="tb-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 16a4 4 0 010-8 5 5 0 019.6-1.5A3.5 3.5 0 0117 16z"/></svg></div><span class="tb-name">Sadness VPN</span><span class="tb-dot" id="tbDot"></span><span class="tb-state" id="tbState">Подключение к приложению…</span><div class="tb-spacer"></div><span class="tb-ver" id="tbVer">v…</span><div class="win-btns" onmousedown="event.stopPropagation()"><button type="button" class="win-btn" aria-label="Свернуть окно" onclick="winMin()"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button><button type="button" class="win-btn" aria-label="Развернуть окно" onclick="winMax()"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button><button type="button" class="win-btn cls" aria-label="Закрыть окно" onclick="winClose()"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button></div></div>
   <div class="body"><nav class="sidebar" aria-label="Основная навигация"><div class="sidebar-brand"><span class="brand-mark">S</span><div>Sadness<span>PRIVATE NETWORK</span></div></div>
@@ -66,11 +82,11 @@
     </div>
     <div class="page" id="page-servers"><div class="page-head"><div><div class="page-title">Выбор сервера</div><div class="page-sub">Узлы из вашей подписки</div></div><div class="head-state" data-connection-state>Не подключено</div></div><div class="control-row"><div class="search glass"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="srvSearch" aria-label="Поиск сервера" placeholder="Поиск сервера" oninput="renderServers()"></div><div class="dd" id="ddSort"><button type="button" class="dd-trigger" aria-haspopup="listbox" aria-expanded="false" onclick="ddToggle('ddSort')"><span id="ddSortLbl">По умолчанию</span><svg class="dd-caret" viewBox="0 0 12 12"><path d="M3 5l3 3 3-3"/></svg></button><div class="dd-menu" role="listbox"><button type="button" class="dd-item on" data-v="default" onclick="pickSort('default','По умолчанию',this)">По умолчанию<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></button><button type="button" class="dd-item" data-v="ping" onclick="pickSort('ping','По пингу',this)">По пингу<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></button><button type="button" class="dd-item" data-v="name" onclick="pickSort('name','По имени',this)">По имени<svg class="tick" viewBox="0 0 14 14"><path d="M2 7l3.5 3.5L12 3.5"/></svg></button></div></div><button class="icon-btn" id="pingBtn" aria-label="Проверить задержку всех серверов" title="Проверить пинг" onclick="pingAll()"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></button><button class="icon-btn" aria-label="Обновить все подписки" title="Обновить подписки" onclick="refreshSubs()"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button></div><div class="add-box glass"><div class="field"><input class="inp" id="addLink" aria-label="Ссылка сервера или подписки" placeholder="vless:// · ss:// · trojan:// · hysteria2:// или ссылка на подписку"><button class="btn btn-primary" onclick="addServer()">Добавить</button></div></div><div class="scroll"><div class="srv-grid" id="srvGrid"></div><div id="srvEmpty" class="empty hidden"><b>Нет серверов</b><p>Вставь ссылку выше или импортируй подписку.</p></div></div></div>
     <div class="page" id="page-wg"><div class="page-head"><div><div class="page-title">WireGuard / AmneziaWG</div><div class="page-sub">Конфиги .conf и подписки WG/AWG</div></div><button class="icon-btn" onclick="wgPingAll()"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></button></div><div class="scroll"><details class="wg-import glass"><summary>＋ Добавить конфиг или подписку</summary><div class="add-box glass"><div class="page-sub" style="margin-bottom:8px">Вставьте содержимое .conf файла:</div><textarea class="inp" id="wgConf" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = 10.0.0.2/32"></textarea><div class="field" style="margin-top:10px; justify-content:flex-end"><button class="btn btn-wg" onclick="wgAdd()">Добавить конфиг</button></div><div class="page-sub" style="margin:10px 0 6px">Подписка WG/AWG (URL):</div><div class="field"><input class="inp" id="wgSubUrl" placeholder="https://..."><button class="btn btn-wg" onclick="wgImport()">Подписка</button></div></div></details><div class="notice"><b>AmneziaWG:</b> AWG-конфиги запускаются нативным движком с сохранением параметров обфускации. В этом режиме туннель применяется ко всему компьютеру.</div><div id="wgGrid" class="srv-grid"></div><div id="wgEmpty" class="empty"><b>Нет WG/AWG серверов</b><p>Добавь конфиг или подписку выше.</p></div></div></div>
-    <div class="page" id="page-routing"><div class="page-head"><div><div class="page-title">Маршрутизация</div><div class="page-sub">Управляйте потоком приложений без сложных правил</div></div><div class="route-status" id="routeNote">VPN отключён</div></div><div class="awg-limit notice hidden">AmneziaWG работает для всего ПК. Правила приложений сохраняются для TUN/WireGuard.</div><div class="route-visual glass"><div class="route-node route-device"><span>PC</span><small>Это устройство</small></div><div class="route-flow"><i></i><i></i><i></i></div><div class="route-node route-vpn"><span>VPN</span><small id="routeVisualMode">Весь трафик</small></div></div><div class="mode-cards"><button type="button" class="mode-card glass" id="modeAll" onclick="setMode('all')"><div class="mode-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg></div><div class="mode-t">Весь компьютер</div><div class="mode-d">Все приложения используют VPN</div></button><button type="button" class="mode-card glass wl" id="modeWl" onclick="setMode('whitelist')"><div class="mode-icon"><svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></div><div class="mode-t">Только выбранные</div><div class="mode-d">VPN работает лишь для списка</div></button><button type="button" class="mode-card glass bl" id="modeBl" onclick="setMode('blacklist')"><div class="mode-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M7 7l10 10"/></svg></div><div class="mode-t">Кроме выбранных</div><div class="mode-d">Приложения из списка идут напрямую</div></button></div><div class="preset-card glass"><div class="preset-ico">✦</div><div style="flex:1"><div class="preset-t">Быстрый набор приложений</div><div class="preset-d">Telegram, Discord, браузеры, Steam, Spotify и Opera</div></div><button class="btn btn-primary" onclick="addPresetSet()">Добавить набор</button></div><div class="rules-bar"><span class="rules-title">Правила приложений</span><span class="rules-count" id="rulesCount">0</span><div style="flex:1"></div><button class="icon-btn" aria-label="Экспортировать правила" title="Экспортировать правила" onclick="exportRules()"><svg viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg></button><button class="btn btn-primary" onclick="promptRule()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Новое правило</button></div><div class="control-row"><div class="search glass"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="ruleSearch" aria-label="Поиск по правилам" placeholder="Найти приложение" oninput="renderRules()"></div></div><div class="scroll"><div id="ruleList"></div><div class="observed-heading">Обнаруженные приложения · <span id="observedAppCount">0</span></div><div id="observedAppList"></div><div id="ruleEmpty" class="empty hidden"><b>Здесь пока нет приложений</b><p>Добавьте отдельное правило или готовый набор.</p></div></div></div>
+    <div class="page" id="page-routing"><div class="page-head"><div><div class="page-title">Маршрутизация</div><div class="page-sub">Управляйте потоком приложений без сложных правил</div></div><div class="route-status" id="routeNote">VPN отключён</div></div><div class="awg-limit notice hidden">AmneziaWG работает для всего ПК. Правила приложений сохраняются для TUN/WireGuard.</div><div class="mode-cards"><button type="button" class="mode-card glass" id="modeAll" onclick="setMode('all')"><div class="mode-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg></div><div class="mode-t">Весь компьютер</div><div class="mode-d">Все приложения используют VPN</div></button><button type="button" class="mode-card glass wl" id="modeWl" onclick="setMode('whitelist')"><div class="mode-icon"><svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></div><div class="mode-t">Только выбранные</div><div class="mode-d">VPN работает лишь для списка</div></button><button type="button" class="mode-card glass bl" id="modeBl" onclick="setMode('blacklist')"><div class="mode-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M7 7l10 10"/></svg></div><div class="mode-t">Кроме выбранных</div><div class="mode-d">Приложения из списка идут напрямую</div></button></div><div class="preset-card glass"><div class="preset-ico">✦</div><div style="flex:1"><div class="preset-t">Быстрый набор приложений</div><div class="preset-d">Telegram, Discord, браузеры, Steam, Spotify и Opera</div></div><button class="btn btn-primary" onclick="addPresetSet()">Добавить набор</button></div><div class="rules-bar"><span class="rules-title">Правила</span><span class="rules-count" id="rulesCount">0</span><div style="flex:1"></div><button class="icon-btn" aria-label="Экспортировать правила" title="Экспортировать правила" onclick="exportRules()"><svg viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg></button><button class="btn btn-primary" onclick="promptRule()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Новое правило</button></div><div class="control-row"><div class="search glass"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="ruleSearch" aria-label="Поиск по правилам" placeholder="Найти правило или приложение" oninput="renderRules()"></div></div><div class="scroll"><dl class="rule-priority glass" id="rulePriority"></dl><div id="ruleList"></div><div class="observed-heading">Обнаруженные приложения · <span id="observedAppCount">0</span></div><div id="observedAppList"></div><div id="ruleEmpty" class="empty hidden"><b>Здесь пока нет приложений</b><p>Добавьте отдельное правило или готовый набор.</p></div></div></div>
     <div class="page" id="page-settings"><div class="page-head"><div><div class="page-title">Настройки</div><div class="page-sub">Порты · туннель · сеть · оформление</div></div><div class="head-state" data-connection-state>Не подключено</div></div><nav id="settingNav" aria-label="Разделы настроек"></nav><div class="scroll">
       <div class="awg-limit notice hidden">AmneziaWG: DNS из конфига, без локального прокси и правил приложений. Настройки TUN ниже к нему не применяются.</div><div class="autostart-state glass" id="autostartState"><span class="autostart-dot"></span><div><strong>Запуск вручную</strong><small>Автозапуск Windows отключён</small></div></div>
       <div class="sec"><div class="sec-lbl">Порты</div><div class="sec-line"></div></div>
-      <div class="set-row glass"><div class="set-meta"><label class="set-name" for="coreSelect">Ядро подключения</label><div class="set-desc">Авто: XHTTP и особые Hysteria 2 через Mihomo, остальные серверы через sing-box. WireGuard использует своё ядро.</div></div><select id="coreSelect" class="inp compact" onchange="saveTunnelField('core',this.value)"><option value="auto">Авто · рекомендуется</option><option value="singbox">sing-box</option><option value="mihomo">Mihomo</option></select></div>
+      <div class="set-row glass"><div class="set-meta"><span class="set-name">Ядро подключения</span><div class="set-desc">VPN работает на единственном ядре Mihomo: VLESS, VMess, Trojan, Shadowsocks, Hysteria 2 и XHTTP. WireGuard использует своё ядро AmneziaWG.</div></div><span class="set-value" id="coreName">Mihomo</span></div>
       <div class="port-grid"><label class="port-card glass" for="portSocks"><span class="port-icon">S5</span><span><strong>SOCKS5</strong><small>Локальный прокси</small></span><input class="port-input" type="number" min="1" max="65535" id="portSocks" value="1080" aria-label="SOCKS5 порт" onchange="savePorts()"></label><label class="port-card glass" for="portHttp"><span class="port-icon">HTTP</span><span><strong>HTTP</strong><small>Локальный прокси</small></span><input class="port-input" type="number" min="1" max="65535" id="portHttp" value="8080" aria-label="HTTP порт" onchange="savePorts()"></label></div>
       <div class="sec"><div class="sec-lbl">SOCKS5 аутентификация</div><div class="sec-line"></div></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Аутентификация SOCKS5</div><div class="set-desc">Требовать логин/пароль для SOCKS5 прокси</div></div><div class="toggle" data-tk="socks5_auth" onclick="tglTunnel(this,'socks5_auth')"></div></div>
@@ -107,10 +123,39 @@
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Трафик сегодня</div><div class="set-desc">Суммарно за текущие сутки</div></div><div class="stat-inline"><span class="u" id="statTodayUp">↑ 0 B</span><span class="d" id="statTodayDn">↓ 0 B</span></div><button class="btn btn-ghost" onclick="resetStats('today')">Сброс</button></div>
       <div class="set-row glass"><div class="set-meta"><div class="set-name">Трафик всего</div><div class="set-desc">Суммарно за всё время</div></div><div class="stat-inline"><span class="u" id="statTotalUp">↑ 0 B</span><span class="d" id="statTotalDn">↓ 0 B</span></div><button class="btn btn-danger" onclick="resetStats('all')">Сброс всего</button></div>
       <div class="sec"><div class="sec-lbl">О программе</div><div class="sec-line"></div></div>
-      <div class="glass"><div class="about-row"><span class="about-k">Sadness VPN</span><span class="about-v" id="aboutVer">v…</span></div><div class="about-row"><span class="about-k">Движок</span><span class="about-v" id="engineVer">sing-box …</span></div><div class="about-row"><span class="about-k">Протоколы</span><span class="about-v">VLESS / WG / AWG→WG</span></div></div>
+      <div class="glass"><div class="about-row"><span class="about-k">Sadness VPN</span><span class="about-v" id="aboutVer">v…</span></div><div class="about-row"><span class="about-k">Движок</span><span class="about-v" id="engineVer">Mihomo …</span></div><div class="about-row"><span class="about-k">Протоколы</span><span class="about-v">VLESS · VMess · Trojan · SS · HY2 / WG · AWG</span></div></div>
       <div class="about-foot">♥ by Sadness</div>
     </div></div>
-    <div class="page" id="page-zapret"><div class="page-head"><div><div class="page-title">Zapret — обход DPI</div><div class="page-sub">Стратегии Flowseal · поиск по названию и сервису</div></div><div class="head-state" id="zapHeadState">Не подключено</div></div><div class="control-row"><input class="inp" id="zapSearch" aria-label="Поиск стратегии Zapret" placeholder="Поиск: ALT, Discord, YouTube…" oninput="filterZapret()"></div><div class="scroll"><div class="zap-status glass" id="zapStatus"><div class="zap-dot"></div><div style="flex:1"><div class="zap-t" id="zapT">Не активен</div><div class="zap-d" id="zapD">Выберите стратегию и нажмите «Запустить»</div></div></div><div class="zap-info">◇ <b>Zapret</b> обходит блокировки на уровне DPI без VPN. Работает независимо от туннеля.<br>⚠ Стратегии зависят от провайдера — перебирайте варианты до стабильного результата.<br>↻ Профили синхронизированы с Flowseal/zapret-discord-youtube.</div><button class="btn btn-zap" id="zapBtn" onclick="toggleZapret()">▶ Запустить выбранную стратегию</button><div class="sec-lbl zap-strategy-title">Стратегии <span id="zapCount">0</span></div><div class="sec-line" style="margin-bottom:var(--sp-3)"></div><div id="zapList"></div></div></div>
+    <div class="page" id="page-zapret"><div class="page-head"><div><div class="page-title">Zapret — обход DPI</div><div class="page-sub">Стратегии Flowseal · поиск по названию и сервису</div></div><div class="head-state" id="zapHeadState">Не подключено</div></div><div class="control-row"><input class="inp" id="zapSearch" aria-label="Поиск стратегии Zapret" placeholder="Поиск: ALT, Discord, YouTube…" oninput="filterZapret()"></div><div class="scroll"><div class="zap-status glass" id="zapStatus"><div class="zap-dot"></div><div style="flex:1"><div class="zap-t" id="zapT">Не активен</div><div class="zap-d" id="zapD">Выберите стратегию и нажмите «Запустить»</div></div></div><div class="zap-info">◇ <b>Zapret</b> обходит блокировки на уровне DPI без VPN. Работает независимо от туннеля.<br>⚠ Стратегии зависят от провайдера — перебирайте варианты до стабильного результата.<br>↻ Профили синхронизированы с Flowseal/zapret-discord-youtube.</div><button class="btn btn-zap" id="zapBtn" onclick="toggleZapret()">▶ Запустить выбранную стратегию</button><section class="zap-gamefilter glass" id="zapGameFilter">
+  <div class="gf-head"><div><div class="gf-title">Охват обхода</div><div class="gf-sub" id="gfSummary">Стандартный охват стратегии</div></div></div>
+  <p class="gf-note">Zapret работает системно по портам, протоколам и адресам. Это не то же самое, что правило VPN для отдельного приложения, и это не влияет на трафик внутри VPN-туннеля.</p>
+  <div class="gf-field"><label class="form-label" for="gfScope">Охват</label>
+    <select class="inp" id="gfScope" onchange="saveGameFilter()">
+      <option value="standard">Стандартный — только то, что описывает стратегия</option>
+      <option value="extended">Расширенный системный — плюс игровые диапазоны портов</option>
+      <option value="custom">Пользовательские фильтры — свои диапазоны</option>
+    </select>
+    <p class="set-desc" id="gfScopeNote"></p></div>
+  <div class="gf-field" id="gfModeField"><label class="form-label" for="gfMode">Протоколы игрового фильтра</label>
+    <select class="inp" id="gfMode" onchange="saveGameFilter()">
+      <option value="off">Выключен</option><option value="udp">Только UDP</option>
+      <option value="tcp">Только TCP</option><option value="both">TCP + UDP</option>
+    </select></div>
+  <div class="gf-ranges" id="gfRanges">
+    <div class="gf-field"><label class="form-label" for="gfTcpStart">TCP · порты</label>
+      <div class="gf-range"><input class="inp" id="gfTcpStart" type="number" min="1" max="65535" inputmode="numeric" aria-label="TCP: начало диапазона" onchange="saveGameFilter()"><span class="gf-dash">–</span><input class="inp" id="gfTcpEnd" type="number" min="1" max="65535" inputmode="numeric" aria-label="TCP: конец диапазона" onchange="saveGameFilter()"></div></div>
+    <div class="gf-field"><label class="form-label" for="gfUdpStart">UDP · порты</label>
+      <div class="gf-range"><input class="inp" id="gfUdpStart" type="number" min="1" max="65535" inputmode="numeric" aria-label="UDP: начало диапазона" onchange="saveGameFilter()"><span class="gf-dash">–</span><input class="inp" id="gfUdpEnd" type="number" min="1" max="65535" inputmode="numeric" aria-label="UDP: конец диапазона" onchange="saveGameFilter()"></div></div>
+  </div>
+  <div class="gf-field" id="gfIpsetField"><label class="form-label" for="gfIpset">Охват по адресам</label>
+    <select class="inp" id="gfIpset" onchange="saveGameFilter()">
+      <option value="list">Только адреса из списка</option><option value="all">Все адреса</option>
+    </select></div>
+  <p class="gf-error" id="gfError" role="alert"></p>
+  <div class="gf-coverage-title">Что попадает под обход сейчас</div>
+  <dl class="gf-effective" id="gfEffective"></dl>
+  <ul class="gf-coverage-notes" id="gfCoverageNotes"></ul>
+</section><div class="sec-lbl zap-strategy-title">Стратегии <span id="zapCount">0</span></div><div class="sec-line" style="margin-bottom:var(--sp-3)"></div><div id="zapList"></div></div></div>
   </div></div></div>
 </div>
 <div class="modal-backdrop" id="ruleModal" aria-hidden="true" onclick="modalBackdropClose(event,'ruleModal')">
@@ -124,7 +169,7 @@
       <label class="form-label" for="ruleExe">Процесс приложения</label>
       <div class="rule-value">
         <input class="inp" id="ruleExe" placeholder="Например, Telegram.exe" autocomplete="off" spellcheck="false">
-        <button type="button" class="btn btn-ghost" onclick="openProcessPicker()"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h7"/></svg>Запущенные</button>
+        <button type="button" class="btn btn-ghost" onclick="openProcessPicker(this)"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h7"/></svg>Запущенные</button>
       </div>
       <div class="form-hint">Введите имя .exe вручную или выберите приложение из списка активных процессов.</div>
     </div>
@@ -143,36 +188,11 @@
     </div>
   </section>
 </div>
-<div class="modal-backdrop process-layer" id="processModal" aria-hidden="true" onclick="modalBackdropClose(event,'processModal')">
-  <section class="modal-card process-card" role="dialog" aria-modal="true" aria-labelledby="processModalTitle">
-    <div class="modal-head">
-      <div><div class="modal-title" id="processModalTitle">Запущенные процессы</div><div class="modal-sub" id="processCount">Получение списка…</div></div>
-      <button type="button" class="modal-close" aria-label="Закрыть" onclick="closeModal('processModal')">×</button>
-    </div>
-    <div class="process-search">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-      <input id="processSearch" aria-label="Поиск запущенного процесса" placeholder="Поиск по названию" autocomplete="off" oninput="renderProcessList()">
-      <button type="button" class="mini-btn" aria-label="Обновить список процессов" title="Обновить" onclick="loadProcesses(true)"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5"/></svg></button>
-    </div>
-    <div class="process-list" id="processList"><div class="process-state">Получение списка процессов…</div></div>
-  </section>
-</div>
 <div id="toast"></div>
 <dialog id="subscriptionDialog" aria-labelledby="subscriptionDialogTitle"><form method="dialog" id="subscriptionEdit">
   <h2 id="subscriptionDialogTitle"></h2><p id="subscriptionDialogDescription"></p>
   <label id="subscriptionNameLabel">Название<input class="inp" id="subscriptionName" maxlength="160"></label>
   <div class="subscription-actions"><button class="btn" type="button" id="subscriptionCancel">Отмена</button><button class="btn btn-primary" type="submit" id="subscriptionConfirm">Сохранить</button></div>
 </form></dialog>
-<script src="/static/js/server-groups.js"></script>
-<script src="/static/js/app.js"></script>
-<script src="/static/js/route-details.js"></script>
-<script src="/static/js/subscriptions.js"></script>
-<link rel="stylesheet" href="/static/css/routing-workspace.css">
-<script src="/static/js/routing-workspace.js"></script>
-<link rel="stylesheet" href="/static/css/settings-workspace.css">
-<script src="/static/js/settings-workspace.js"></script>
-<link rel="stylesheet" href="/static/css/routing-editor.css">
-<script src="/static/js/routing-editor.js"></script>
-<script src="/static/js/updates.js"></script>
 </body>
 </html>

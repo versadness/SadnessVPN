@@ -8,13 +8,16 @@
 import json
 import os
 
-from engine.core_config import CORES
+from engine import game_filter
 from engine.diagnostics import journal
 from engine.json_store import atomic_write_json
 from engine.paths import data_dir
 
 DATA_DIR = data_dir()
 SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
+# Резервная копия делается один раз, перед первой миграцией на новое ядро.
+# Имя фиксировано: цель — вернуть прежний профиль вручную, а не вести архив.
+SETTINGS_BACKUP_PATH = os.path.join(DATA_DIR, "settings.before-mihomo-migration.json")
 PROFILE_DIR = os.path.join(DATA_DIR, "profile")
 
 # Порты, которые приложение занимает само: 45678 — локальный HTTP-бэкенд,
@@ -25,12 +28,17 @@ RESERVED_LOCAL_PORTS = {45678, CLASH_PORT_DEFAULT}
 TUNNEL_KEYS = (
     "kill_switch", "block_udp", "socks5_auth", "socks5_user", "socks5_pass",
     "mux", "fakedns", "preferred_ip", "dns_preset", "custom_dns",
-    "ping_type", "ping_url", "ping_timeout", "server_sort", "core",
+    "ping_type", "ping_url", "ping_timeout", "server_sort",
 )
+
+# Настройки, удалённые вместе с sing-box. Значение выбрасывается при загрузке:
+# хранить выбор несуществующего ядра нельзя, а сбрасывать остальной профиль
+# из-за него — тем более.
+REMOVED_SETTING_KEYS = ("core",)
 
 USER_APP_SETTING_KEYS = {
     "startup", "autoconn", "silent", "lan", "mintray", "reconnect",
-    "animations", "petals", "favorite_servers", "onboarding_complete",
+    "animations", "favorite_servers", "onboarding_complete",
     "avatar_file", "wallpaper_file",
 }
 
@@ -42,7 +50,6 @@ DEFAULT_SETTINGS = {
     "lan":              False,
     "mintray":          False,
     "animations":       True,
-    "petals":           True,
     "onboarding_complete": False,
     "avatar_file":      "",
     "wallpaper_file":   "",
@@ -54,7 +61,6 @@ DEFAULT_SETTINGS = {
     "selected_wg_group": None,
     "selected_wg_index": None,
     "active_protocol":  "vless",
-    "core":             "auto",
     "hwid":             "",
     "ping_type":        "tcp",
     "ping_url":         "https://www.gstatic.com/generate_204",
@@ -70,6 +76,10 @@ DEFAULT_SETTINGS = {
     "dns_preset":       "cf_google",
     "custom_dns":       "",
     "server_sort":      "default",
+    "zapret_strategy":  "flowseal_general",
+    # Игровой фильтр Zapret. По умолчанию выключен: включать перехват всего
+    # игрового трафика у существующего пользователя без его согласия нельзя.
+    "zapret_game_filter": dict(game_filter.DEFAULTS),
 }
 
 
@@ -82,7 +92,7 @@ def load_settings() -> dict:
         settings = {**DEFAULT_SETTINGS, **loaded}
         for key in (
             "startup", "autoconn", "silent", "lan", "mintray", "animations", "reconnect",
-            "petals", "onboarding_complete", "kill_switch",
+            "onboarding_complete", "kill_switch",
             "block_udp", "socks5_auth", "mux", "fakedns",
         ):
             if not isinstance(settings.get(key), bool):
@@ -126,11 +136,54 @@ def load_settings() -> dict:
                 settings[key] = None
         if settings.get("active_protocol") not in ("vless", "wg"):
             settings["active_protocol"] = "vless"
-        if settings.get("core") not in CORES:
-            settings["core"] = "auto"
+        # Миграция на единственное ядро: сохранённый выбор sing-box/auto
+        # просто исчезает, всё остальное в профиле остаётся как было.
+        # Перед первым изменением делается локальная копия — повторный запуск
+        # миграции безопасен и копию не перезаписывает.
+        migrated = any(key in loaded for key in REMOVED_SETTING_KEYS)
+        if migrated:
+            backup_settings(loaded)
+        for key in REMOVED_SETTING_KEYS:
+            settings.pop(key, None)
+        # Миграция старых настроек: поля игрового фильтра могли не сохраняться
+        # вовсе, а битое значение не должно мешать приложению запуститься.
+        settings["zapret_game_filter"] = game_filter.normalize_stored(
+            settings.get("zapret_game_filter")
+        )
+        if not isinstance(settings.get("zapret_strategy"), str) or not settings["zapret_strategy"]:
+            settings["zapret_strategy"] = DEFAULT_SETTINGS["zapret_strategy"]
+        if migrated:
+            # Миграция доводится до диска целиком и после всех нормализаций:
+            # иначе резервная копия ссылалась бы на состояние, которое так и
+            # не изменилось. Отказ записи запуску не мешает.
+            save_settings(settings)
         return settings
     except Exception:
         return dict(DEFAULT_SETTINGS)
+
+
+def backup_settings(raw: dict) -> bool:
+    """Один раз сохранить прежние настройки рядом с профилем.
+
+    Существующая копия не перезаписывается: повторный запуск миграции не
+    должен затереть исходное состояние уже мигрированным.
+    """
+    if os.path.exists(SETTINGS_BACKUP_PATH):
+        return False
+    try:
+        atomic_write_json(SETTINGS_BACKUP_PATH, raw)
+        journal.info("Создана резервная копия настроек перед миграцией: %s",
+                     os.path.basename(SETTINGS_BACKUP_PATH))
+        return True
+    except Exception as exc:
+        # Отказ записи не должен мешать приложению запуститься.
+        journal.warning("Не удалось создать резервную копию настроек: %s", exc)
+        return False
+
+
+def normalize_zapret_game_filter(value):
+    """Пользовательский ввод: GameFilterError поднимается наружу как 400."""
+    return game_filter.normalize(value)
 
 
 def save_settings(cfg: dict) -> bool:
@@ -159,10 +212,8 @@ def port_number(value, default=None) -> int:
 
 
 def normalize_tunnel_setting(key, value):
-    if key == "core":
-        if value not in CORES:
-            raise ValueError("Неизвестное ядро")
-        return value
+    if key in REMOVED_SETTING_KEYS:
+        raise ValueError("Выбора ядра больше нет: VPN работает на Mihomo")
     if key in ("kill_switch", "block_udp", "socks5_auth", "mux", "fakedns"):
         if not isinstance(value, bool):
             raise ValueError(f"{key} must be true or false")
@@ -208,7 +259,7 @@ def normalize_tunnel_setting(key, value):
 def normalize_app_setting(key, value):
     if key in {
         "startup", "autoconn", "silent", "lan", "mintray", "animations", "reconnect",
-        "petals", "onboarding_complete",
+        "onboarding_complete",
     }:
         if not isinstance(value, bool):
             raise ValueError("Значение настройки должно быть true или false")

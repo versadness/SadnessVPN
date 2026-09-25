@@ -16,7 +16,7 @@
 .subscription-heading p { color:#b1a5c9; font-size:11px; margin:5px 0 0; overflow-wrap:anywhere; }
 .subscription-status { padding:6px 9px; border-radius:9px; font-size:10px; color:#cfc0ff; background:#a894fa18; }
 .subscription-status.warn { color:#ffd49f; background:#edaa6115; }
-.subscription-facts { display:grid; grid-template-columns:1.4fr .65fr 1.2fr; gap:12px; padding:20px 0; border-bottom:1px solid #d4bcff15; }
+.subscription-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:20px 0; border-bottom:1px solid #d4bcff15; }
 .subscription-facts div { display:flex; flex-direction:column; gap:8px; min-width:0; }
 .subscription-facts span,.subscription-usage > span { font-size:11px; color:#b1a5c9; }
 .subscription-facts strong,.subscription-usage strong { font-size:12px; font-weight:550; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
@@ -24,6 +24,9 @@
 .subscription-usage progress { appearance:none; border:0; width:100%; height:5px; border-radius:9px; overflow:hidden; background:#b7a0ff16; }
 .subscription-usage progress::-webkit-progress-bar { background:#b7a0ff16; }
 .subscription-usage progress::-webkit-progress-value { background:linear-gradient(90deg,#8e71df,#cfb5ff); border-radius:9px; }
+.subscription-rejected { margin-top:12px; font-size:12px; color:#b1a5c9; }
+.subscription-rejected summary { cursor:pointer; color:#edcda9; }
+.subscription-rejected ul { margin:8px 0 0; padding-left:18px; line-height:1.6; overflow-wrap:anywhere; }
 .subscription-error { background:#edaa610c; border:1px solid #edaa6125; border-radius:12px; padding:12px; color:#edcda9; line-height:1.6; font-size:12px; overflow-wrap:anywhere; }
 .subscription-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
 .subscription-actions .btn { font-size:11px; }
@@ -42,6 +45,5 @@
   .subscription-heading { flex:1 0 calc(100% - 56px); }
   .subscription-status { margin-left:56px; }
   .subscription-facts { grid-template-columns:1fr 1fr; }
-  .subscription-facts > div:last-child { grid-column:1/-1; }
   .subscription-actions .btn { flex:1; }
 }

@@ -75,9 +75,13 @@ function wait(ms) {
 
 async function waitForHealth(timeoutMs = 25000) {
   const deadline = Date.now() + timeoutMs;
+  // Холодный старт PyInstaller занимает секунды, поэтому опрос замедляется:
+  // фиксированные 150 мс давали до 166 запросов на один запуск.
+  let delay = 150;
   while (Date.now() < deadline) {
     if (await health()) return true;
-    await wait(150);
+    await wait(delay);
+    delay = Math.min(delay * 2, 600);
   }
   return false;
 }
@@ -146,6 +150,51 @@ async function start(onLog) {
   };
 }
 
+/**
+ * Держит один длинный запрос к бэкенду и поднимает окно, когда лаунчер
+ * попросил активировать уже запущенный экземпляр. Так повторный клик по
+ * ярлыку не поднимает второй процесс Electron и не просит прав администратора.
+ */
+function watchShowRequests(onShow) {
+  let stopped = false;
+
+  const ask = () => new Promise((resolve) => {
+    const request = http.get(
+      { host: HOST, port: PORT, path: '/api/shell/show-wait', timeout: 40000 },
+      (response) => {
+        let body = '';
+        response.on('data', (chunk) => { body += chunk; });
+        response.on('end', () => {
+          try {
+            resolve(JSON.parse(body).show === true);
+          } catch (error) {
+            resolve(null);
+          }
+        });
+      }
+    );
+    request.on('timeout', () => { request.destroy(); resolve(null); });
+    request.on('error', () => resolve(null));
+  });
+
+  (async () => {
+    while (!stopped && !stopping) {
+      const show = await ask();
+      if (stopped || stopping) return;
+      if (show === null) {
+        // Бэкенд перезапускается или ещё не поднялся — не долбим его в цикле.
+        await wait(2000);
+        continue;
+      }
+      if (show) {
+        try { onShow(); } catch (error) { console.error('show-request:', error); }
+      }
+    }
+  })();
+
+  return () => { stopped = true; };
+}
+
 /** Корректная остановка: сначала движки, потом сам процесс. */
 function requestShutdown(timeoutMs = 8000) {
   return new Promise((resolve) => {
@@ -177,12 +226,25 @@ async function stop() {
   const pid = child.pid;
   try { child.kill(); } catch (error) { /* уже завершился */ }
   await wait(600);
+  // Ждём taskkill до конца: раньше его запускали и тут же выходили из
+  // Electron через app.exit(0), так что дерево процессов могло пережить
+  // выход — а вместе с ним поднятый TUN и правила маршрутизации.
   if (child && process.platform === 'win32') {
-    try {
-      spawn('taskkill', ['/pid', String(pid), '/f', '/t'], { windowsHide: true });
-    } catch (error) { /* процесс уже мёртв */ }
+    await new Promise((resolve) => {
+      let killer;
+      try {
+        killer = spawn('taskkill', ['/pid', String(pid), '/f', '/t'], { windowsHide: true });
+      } catch (error) {
+        resolve();
+        return;
+      }
+      const done = setTimeout(resolve, 4000);
+      const finish = () => { clearTimeout(done); resolve(); };
+      killer.on('exit', finish);
+      killer.on('error', finish);
+    });
   }
   child = null;
 }
 
-module.exports = { start, stop, requestShutdown, health, HOST, PORT, baseUrl: `http://${HOST}:${PORT}` };
+module.exports = { start, stop, requestShutdown, watchShowRequests, health, HOST, PORT, baseUrl: `http://${HOST}:${PORT}` };

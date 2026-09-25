@@ -1,0 +1,106 @@
+/* Дочерний диалог выбора приложения.
+ *
+ * Открывается поверх редактора правила (и поверх ruleModal), поэтому ширина
+ * и высота считаются от viewport: на 480×720 и 620×440 диалог целиком виден,
+ * а прокручивается только список. Горизонтальной прокрутки нет нигде —
+ * длинные названия обрезаются через ellipsis, полное значение в title.
+ */
+.process-picker{
+  margin:auto;
+  box-sizing:border-box;
+  width:min(680px,calc(100vw - 32px));
+  max-height:calc(100vh - 32px);
+  flex-direction:column;
+  gap:14px;
+  padding:22px;
+  border:1px solid #a898df55;
+  border-radius:22px;
+  color:#ece8ff;
+  background:linear-gradient(145deg,#2b2340,#171223);
+  box-shadow:0 28px 96px #000a;
+  overflow:hidden;
+}
+/* display:flex только у открытого диалога: иначе авторский стиль
+   перебивает UA-правило dialog:not([open]){display:none}. */
+.process-picker[open]{display:flex}
+.process-picker::backdrop{background:#080613c4}
+.process-picker[hidden],.process-picker [hidden]{display:none!important}
+
+.picker-head{display:flex;align-items:flex-start;gap:12px}
+.picker-head-text{flex:1;min-width:0}
+.picker-head h2{margin:0;font-size:20px;line-height:1.25}
+.picker-sub{margin:4px 0 0;font-size:12px;color:#b3a9cd}
+.picker-close{
+  flex:0 0 auto;width:32px;height:32px;border-radius:10px;cursor:pointer;
+  border:1px solid #ffffff1f;background:#ffffff0d;color:#cfc6e8;font-size:18px;line-height:1;
+}
+.picker-close:hover{background:#ffffff1a}
+
+.picker-note{
+  margin:0;padding:10px 12px;border-radius:12px;
+  background:#9a72f51f;border:1px solid #9a72f533;
+  font-size:12px;line-height:1.45;color:#d9cdff;
+}
+
+.picker-search{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.picker-search .inp{flex:1 1 220px;min-width:0;box-sizing:border-box}
+.picker-refresh{flex:0 0 auto;white-space:nowrap}
+
+/* Единственный вертикальный скролл-контейнер диалога. */
+.picker-list{
+  flex:1 1 auto;
+  min-height:120px;
+  max-height:46vh;
+  overflow-y:auto;
+  overflow-x:hidden;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:4px;
+  margin:0 -4px;
+}
+.picker-row{
+  display:flex;align-items:center;gap:12px;
+  width:100%;box-sizing:border-box;
+  min-height:50px;padding:8px 12px;
+  border:1px solid transparent;border-radius:12px;
+  background:#ffffff0a;color:#e6e0f7;
+  text-align:left;cursor:pointer;
+  /* Строка сама не прокручивается: вложенных скроллов внутри списка нет. */
+  overflow:hidden;
+}
+.picker-row:hover{background:#ffffff17;border-color:#ffffff24}
+.picker-row[aria-selected="true"],.picker-row.selected{background:#9a72f52e;border-color:#aa90f4}
+.picker-row:focus-visible{outline:2px solid #c0a3ff;outline-offset:2px;background:#ffffff1a}
+.picker-ico{flex:0 0 24px;width:24px;height:24px;object-fit:contain;border-radius:6px;background:#ffffff12}
+.picker-ico.missing{visibility:hidden}
+.picker-ico-glyph{display:flex;align-items:center;justify-content:center;font-size:13px;color:#c3b4ea}
+.picker-text{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.picker-name,.picker-exe{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picker-name{font-size:14px;line-height:1.2}
+.picker-exe{font-size:12px;line-height:1.2;color:#a99fc4}
+.picker-state{margin:12px 4px;font-size:13px;color:#b3a9cd;overflow-wrap:anywhere}
+.picker-error{color:#efb597}
+
+.picker-manual{display:flex;flex-direction:column;gap:8px;flex:0 0 auto}
+.picker-manual .form-label{margin:0;display:block;font-size:13px}
+.picker-manual-row{display:flex;gap:10px;flex-wrap:wrap}
+.picker-manual-row .inp{flex:1 1 200px;min-width:0;box-sizing:border-box}
+.picker-manual-row .btn{flex:0 0 auto;white-space:nowrap}
+.picker-manual-error{margin:0;min-height:0;font-size:12px;color:#efb597;overflow-wrap:anywhere}
+.picker-manual-error:empty{display:none}
+
+.picker-actions{display:flex;justify-content:flex-end;gap:10px;flex:0 0 auto}
+.process-picker :focus-visible{outline:2px solid #c0a3ff;outline-offset:2px}
+
+/* Низкие окна (620×440, 964×661 в масштабе 150%): список ужимается, но
+   и поиск, и ручной ввод, и кнопки остаются на экране. */
+@media (max-height:560px){
+  .process-picker{padding:16px;gap:10px}
+  .picker-list{max-height:38vh;min-height:88px}
+  .picker-note{display:none}
+}
+@media (max-width:420px){
+  .picker-search .inp,.picker-manual-row .inp{flex:1 1 100%}
+  .picker-refresh,.picker-manual-row .btn{width:100%}
+}

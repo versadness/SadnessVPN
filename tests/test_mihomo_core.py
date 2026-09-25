@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from urllib.parse import urlencode
 
 from engine.config import parse_link, fetch_subscription
-from engine.core_config import build_proxy_config, choose_core, build_mihomo_config
+from engine.core_config import build_proxy_config, ensure_supported, build_mihomo_config
 from engine.transports import parse_clash_nodes
 from engine.route_info import observed_app_routes
 from engine.mihomo import MihomoManager
@@ -15,7 +15,7 @@ from engine.mihomo import MihomoManager
 UUID = "11111111-1111-4111-8111-111111111111"
 
 
-class MultiCoreTests(unittest.TestCase):
+class MihomoCoreTests(unittest.TestCase):
     def node(self, extra=None):
         query = {"type": "xhttp", "security": "tls", "sni": "example.com", "path": "/hello",
                  "mode": "packet-up", "flow": "none", "extra": json.dumps(extra or {})}
@@ -23,7 +23,7 @@ class MultiCoreTests(unittest.TestCase):
 
     def test_xhttp_auto_uses_mihomo_and_maps_nested_extra(self):
         server = self.node({"xmux": {"maxConcurrency": "16-32", "maxConnections": 0}})
-        self.assertEqual(choose_core(server), "mihomo")
+        self.assertIs(ensure_supported(server), server)
         proxy = build_proxy_config(server)["proxies"][0]
         self.assertEqual(proxy["network"], "xhttp")
         self.assertEqual(proxy["xhttp-opts"]["path"], "/hello")
@@ -34,11 +34,27 @@ class MultiCoreTests(unittest.TestCase):
 
     def test_unsupported_xhttp_option_is_reported_before_the_tun_comes_up(self):
         with self.assertRaisesRegex(ValueError, "не поддерживается"):
-            choose_core(self.node({"scMaxBufferedPosts": 30}))
+            ensure_supported(self.node({"downloadSettings": {"network": "tcp"}}))
 
     def test_mihomo_rejects_unsupported_extra_instead_of_silently_dropping_it(self):
         with self.assertRaisesRegex(ValueError, "не поддерживается"):
-            build_mihomo_config(self.node({"scStreamUpServerSecs": "20-80"}))
+            build_mihomo_config(self.node({"downloadSettings": {"network": "tcp"}}))
+
+    def test_options_the_peer_never_sees_are_dropped_instead_of_blocking_the_link(self):
+        # Mihomo exposes these only as inbound settings, or not at all, and the
+        # server never negotiates them, so the link must still connect.
+        server = self.node({"scMaxConcurrentPosts": "100-200", "scMaxBufferedPosts": 30,
+                            "scStreamUpServerSecs": "20-80", "noSSEHeader": True,
+                            "xmux": {"maxConnections": 4, "cMaxLifetimeMs": 0}})
+        ensure_supported(server)
+        opts = build_proxy_config(server)["proxies"][0]["xhttp-opts"]
+        self.assertEqual(opts["path"], "/hello")
+        self.assertEqual(opts["reuse-settings"], {"max-connections": 4})
+        self.assertEqual([k for k in opts if k.startswith("sc-") or k == "no-sse-header"], [])
+
+    def test_dropping_every_xmux_key_leaves_no_empty_reuse_settings(self):
+        opts = build_proxy_config(self.node({"xmux": {"cMaxLifetimeMs": 0}}))["proxies"][0]["xhttp-opts"]
+        self.assertNotIn("reuse-settings", opts)
 
     def test_clash_yaml_preserves_transport_and_reality(self):
         nodes = parse_clash_nodes('''proxies:
@@ -90,8 +106,10 @@ class MultiCoreTests(unittest.TestCase):
     def test_bad_json_extra_does_not_turn_into_plain_tcp(self):
         with self.assertRaisesRegex(ValueError, "XHTTP"):
             parse_link(f"vless://{UUID}@example.com:443?type=xhttp&extra=not-json")
-        with self.assertRaisesRegex(ValueError, "не поддерживает XHTTP"):
-            build_proxy_config(self.node(), preference="singbox")
+        # XHTTP поверх не-VLESS ядро не умеет — это явный отказ, а не подмена
+        # транспорта на HTTP/H2.
+        with self.assertRaisesRegex(ValueError, "XHTTP только для VLESS"):
+            build_proxy_config({**self.node(), "protocol": "trojan", "password": "p"})
 
     def test_mihomo_default_tun_ipv4_and_subnet_collision(self):
         import ipaddress
@@ -114,9 +132,37 @@ class MultiCoreTests(unittest.TestCase):
     def test_mihomo_dns_failure_prevents_process_and_tun_start(self):
         import socket
         manager = MihomoManager()
-        with patch("engine.mihomo.socket.getaddrinfo", side_effect=socket.gaierror()), patch("engine.singbox.SingBoxManager.start") as start:
+        with patch("engine.mihomo.socket.getaddrinfo", side_effect=socket.gaierror()),                 patch.object(MihomoManager, "_check_config", return_value=True) as check:
             self.assertFalse(manager.start(build_mihomo_config(self.node())))
-        start.assert_not_called()
+        # Отказ произошёл до проверки конфигурации и до запуска процесса:
+        # TUN не создавался.
+        check.assert_not_called()
+        self.assertFalse(manager.running)
+        self.assertIsNone(manager.process)
+
+    def test_vmess_from_a_subscription_reaches_the_core_instead_of_vanishing(self):
+        nodes = parse_clash_nodes('''proxies:
+  - name: "VMess node"
+    type: vmess
+    server: example.com
+    port: 443
+    uuid: 11111111-1111-4111-8111-111111111111
+    alterId: 0
+    cipher: auto
+    tls: true
+    servername: www.example.com
+    network: ws
+    ws-opts:
+      path: /vm
+      headers: {Host: www.example.com}
+''')
+        self.assertEqual(len(nodes), 1)
+        proxy = build_proxy_config(nodes[0])["proxies"][0]
+        self.assertEqual(proxy["type"], "vmess")
+        self.assertEqual(proxy["alterId"], 0)
+        self.assertEqual(proxy["cipher"], "auto")
+        self.assertEqual(proxy["network"], "ws")
+        self.assertEqual(proxy["ws-opts"]["path"], "/vm")
 
 
 if __name__ == "__main__":

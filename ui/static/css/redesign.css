@@ -32,7 +32,7 @@ html, body {
   letter-spacing: -.005em;
 }
 
-#petals, #vignette { display: none !important; }
+#vignette { display: none !important; }
 #aurora {
   background:
     radial-gradient(820px 520px at 68% 18%, rgba(95, 79, 210, .10), transparent 66%),

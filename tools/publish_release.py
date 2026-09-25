@@ -28,8 +28,10 @@ def prepare(candidate, config, signing_key):
     data=json.loads((candidate/'update.json').read_text(encoding='utf-8'));version(data['version'])
     if report.get('version')!=data['version']:raise ValueError('Report version mismatch')
     if technical_only:
-        required=('unit_tests','singbox_dns_config','singbox_dns_interception','mihomo_six_rules',
-                  'parallel_routes','subscription_api','ui_regression','msi_msp_roundtrip')
+        required=('unit_tests','core_config_matrix','core_dns_live','xhttp_loopback',
+                  'protocols_loopback','hysteria2_loopback','mihomo_six_rules',
+                  'parallel_routes','subscription_api','ui_regression',
+                  'ui_regression_routing','msi_msp_roundtrip')
         if any(report['automated'].get(name) is not True for name in required):
             raise ValueError('Technical publication checks are incomplete')
         for base_version in data.get('patches',{}):

@@ -1,35 +1,51 @@
-"""Choose a core from transport capabilities and build its owned configuration."""
-from engine.config import build_singbox_config, DNS_PRESETS
+"""Сборка конфигурации Mihomo — единственного сетевого ядра VPN.
+
+Выбора ядра больше нет: sing-box удалён из проекта целиком, вместе с его
+генератором конфигурации, бинарником и параметром настроек. Если конкретный
+сервер не поддерживается Mihomo, это отказ с объяснением, а не тихий переход
+на другое ядро — второго ядра не существует.
+"""
+from engine.config import DNS_PRESETS, SMART_DNS_BOOTSTRAP
 from engine.transports import mihomo_xhttp
 
-CORES = ("auto", "singbox", "mihomo")
+# Протоколы, которые реально собираются в outbound Mihomo.
+SUPPORTED_PROTOCOLS = ("vless", "vmess", "ss", "trojan", "hysteria2")
+
+# Транспорты, которые ядро умеет для прокси-протоколов поверх TCP.
+SUPPORTED_NETWORKS = ("tcp", "ws", "httpupgrade", "grpc", "http", "h2", "xhttp", "splithttp")
 
 
-def choose_core(server, preference="auto"):
-    if preference not in CORES:
-        raise ValueError("Неизвестное ядро")
-    if server.get("protocol") == "hysteria2":
-        from engine.hysteria2 import validate, requires_mihomo
+def ensure_supported(server):
+    """Проверить сервер против возможностей Mihomo до запуска ядра.
+
+    Вызывается перед сборкой конфигурации и перед подключением: пользователь
+    должен получить понятный отказ, а не падение ядра с уже поднятым TUN.
+    """
+    protocol = server.get("protocol", "vless")
+    if protocol not in SUPPORTED_PROTOCOLS:
+        raise ValueError(
+            f"Протокол {protocol} не поддерживается ядром Mihomo. "
+            "Другого ядра в приложении нет."
+        )
+    if protocol == "hysteria2":
+        from engine.hysteria2 import validate
         validate(server)
-        if preference == "auto":
-            return "mihomo" if requires_mihomo(server) else "singbox"
-        if preference == "singbox" and requires_mihomo(server):
-            raise ValueError("HY2: для этих параметров выберите Авто / Mihomo")
-        return preference
-    if server.get("type") in {"xhttp", "splithttp"}:
-        if preference == "singbox":
-            raise ValueError("sing-box не поддерживает XHTTP. Выберите Авто или Mihomo.")
-        # Report an unsupported option now, with the link in hand, instead of
-        # letting the core fail to start after the TUN is already up.
+        return server
+    network = server.get("type", "tcp")
+    if network not in SUPPORTED_NETWORKS:
+        raise ValueError(f"Транспорт {network} не поддерживается ядром Mihomo")
+    if network in {"xhttp", "splithttp"}:
+        if protocol != "vless":
+            raise ValueError("Mihomo поддерживает XHTTP только для VLESS")
+        # Сообщить о неподдерживаемом параметре сейчас, пока ссылка под рукой,
+        # а не после того, как TUN уже поднят.
         mihomo_xhttp(server)
-        return "mihomo"
-    return "singbox" if preference == "auto" else preference
+    return server
 
 
 def _mihomo_proxy(server):
     proto = server.get("protocol", "vless")
-    if proto not in {"vless", "ss", "trojan", "hysteria2"}:
-        raise ValueError("Этот протокол не поддерживается интеграцией Mihomo")
+    ensure_supported(server)
     proxy = {"name": "proxy", "type": proto, "server": server["host"],
              "port": int(server["port"]), "udp": True}
     if proto == "ss":
@@ -42,6 +58,10 @@ def _mihomo_proxy(server):
             proxy["flow"] = server["flow"]
         if server.get("encryption") not in (None, "", "none"):
             proxy["encryption"] = server["encryption"]
+    elif proto == "vmess":
+        proxy.update(uuid=server["uuid"], tls=tls,
+                     cipher=server.get("method") or "auto",
+                     alterId=int(server.get("alter_id") or 0))
     else:
         proxy["password"] = server["password"]
     proxy["sni" if proto in {"trojan", "hysteria2"} else "servername"] = server.get("sni") or server["host"]
@@ -57,8 +77,11 @@ def _mihomo_proxy(server):
     if server.get("security") == "reality":
         proxy["reality-opts"] = {"public-key": server.get("pbk", ""), "short-id": server.get("sid", "")}
     if proto == "hysteria2":
-        from engine.hysteria2 import validate
-        validate(server)
+        from engine.hysteria2 import ech_opts
+        if server.get("ech"):
+            ech = ech_opts(server["ech"])
+            if ech:
+                proxy["ech-opts"] = ech
         if server.get("obfs"):
             proxy["obfs"] = server["obfs"]
             proxy["obfs-password"] = server.get("obfs_password", "")
@@ -69,8 +92,6 @@ def _mihomo_proxy(server):
     network = server.get("type", "tcp")
     path, host = server.get("path") or "/", server.get("host_header") or server.get("sni") or server["host"]
     if network in {"xhttp", "splithttp"}:
-        if proto != "vless":
-            raise ValueError("Mihomo поддерживает XHTTP для VLESS")
         proxy["network"] = "xhttp"
         proxy["xhttp-opts"] = mihomo_xhttp(server)
         if not tls and not proxy.get("alpn"):
@@ -86,9 +107,41 @@ def _mihomo_proxy(server):
     elif network in {"http", "h2"}:
         proxy["network"] = "h2"
         proxy["h2-opts"] = {"path": path, "host": [host]}
-    elif network != "tcp":
-        raise ValueError("Неподдерживаемый транспорт Mihomo: " + str(network))
     return proxy
+
+
+def _dns_block(settings, ipv6):
+    """DNS-секция Mihomo с честной обработкой Smart DNS.
+
+    Xbox/Comss подменяют ответы по реальному адресу клиента, поэтому их
+    запросы обязаны уходить напрямую, а не через прокси; имя DoT-сервера
+    резолвится бутстрапом по его же raw IP, иначе получается петля.
+    """
+    preset = settings.get("dns_preset", "cf_google")
+    if preset == "custom":
+        raw = settings.get("custom_dns") or []
+    else:
+        raw = DNS_PRESETS.get(preset, DNS_PRESETS["cf_google"])["remote"]
+    nameserver = [x.removeprefix("udp://") for x in (raw or DNS_PRESETS["cf_google"]["remote"])]
+    bootstrap = SMART_DNS_BOOTSTRAP.get(preset)
+    default_nameserver = [bootstrap.removeprefix("udp://")] if bootstrap else ["1.1.1.1", "8.8.8.8"]
+    dns = {
+        "enable": True,
+        "ipv6": ipv6,
+        "enhanced-mode": "fake-ip" if settings.get("fakedns") else "redir-host",
+        "fake-ip-range": "198.18.0.1/16" if settings.get("fakedns") else "172.19.0.1/30",
+        "nameserver": nameserver,
+        # Адрес самого VPN-сервера резолвится обычным публичным DNS в обход
+        # туннеля: Smart DNS здесь не нужен, а петля — нужна ещё меньше.
+        "proxy-server-nameserver": ["1.1.1.1", "8.8.8.8"],
+        # Бутстрап имени DoT-сервера. Для Smart DNS это его же raw IP:
+        # резолвить xbox-dns.ru через сам xbox-dns.ru нельзя.
+        "default-nameserver": default_nameserver,
+        # DNS не идёт через правила маршрутизации: Smart DNS обязан видеть
+        # реальный адрес клиента, иначе подмена ответов не срабатывает.
+        "respect-rules": False,
+    }
+    return dns
 
 
 def build_mihomo_config(server, socks_port=1080, http_port=8080, clash_port=9090,
@@ -97,8 +150,7 @@ def build_mihomo_config(server, socks_port=1080, http_port=8080, clash_port=9090
     if settings.get("mux") and proxy["type"] != "hysteria2" and proxy.get("network") != "xhttp" and not proxy.get("flow"):
         proxy["smux"] = {"enabled": True, "protocol": "smux", "max-connections": 4}
     preset = settings.get("dns_preset", "cf_google")
-    dns = settings.get("custom_dns") if preset == "custom" else DNS_PRESETS.get(preset, DNS_PRESETS["cf_google"])["remote"]
-    dns = [x.removeprefix("udp://") for x in (dns or DNS_PRESETS["cf_google"]["remote"])]
+    ipv6 = settings.get("preferred_ip", "ipv4") != "ipv4" and preset not in {"xbox", "xbox_dot"}
     rules = ["IP-CIDR,127.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
              "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
              "IP-CIDR6,fc00::/7,DIRECT,no-resolve", "IP-CIDR6,fe80::/10,DIRECT,no-resolve"]
@@ -110,7 +162,6 @@ def build_mihomo_config(server, socks_port=1080, http_port=8080, clash_port=9090
         if routing_mode in {"whitelist", "blacklist"}:
             rules.append(f"PROCESS-NAME,{exe}," + ("proxy" if routing_mode == "whitelist" else "DIRECT"))
     rules.append("MATCH," + ("DIRECT" if routing_mode == "whitelist" else "proxy"))
-    ipv6 = settings.get("preferred_ip", "ipv4") != "ipv4" and preset not in {"xbox", "xbox_dot"}
     config = {
         "socks-port": socks_port, "port": http_port, "allow-lan": bool(settings.get("allow_lan")),
         "bind-address": "*" if settings.get("allow_lan") else "127.0.0.1",
@@ -121,10 +172,7 @@ def build_mihomo_config(server, socks_port=1080, http_port=8080, clash_port=9090
                 "auto-route": True, "auto-detect-interface": True,
                 "strict-route": bool(settings.get("kill_switch")), "mtu": 1500,
                 "dns-hijack": ["any:53", "tcp://any:53"]},
-        "dns": {"enable": True, "ipv6": ipv6, "enhanced-mode": "fake-ip" if settings.get("fakedns") else "redir-host",
-                "fake-ip-range": "198.18.0.1/16" if settings.get("fakedns") else "172.19.0.1/30", "nameserver": dns,
-                "proxy-server-nameserver": ["1.1.1.1", "8.8.8.8"],
-                "default-nameserver": ["1.1.1.1", "8.8.8.8"]},
+        "dns": _dns_block(settings, ipv6),
         "proxies": [proxy], "rules": rules,
     }
     auth = settings.get("socks5_auth")
@@ -134,7 +182,5 @@ def build_mihomo_config(server, socks_port=1080, http_port=8080, clash_port=9090
     return config
 
 
-def build_proxy_config(server, preference="auto", **settings):
-    if choose_core(server, preference) == "mihomo":
-        return build_mihomo_config(server, **settings)
-    return build_singbox_config(server, **settings)
+def build_proxy_config(server, **settings):
+    return build_mihomo_config(server, **settings)

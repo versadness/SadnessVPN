@@ -32,6 +32,11 @@ def api_refresh_group():
     return _start_subscription_update(data=data, refresh=True)
 
 
+@bp.route("/api/groups/refresh-all", methods=["POST"])
+def api_refresh_all_groups():
+    return _start_subscription_refresh_all()
+
+
 @bp.route("/api/groups/rename", methods=["POST"])
 def api_rename_group():
     data = request.get_json(silent=True) or {}
@@ -59,11 +64,12 @@ def api_delete_group():
     if _app_settings["selected_group"] == gid:
         _app_settings["selected_group"] = None
         _app_settings["selected_index"] = None
-        _app_settings["selected_group"] = None
-        _app_settings["selected_index"] = None
     profile_state.save_proxy_groups()
     _save_settings(_app_settings)
     _broadcast_groups()
+    # Маршруты, указывавшие на серверы удалённой группы, переводим на
+    # основной VPN — иначе подключение упадёт при следующей попытке.
+    _repair_saved_routes("удаление группы серверов")
     return jsonify({"ok": True})
 
 
@@ -108,6 +114,37 @@ def api_select():
                     return jsonify(ok=False, error="Не удалось сохранить выбранный сервер"), 500
                 return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Неверный индекс"})
+
+
+@bp.route("/api/servers/probe", methods=["POST"])
+def api_probe_server():
+    """Проверить один сервер настоящим запросом через outbound Mihomo.
+
+    Открытый порт — не подтверждение работы транспорта, поэтому состояния
+    «порт доступен» и «соединение подтверждено» здесь разные. Проверяемый
+    сервер поднимается изолированно: запрос не может уйти через основной
+    сервер или напрямую.
+    """
+    from engine.server_probe import probe
+
+    data = request.get_json(silent=True) or {}
+    gid, index = data.get("group_id"), data.get("index")
+    if not isinstance(index, int):
+        return jsonify(ok=False, error="Не указан сервер"), 400
+    for group in profile_state.groups:
+        if group.get("id") != gid:
+            continue
+        servers = group.get("servers", [])
+        if not 0 <= index < len(servers):
+            break
+        try:
+            result = probe(servers[index])
+        except OSError as exc:
+            return jsonify(ok=False, error=f"Проверка не запустилась: {exc}"), 500
+        _log(f"Проверка сервера «{servers[index].get('remark', '')}»: {result['label']}",
+             "ok" if result["state"] == "connected" else "warn")
+        return jsonify(ok=True, **result)
+    return jsonify(ok=False, error="Сервер не найден"), 404
 
 
 @bp.route("/api/servers/delete", methods=["POST"])

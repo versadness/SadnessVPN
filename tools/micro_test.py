@@ -23,8 +23,11 @@ def main():
         if Path(name).name!=name or digest(args.candidate/name)!=expected:raise ValueError('Candidate changed; previous tests no longer apply')
     checks={
         'unit_tests':[sys.executable,'-m','unittest','discover','-s','tests','-q'],
-        'singbox_dns_config':[sys.executable,'tools/test_dns_config_live.py'],
-        'singbox_dns_interception':[sys.executable,'tools/test_dns_intercept_live.py'],
+        'core_config_matrix':[sys.executable,'tools/test_core_config_live.py'],
+        'core_dns_live':[sys.executable,'tools/test_dns_live.py'],
+        'xhttp_loopback':[sys.executable,'tools/test_xhttp_loopback.py'],
+        'protocols_loopback':[sys.executable,'tools/test_protocols_loopback.py'],
+        'hysteria2_loopback':[sys.executable,'tools/test_hy2_loopback.py'],
         'mihomo_six_rules':[sys.executable,'tools/test_rule_config_live.py'],
         'parallel_routes':[sys.executable,'tools/test_multi_route_live.py'],
         'subscription_api':[sys.executable,'tools/regression_212.py'],

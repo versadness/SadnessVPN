@@ -43,17 +43,16 @@ class PeMachineParsingTests(unittest.TestCase):
 
 class RuntimePairValidationTests(unittest.TestCase):
     @staticmethod
-    def _write_all(bin_dir: Path, sing_box_machine=PE_MACHINE_AMD64):
+    def _write_all(bin_dir: Path, core_machine=PE_MACHINE_AMD64):
         awg_dir = bin_dir.joinpath("amneziawg")
         awg_dir.mkdir()
-        _write_minimal_pe(bin_dir.joinpath("sing-box.exe"), sing_box_machine)
-        _write_minimal_pe(bin_dir.joinpath("mihomo.exe"), PE_MACHINE_AMD64)
+        _write_minimal_pe(bin_dir.joinpath("mihomo.exe"), core_machine)
         _write_minimal_pe(bin_dir.joinpath("wintun.dll"), PE_MACHINE_AMD64)
         _write_minimal_pe(awg_dir.joinpath("amneziawg.exe"), PE_MACHINE_AMD64)
         _write_minimal_pe(awg_dir.joinpath("awg.exe"), PE_MACHINE_AMD64)
         _write_minimal_pe(awg_dir.joinpath("wintun.dll"), PE_MACHINE_AMD64)
 
-    def test_accepts_amd64_sing_box_and_wintun(self):
+    def test_accepts_amd64_core_and_wintun(self):
         with tempfile.TemporaryDirectory() as root:
             bin_dir = Path(root)
             self._write_all(bin_dir)
@@ -63,7 +62,6 @@ class RuntimePairValidationTests(unittest.TestCase):
             self.assertEqual(
                 machines,
                 {
-                    "sing-box.exe": PE_MACHINE_AMD64,
                     "mihomo.exe": PE_MACHINE_AMD64,
                     "wintun.dll": PE_MACHINE_AMD64,
                     os.path.join("amneziawg", "amneziawg.exe"): PE_MACHINE_AMD64,
@@ -72,16 +70,25 @@ class RuntimePairValidationTests(unittest.TestCase):
                 },
             )
 
-    def test_rejects_x86_sing_box_with_amd64_wintun(self):
+    def test_rejects_x86_core_with_amd64_wintun(self):
         with tempfile.TemporaryDirectory() as root:
             bin_dir = Path(root)
-            self._write_all(bin_dir, sing_box_machine=PE_MACHINE_I386)
+            self._write_all(bin_dir, core_machine=PE_MACHINE_I386)
 
             with self.assertRaisesRegex(
                 RuntimeArchitectureError,
-                r"sing-box\.exe=0x014C",
+                r"mihomo\.exe=0x014C",
             ):
                 validate_runtime_binaries(os.fspath(bin_dir))
+
+    def test_sing_box_is_no_longer_required_by_the_package(self):
+        with tempfile.TemporaryDirectory() as root:
+            bin_dir = Path(root)
+            self._write_all(bin_dir)
+
+            machines = validate_runtime_binaries(os.fspath(bin_dir))
+
+            self.assertNotIn("sing-box.exe", machines)
 
 
 if __name__ == "__main__":

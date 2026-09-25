@@ -25,10 +25,8 @@ def assignments(apps, groups):
     return result
 
 
-def build_multi_route_config(server, routes, preference="auto", **settings):
+def build_multi_route_config(server, routes, **settings):
     from engine.core_config import build_mihomo_config, _mihomo_proxy
-    if preference not in {"auto", "mihomo"}:
-        raise ValueError("Разные серверы для приложений требуют ядро Авто / Mihomo")
     config = build_mihomo_config(server, **settings)
     if any(r.get('match', '').startswith(('GEOSITE,', 'GEOIP,')) for r in routes):
         config['geodata-mode'] = True

@@ -70,12 +70,23 @@ class UiContractTests(unittest.TestCase):
         self.assertIn('/static/flags/4x3/${safe}.svg', self.javascript)
         self.assertIn("Intl.DisplayNames", self.javascript)
 
-    def test_rule_dialog_and_searchable_process_picker_are_present(self):
+    def test_rule_dialog_uses_the_single_shared_process_picker(self):
+        picker = (ROOT / "ui/static/js/process-picker.js").read_text(encoding="utf-8")
         self.assertIn('id="ruleModal"', self.html)
-        self.assertIn('id="processModal"', self.html)
-        self.assertIn('id="processSearch"', self.html)
-        self.assertIn("apiGet('/api/apps/processes'", self.javascript)
-        self.assertIn("function chooseProcess", self.javascript)
+        self.assertIn("process-picker.js", self.html)
+        self.assertIn("openProcessPicker(this)", self.html)
+        # Одна реализация и один источник данных: старая модалка processModal
+        # со своим списком из /api/apps/processes больше не существует.
+        self.assertNotIn('id="processModal"', self.html)
+        self.assertNotIn("/api/apps/processes", self.javascript)
+        self.assertIn("window.openProcessPicker", picker)
+        self.assertIn("/api/apps/catalog", picker)
+        self.assertIn("dialog.showModal()", picker)
+        # Правило привязывается к имени EXE, а не к PID или полному пути:
+        # оба меняются между запусками приложения.
+        code = re.sub(r"(?m)^\s*(//|\*|/\*).*$", "", picker)
+        for forbidden in (".pid", "'pid'", '"pid"', "exe_path", "cmdline", "command_line"):
+            self.assertNotIn(forbidden, code)
 
     def test_dns_dropdown_raises_its_settings_row(self):
         self.assertIn(".set-row.dd-open", self.styles)

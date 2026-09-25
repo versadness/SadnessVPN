@@ -72,7 +72,6 @@ html.shell-glass body::before {
 
 html.shell-glass #aurora,
 html.shell-glass #vignette,
-html.shell-glass #petals,
 html.shell-glass #customWallpaper {
   display: none !important;
 }

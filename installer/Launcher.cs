@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Diagnostics;
+using System.Net;
 using System.Security.Cryptography;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -53,7 +54,7 @@ internal static class Launcher {
     static string[] required = {
         "runtime/SadnessVPN.exe", "runtime/_internal/python311.dll", "runtime/_internal/base_library.zip",
         "runtime/_internal/ui/templates/index.html",
-        "runtime/_internal/bin/sing-box.exe", "runtime/_internal/bin/mihomo.exe",
+        "runtime/_internal/bin/mihomo.exe",
         "runtime/_internal/bin/wintun.dll",
         "electron/Sadness VPN.exe", "electron/resources/app.asar"
     };
@@ -81,6 +82,34 @@ internal static class Launcher {
         if (count < required.Length) throw new IOException("Неполный манифест компонентов");
         Log("Full integrity check passed: " + count + " files");
     }
+    // Повторный клик по ярлыку не должен поднимать второе приложение.
+    // Бэкенд уже работающего экземпляра отвечает на 127.0.0.1:45678 и сам
+    // просит оболочку показать окно, даже если оно свёрнуто в трей.
+    // Возвращает true, только когда оболочка подтвердила, что она на связи.
+    static bool ActivateRunningInstance() {
+        try {
+            var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:45678/api/shell/show");
+            request.Method = "POST";
+            request.ContentType = "application/json";
+            request.ContentLength = 0;
+            request.Timeout = 3000;
+            request.ReadWriteTimeout = 3000;
+            request.Proxy = null;
+            using (var response = (HttpWebResponse)request.GetResponse())
+            using (var stream = response.GetResponseStream())
+            using (var reader = new StreamReader(stream)) {
+                string body = reader.ReadToEnd();
+                if (response.StatusCode != HttpStatusCode.OK) return false;
+                // Ответ короткий и строго наш; полноценный JSON-разбор не нужен.
+                return body.Replace(" ", "").Contains("\"attached\":true");
+            }
+        } catch (Exception ex) {
+            // Штатный первый запуск: активировать нечего. Это не ошибка.
+            Log("No other instance found - starting a new one (" + ex.GetType().Name + ")");
+            return false;
+        }
+    }
+
     [STAThread]
     static int Main(string[] args) {
         quiet = Array.IndexOf(args, "--quiet") >= 0;
@@ -96,6 +125,10 @@ internal static class Launcher {
                     MessageBox.Show("Проверка компонентов пройдена. Результат записан в launcher.log.\n\n" + logDir, "Sadness VPN");
                     Process.Start(new ProcessStartInfo(logDir) { UseShellExecute = true });
                 }
+                return 0;
+            }
+            if (ActivateRunningInstance()) {
+                Log("Existing instance activated without starting a second shell");
                 return 0;
             }
             string eventName = "Local\\SadnessVPN.Startup." + Guid.NewGuid().ToString("N");

@@ -1,6 +1,9 @@
 """Subscription transport and metadata. Never expose response bodies or URLs in errors."""
 import base64
+import gzip
+import io
 import re
+import zlib
 import socket
 import time
 import urllib.error
@@ -9,10 +12,15 @@ import urllib.request
 from engine.app_meta import subscription_headers
 
 MAX_BYTES = 8 * 1024 * 1024
+GZIP_MAGIC = bytes((0x1F, 0x8B))
 
 
 class SubscriptionError(ValueError):
     pass
+
+
+class SubscriptionNotModified(SubscriptionError):
+    """HTTP 304: у провайдера ничего не изменилось. Это не пустая подписка."""
 
 
 class SubscriptionServers(list):
@@ -62,8 +70,10 @@ def download_subscription(url, hwid=""):
             body = resp.read(MAX_BYTES + 1)
             if len(body) > MAX_BYTES:
                 raise SubscriptionError("Подписка превышает допустимый размер 8 МБ.")
-            return body, metadata
+            return _decompress(body, resp.headers.get("Content-Encoding", "")), metadata
     except urllib.error.HTTPError as exc:
+        if exc.code == 304:
+            raise SubscriptionNotModified("Подписка не изменилась с прошлого обновления.") from None
         check_device_headers(exc.headers)
         raise SubscriptionError(f"Провайдер вернул HTTP {exc.code}. Проверьте доступность и срок действия подписки.") from None
     except (TimeoutError, socket.timeout):
@@ -72,6 +82,24 @@ def download_subscription(url, hwid=""):
         if isinstance(exc.reason, (TimeoutError, socket.timeout)):
             raise SubscriptionError("Сервер подписки не ответил за 25 секунд. Проверьте сеть и повторите обновление.") from None
         raise SubscriptionError("Не удалось загрузить подписку: ошибка сети, DNS или TLS. Проверьте доступность сервиса.") from None
+
+
+def _decompress(body, encoding):
+    """Некоторые панели сжимают ответ, даже если клиент не просил."""
+    encoding = (encoding or "").lower().strip()
+    try:
+        if encoding == "gzip" or body[:2] == GZIP_MAGIC:
+            with gzip.GzipFile(fileobj=io.BytesIO(body)) as handle:
+                data = handle.read(MAX_BYTES + 1)
+        elif encoding == "deflate":
+            data = zlib.decompressobj().decompress(body, MAX_BYTES + 1)
+        else:
+            return body
+    except (OSError, zlib.error, EOFError):
+        raise SubscriptionError("Ответ провайдера повреждён: не удалось распаковать сжатые данные.") from None
+    if len(data) > MAX_BYTES:
+        raise SubscriptionError("Подписка превышает допустимый размер 8 МБ.")
+    return data
 
 
 def decode_subscription(body):

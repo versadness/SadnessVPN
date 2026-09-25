@@ -10,6 +10,11 @@ import subprocess
 from pathlib import Path
 
 
+# Плейсхолдеры, которые сознательно переживают импорт: пути подставляются на
+# запуске, а игровые диапазоны портов — из пользовательской настройки.
+KEPT_PLACEHOLDERS = ("%BIN%", "%LISTS%", "%GameFilter%", "%GameFilterTCP%", "%GameFilterUDP%")
+
+
 PROFILE_SPECS = (
     ("general.bat", "flowseal_general", "General", "Основная", "Основная рекомендуемая стратегия Flowseal"),
     ("general (ALT).bat", "flowseal_alt", "ALT", "ALT", "Альтернативная стратегия Flowseal · вариант 1"),
@@ -55,12 +60,20 @@ def _command_args(batch_file: Path) -> tuple[str, ...]:
     )
     args = []
     for token in tokens[executable_index + 1 :]:
-        token = token.replace("%GameFilterTCP%", "12")
-        token = token.replace("%GameFilterUDP%", "12")
+        # %GameFilterTCP% / %GameFilterUDP% намеренно остаются плейсхолдерами:
+        # раньше здесь подставлялась «12» — служебный порт upstream, который
+        # означает «игровой фильтр выключен». Из-за этого сгенерированные
+        # профили никогда не ловили игровой трафик. Реальные диапазоны теперь
+        # подставляет engine/zapret.py при сборке команды запуска.
         token = token.replace("^!", "!")
         args.append(token)
 
-    unresolved = [arg for arg in args if "%" in arg and "%BIN%" not in arg and "%LISTS%" not in arg]
+    unresolved = [
+        arg
+        for arg in args
+        if "%" in arg
+        and not any(keep in arg for keep in KEPT_PLACEHOLDERS)
+    ]
     if unresolved:
         raise ValueError(f"Unresolved variables in {batch_file.name}: {unresolved}")
     if any("^" in arg for arg in args):

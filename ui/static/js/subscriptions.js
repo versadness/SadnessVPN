@@ -9,6 +9,21 @@ function subscriptionDate(epoch) {
   const date = new Date(Number(epoch) * 1000);
   return epoch > 0 && Number.isFinite(date.getTime()) ? date.toLocaleDateString('ru-RU') : 'Не указан';
 }
+function subscriptionMoment(epoch) {
+  const date = new Date(Number(epoch) * 1000);
+  return epoch > 0 && Number.isFinite(date.getTime()) ? date.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
+}
+function subscriptionCounts(g, m) {
+  const stored = Number(g.count ?? g.servers?.length ?? 0);
+  if (!Number.isFinite(m.received) || m.received <= 0) return String(stored);
+  return `${stored} · принято ${Number(m.accepted) || 0} из ${m.received}`;
+}
+function subscriptionRejected(m) {
+  const items = Array.isArray(m.rejected) ? m.rejected : [];
+  if (!items.length) return '';
+  const rows = items.slice(0, 20).map(item => `<li><b>${esc(item.name || 'узел')}</b> — ${esc(item.reason || 'не поддерживается')}</li>`).join('');
+  return `<details class="subscription-rejected"><summary>Не импортировано: ${items.length}</summary><ul>${rows}</ul></details>`;
+}
 function renderSubscriptions() {
   const list = document.getElementById('subscriptionList');
   if (!list) return;
@@ -25,9 +40,10 @@ function renderSubscriptions() {
     const state = m.error ? 'Ошибка обновления' : expired ? 'Срок истёк' : m.updated_at ? 'Обновлена' : 'Нужно обновить';
     return `<article class="subscription-card glass">
       <div class="subscription-card-head"><span class="subscription-mark" aria-hidden="true">${esc(Array.from(g.name || 'S')[0])}</span><div class="subscription-heading"><h2>${esc(g.name)}</h2><p>${esc(m.provider_name && m.provider_name !== g.name ? m.provider_name : g.kind === 'wg' ? 'WireGuard / AmneziaWG' : 'VPN-подписка')}</p></div><span class="subscription-status ${m.error || expired ? 'warn' : ''}">${state}</span></div>
-      <div class="subscription-facts"><div><span>Срок действия</span><strong>${m.expire > 0 ? 'До ' + subscriptionDate(m.expire) : 'Не указан провайдером'}</strong></div><div><span>Серверов</span><strong>${Number(g.count ?? g.servers?.length ?? 0)}</strong></div><div><span>Последнее обновление</span><strong>${m.updated_at ? subscriptionDate(m.updated_at) : 'Ещё не обновлялась'}</strong></div></div>
+      <div class="subscription-facts"><div><span>Срок действия</span><strong>${m.expire > 0 ? 'До ' + subscriptionDate(m.expire) : 'Не указан провайдером'}</strong></div><div><span>Серверов</span><strong>${esc(subscriptionCounts(g, m))}</strong></div><div><span>Последнее успешное обновление</span><strong>${m.updated_at ? subscriptionMoment(m.updated_at) : 'Ещё не обновлялась'}</strong></div><div><span>Последняя попытка</span><strong>${m.checked_at ? subscriptionMoment(m.checked_at) : m.updated_at ? subscriptionMoment(m.updated_at) : '—'}</strong></div></div>
       <div class="subscription-usage"><span>Трафик подписки</span><strong>${knownUsage ? fmtBytes(used) + (m.total > 0 ? ' / ' + fmtBytes(m.total) : ' · лимит не указан') : 'Не указан провайдером'}</strong>${percent !== null ? `<progress max="100" value="${percent}" aria-label="Использованный трафик подписки"></progress>` : ''}</div>
-      ${m.error ? `<p class="subscription-error" role="status">${esc(m.error)}</p>` : ''}
+      ${m.error ? `<p class="subscription-error" role="status">${esc(m.error)}${m.updated_at ? ' Используются серверы от ' + esc(subscriptionMoment(m.updated_at)) + '.' : ''}</p>` : ''}
+      ${subscriptionRejected(m)}
       <div class="subscription-actions"><button class="btn btn-primary" data-sub-action="refresh" data-id="${esc(g.id)}" data-kind="${g.kind}" ${disabled ? 'disabled' : ''}>Обновить</button><button class="btn" data-sub-action="rename" data-id="${esc(g.id)}" data-kind="${g.kind}" ${disabled ? 'disabled' : ''}>Переименовать</button><button class="btn subscription-delete" data-sub-action="delete" data-id="${esc(g.id)}" data-kind="${g.kind}" ${disabled ? 'disabled' : ''}>Удалить</button></div>
     </article>`;
   }).join('') || '<div class="empty"><b>Подписки появятся здесь</b><p>Вставьте ссылку из бота или личного кабинета VPN-сервиса выше.</p></div>';

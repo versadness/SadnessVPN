@@ -2,27 +2,27 @@
 // subscription labels are always text, never executable markup.
 (function(){
   const page=document.getElementById('page-routing');
-  const overview=document.createElement('section');overview.className='route-panel';overview.id='routeOverview';
   const apps=document.createElement('section');apps.className='route-panel';apps.id='routeApps';
-  for(const selector of ['.awg-limit','.route-visual','.mode-cards','.preset-card']){
-    const element=page.querySelector(selector);if(element)overview.append(element);
-  }
-  for(const selector of ['.rules-bar','.control-row','.scroll']){
+  // «Общий маршрут» больше не отдельная вкладка: выбор режима стоит прямо над
+  // списком правил, потому что это одно решение, а не два разных экрана.
+  for(const selector of ['.awg-limit','.mode-cards','.rules-bar','.control-row','.scroll']){
     const element=page.querySelector(selector);if(element)apps.append(element);
   }
   const nav=document.createElement('nav');nav.className='route-tabs';nav.setAttribute('aria-label','Разделы маршрутизации');
-  for(const [name,label] of [['apps','Приложения и серверы'],['overview','Общий маршрут']]){
-    const button=document.createElement('button');button.type='button';button.textContent=label;
-    button.addEventListener('click',()=>{
-      overview.hidden=name!=='overview';apps.hidden=name!=='apps';
-      for(const child of nav.children)child.setAttribute('aria-pressed',String(child===button));
-    });nav.append(button);
-  }
+  const appsTab=document.createElement('button');appsTab.type='button';appsTab.textContent='Приложения и серверы';
+  appsTab.dataset.panel='routeApps';nav.append(appsTab);
+  // Обработчик делегирован и живёт здесь: этот файл загружается раньше
+  // routing-editor.js, который добавляет свою вкладку тем же data-panel.
+  nav.addEventListener('click',event=>{
+    const button=event.target.closest('button');if(!button||!button.dataset.panel)return;
+    for(const panel of page.querySelectorAll(':scope > .route-panel'))panel.hidden=panel.id!==button.dataset.panel;
+    for(const child of nav.children)child.setAttribute('aria-pressed',String(child===button));
+  });
   const intro=document.createElement('div');intro.className='route-intro glass';
   const title=document.createElement('strong');title.textContent='Каждому приложению — свой маршрут';
-  const note=document.createElement('p');note.textContent='Выберите основной маршрут, прямое соединение или сервер из подписки. Разные серверы работают одновременно через Авто / Mihomo. Меняйте назначения при отключённом VPN.';
+  const note=document.createElement('p');note.textContent='Выберите режим, затем задайте отдельные правила для приложений, доменов и адресов. Разные серверы работают одновременно через Авто / Mihomo. Меняйте назначения при отключённом VPN.';
   intro.append(title,note);apps.prepend(intro);
-  page.append(nav,apps,overview);nav.firstElementChild.click();
+  page.append(nav,apps);appsTab.click();
   const original=renderRules;
   renderRules=function(){
     original();

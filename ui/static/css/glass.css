@@ -133,7 +133,29 @@ body {
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important;transition:none!important;scroll-behavior:auto!important; } }
 
 /* Integrated desktop chrome and overflow containment. */
-:root { color-scheme:dark; scrollbar-color:#68557e #161121; scrollbar-width:thin; }
+:root { color-scheme:dark; }
+
+/* Скроллбары. scrollbar-width/scrollbar-color здесь не задаём намеренно:
+   присутствие любого из них отключает ::-webkit-scrollbar-* на элементе и на
+   всех потомках, и Chromium рисует системный скроллбар со стрелками. */
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:#68557e; border-radius:8px; }
+::-webkit-scrollbar-thumb:hover { background:#8570a0; }
+::-webkit-scrollbar-corner { background:transparent; }
+/* Кнопки-стрелки. Одного display:none мало: Chromium держит под них место,
+   пока не обнулены размеры, и рисует :start/:end по отдельности. */
+::-webkit-scrollbar-button,
+::-webkit-scrollbar-button:start,
+::-webkit-scrollbar-button:end,
+::-webkit-scrollbar-button:vertical:start,
+::-webkit-scrollbar-button:vertical:end,
+::-webkit-scrollbar-button:horizontal:start,
+::-webkit-scrollbar-button:horizontal:end,
+::-webkit-scrollbar-button:single-button,
+::-webkit-scrollbar-button:double-button {
+  display:none; width:0; height:0; background:transparent;
+}
 .custom-frame .titlebar { height:44px;min-height:44px;padding:0 0 0 17px;background:linear-gradient(100deg,#20182f,#120e20);border-bottom:1px solid #ae8ade24;user-select:none; }
 .custom-frame .titlebar { app-region:drag; }
 .custom-frame .win-btns { app-region:no-drag; }

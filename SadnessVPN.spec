@@ -6,7 +6,7 @@ sys.path.insert(0, SPECPATH)
 from engine.runtime_validation import validate_runtime_binaries
 
 
-# Fail before packaging if sing-box and Wintun cannot run in one x64 process.
+# Fail before packaging if Mihomo and Wintun cannot run in one x64 process.
 validate_runtime_binaries(os.path.join(SPECPATH, 'bin'))
 
 # WebView2 и WinForms-обвязка окна убраны начиная с 2.0.26: интерфейс рисует
@@ -63,7 +63,10 @@ coll = COLLECT(
     a.datas,
     # Сторонние движки и драйверы нужны приложению во время выполнения.
     # webview2 исключён: Chromium теперь приходит внутри Electron.
-    Tree('bin', prefix='bin', excludes=['backups', 'webview2', '*.bat', '*.backup', 'xray.exe']),
+    # sing-box.exe исключён начиная с 3.0.11: ядро удалено из проекта,
+    # и бинарник не должен попадать ни в сборку, ни в установленную версию.
+    Tree('bin', prefix='bin', excludes=['backups', 'webview2', '*.bat', '*.backup',
+                                        'xray.exe', 'sing-box.exe']),
     strip=False,
     upx=False,
     upx_exclude=[],

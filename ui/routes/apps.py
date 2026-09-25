@@ -142,9 +142,15 @@ def api_app_destination():
     from engine.app_routes import assignments
     try:
         assignments([{**rule, "enabled": True}], profile_state.groups)
-        save_apps(candidate)
-    except (ValueError, OSError) as exc:
+    except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 400
+    accepted, reason = verify_with_core(candidate)
+    if not accepted:
+        return jsonify(ok=False, error=reason), 422
+    try:
+        save_apps(candidate)
+    except OSError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
     profile_state.apps_config.clear()
     profile_state.apps_config.update(candidate)
     _broadcast({"type": "apps_config", "config": profile_state.apps_config})
@@ -161,9 +167,17 @@ def api_routing_rules():
     try:
         candidate = copy.deepcopy(profile_state.apps_config)
         candidate["rules"] = validate_rules((request.get_json(silent=True) or {}).get("rules"), profile_state.groups)
-        save_apps(candidate)
-    except (ValueError, OSError) as exc:
+    except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 400
+    # Проверка ядром до записи: прежняя рабочая конфигурация остаётся на диске,
+    # пока Mihomo не принял новую.
+    accepted, reason = verify_with_core(candidate)
+    if not accepted:
+        return jsonify(ok=False, error=reason), 422
+    try:
+        save_apps(candidate)
+    except OSError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
     profile_state.apps_config.clear()
     profile_state.apps_config.update(candidate)
     _broadcast({"type": "apps_config", "config": profile_state.apps_config})

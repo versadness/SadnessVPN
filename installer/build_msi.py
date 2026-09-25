@@ -97,6 +97,77 @@ def add_ui(db):
     files.pushbutton("Exit", 280, 195, 70, 22, 3, "Cancel", "Retry").event("EndDialog", "Exit")
 
 
+# Каталоги, входившие в пакет Electron до 3.0.6. Обновление поверх прежней
+# версии оставило бы их на диске: msiexec удаляет только то, что перечислено
+# в RemoveFile, — на 3.0.5 это 62 МБ мусора.
+_KOFFI = Path("electron/resources/app.asar.unpacked/node_modules/koffi")
+_STALE_KOFFI_PLATFORMS = (
+    "darwin_arm64", "darwin_x64", "freebsd_arm64", "freebsd_ia32", "freebsd_x64",
+    "linux_arm64", "linux_armhf", "linux_ia32", "linux_loong64", "linux_riscv64d",
+    "linux_x64", "musl_arm64", "musl_x64", "openbsd_ia32", "openbsd_x64",
+    "win32_arm64", "win32_ia32",
+)
+# Вложенные каталоги идут раньше родительских: пустой каталог удаляется только
+# после того, как из него вынесены файлы и подкаталоги.
+_STALE_KOFFI_TREES = ("doc", "src/cnoke/assets", "src/cnoke/src", "src/cnoke",
+                      "src/koffi/src", "src/koffi/tools", "src/koffi", "src")
+
+
+def _short_name(name, used):
+    base = re.sub(r"[^A-Z0-9]", "", name.upper())[:6] or "DIR"
+    for index in range(1, 1000):
+        candidate = base + "~" + str(index)
+        if candidate not in used:
+            used.add(candidate)
+            return candidate
+    raise RuntimeError("Не удалось подобрать короткое имя каталога: " + name)
+
+
+def stale_electron_removals(db, directories, component):
+    """RemoveFile-строки для того, что выведено из пакета Electron в 3.0.6.
+
+    RemoveFiles в стандартной последовательности выполняется перед InstallFiles,
+    поэтому маска *.pak безопасна: нужные ru.pak и en-US.pak ставятся заново из
+    пакета в той же транзакции.
+    """
+    rows, nodes, shorts = [], {}, {}
+
+    def node_for(path, parent_logical):
+        if path in nodes:
+            return nodes[path]
+        logical = ident("D", "stale/" + path.as_posix())
+        used = shorts.setdefault(parent_logical, set())
+        add_data(db, "Directory",
+                 [(logical, parent_logical, _short_name(path.name, used) + "|" + path.name)])
+        nodes[path] = logical
+        return logical
+
+    locales = directories.get(Path("electron/locales"))
+    if locales:
+        rows.append(("RemoveStaleLocales", component, "*.pak", locales.logical, 1))
+
+    targets = []
+    builds = directories.get(_KOFFI / "build" / "koffi")
+    if builds:
+        targets += [(_KOFFI / "build" / "koffi" / name, builds.logical)
+                    for name in _STALE_KOFFI_PLATFORMS]
+    root = directories.get(_KOFFI)
+    if root:
+        for tree in _STALE_KOFFI_TREES:
+            parts = Path(tree).parts
+            parent = root.logical
+            for level in range(1, len(parts)):
+                parent = node_for(_KOFFI.joinpath(*parts[:level]), parent)
+            targets.append((_KOFFI / tree, parent))
+
+    for path, parent_logical in targets:
+        logical = node_for(path, parent_logical)
+        key = ident("R", path.as_posix())
+        rows.append((key + "F", component, "*", logical, 1))
+        rows.append((key + "D", component, None, logical, 1))
+    return rows
+
+
 def main():
     source = ROOT / "dist" / ("SadnessVPN-v" + APP_VERSION + "-installer-runtime") / "SadnessVPN"
     stage = ROOT / "build" / ("installer-stage-" + APP_VERSION)
@@ -240,7 +311,9 @@ def main():
     # A minor MSI upgrade does not remove obsolete files automatically.
     # Remove only the retired bundled executable, never another Xray installation.
     legacy_bin = directories[Path('runtime/_internal/bin')].logical
-    add_data(db, "RemoveFile", [("RemoveLegacyXray", launcher_component, "xray.exe", legacy_bin, 1)])
+    add_data(db, "RemoveFile",
+             [("RemoveLegacyXray", launcher_component, "xray.exe", legacy_bin, 1)]
+             + stale_electron_removals(db, directories, launcher_component))
     # Commit action: cache the exact administrator-approved offline setup source.
     # Never runs on patching, repair or removal; those paths retain their cache.
     add_data(db,'CustomAction',[('CacheRecoveryMsi',3602,updater_file,'--cache-installed "[OriginalDatabase]"')])

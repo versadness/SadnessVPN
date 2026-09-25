@@ -77,7 +77,12 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
-      backgroundThrottling: false,
+      // Приложение живёт в трее часами. Без троттлинга скрытое окно
+      // продолжает крутить таймеры и композитить backdrop-filter на полной
+      // частоте. Счётчик сессии считает от метки времени
+      // (Date.now() - sessionStart), а не по тикам, поэтому отложенные
+      // тики не дают расхождения: при показе значение сразу верное.
+      backgroundThrottling: true,
     },
   });
 
@@ -123,6 +128,21 @@ function createWindow() {
     }
   });
 
+  // Страница локальная и не запрашивает камеру, микрофон, геолокацию или
+  // уведомления — весь этот класс отклоняется разом. Исключение одно:
+  // запись в буфер обмена, которой копируются журнал и локальный ID.
+  // Без неё Chromium отказывает navigator.clipboard.writeText, и кнопка
+  // «Скопировать» отвечала «Нет доступа к буферу обмена».
+  const allowed = (permission, origin) =>
+    permission === 'clipboard-sanitized-write' &&
+    (!origin || origin.startsWith(backend.baseUrl));
+  win.webContents.session.setPermissionRequestHandler(
+    (wc, permission, callback) => callback(allowed(permission, wc && wc.getURL()))
+  );
+  win.webContents.session.setPermissionCheckHandler(
+    (_wc, permission, origin) => allowed(permission, origin)
+  );
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -151,6 +171,10 @@ async function bootstrap() {
   }
 
   mainWindow = createWindow();
+  registerIpc();
+  // Лаунчер активирует уже запущенное окно через бэкенд. Второй экземпляр
+  // Electron (app.on('second-instance')) остаётся запасным путём.
+  backend.watchShowRequests(showWindow);
   await mainWindow.loadURL(`${backend.baseUrl}/?desktop=1&shell=electron`);
 
   tray.create({
@@ -203,49 +227,54 @@ if (!app.requestSingleInstanceLock()) {
 
 /* ------------------------------- IPC ------------------------------- */
 
-ipcMain.handle('window:minimize', () => mainWindow && mainWindow.minimize());
-ipcMain.handle('window:toggle-maximize', () => {
-  if (!mainWindow) return false;
-  if (mainWindow.isMaximized()) mainWindow.unmaximize();
-  else mainWindow.maximize();
-  return mainWindow.isMaximized();
-});
-ipcMain.handle('window:close', () => {
-  if (!mainWindow) return;
-  if (closeToTray) mainWindow.hide();
-  else app.quit();
-});
-ipcMain.handle('window:hide', () => mainWindow && mainWindow.hide());
-ipcMain.handle('window:is-maximized', () => Boolean(mainWindow && mainWindow.isMaximized()));
-ipcMain.handle('window:set-close-to-tray', (_event, value) => {
-  closeToTray = value === true;
-  return closeToTray;
-});
-// Полный выход по запросу страницы: нужен перед установкой обновления —
-// установщик ждёт, пока освободятся файлы в каталоге установки, а сворачивание
-// в трей его не устраивает.
-ipcMain.handle('app:quit', () => { quitting = true; app.quit(); });
+// Обработчики регистрируются из bootstrap(), когда окно уже существует.
+// Раньше они висели на уровне модуля при mainWindow === null, и, например,
+// window:close уводил приложение в app.quit() ещё до появления окна.
+function registerIpc() {
+  ipcMain.handle('window:minimize', () => mainWindow && mainWindow.minimize());
+  ipcMain.handle('window:toggle-maximize', () => {
+    if (!mainWindow) return false;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+    return mainWindow.isMaximized();
+  });
+  ipcMain.handle('window:close', () => {
+    if (!mainWindow) return;
+    if (closeToTray) mainWindow.hide();
+    else app.quit();
+  });
+  ipcMain.handle('window:hide', () => mainWindow && mainWindow.hide());
+  ipcMain.handle('window:is-maximized', () => Boolean(mainWindow && mainWindow.isMaximized()));
+  ipcMain.handle('window:set-close-to-tray', (_event, value) => {
+    closeToTray = value === true;
+    return closeToTray;
+  });
+  // Полный выход по запросу страницы: нужен перед установкой обновления —
+  // установщик ждёт, пока освободятся файлы в каталоге установки, а сворачивание
+  // в трей его не устраивает.
+  ipcMain.handle('app:quit', () => { quitting = true; app.quit(); });
 
-ipcMain.handle('appearance:get', () => ({
-  appearance: appearanceStore.load(),
-  glass: glassStatus,
-  platform: { win11: IS_WIN11, build: BUILD },
-}));
+  ipcMain.handle('appearance:get', () => ({
+    appearance: appearanceStore.load(),
+    glass: glassStatus,
+    platform: { win11: IS_WIN11, build: BUILD },
+  }));
 
-ipcMain.handle('appearance:set', (_event, patch) => {
-  const appearance = appearanceStore.save(patch);
-  const glass = refreshGlass();
-  return { appearance, glass };
-});
+  ipcMain.handle('appearance:set', (_event, patch) => {
+    const appearance = appearanceStore.save(patch);
+    const glass = refreshGlass();
+    return { appearance, glass };
+  });
 
-ipcMain.handle('app:version', () => app.getVersion());
-ipcMain.handle('app:open-external', (_event, url) => {
-  if (/^https?:/i.test(String(url))) shell.openExternal(url);
-});
-ipcMain.handle('app:open-data-dir', () => shell.openPath(require('./lib/paths').dataDir()));
-ipcMain.handle('app:set-autostart', (_event, enabled) => {
-  app.setLoginItemSettings({ openAtLogin: enabled === true, args: ['--silent'] });
-  return app.getLoginItemSettings().openAtLogin;
-});
-ipcMain.handle('app:get-autostart', () => app.getLoginItemSettings().openAtLogin);
-ipcMain.handle('tray:set-state', (_event, connected) => tray.setState(connected === true));
+  ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('app:open-external', (_event, url) => {
+    if (/^https?:/i.test(String(url))) shell.openExternal(url);
+  });
+  ipcMain.handle('app:open-data-dir', () => shell.openPath(require('./lib/paths').dataDir()));
+  ipcMain.handle('app:set-autostart', (_event, enabled) => {
+    app.setLoginItemSettings({ openAtLogin: enabled === true, args: ['--silent'] });
+    return app.getLoginItemSettings().openAtLogin;
+  });
+  ipcMain.handle('app:get-autostart', () => app.getLoginItemSettings().openAtLogin);
+  ipcMain.handle('tray:set-state', (_event, connected) => tray.setState(connected === true));
+}

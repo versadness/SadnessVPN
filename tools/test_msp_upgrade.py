@@ -49,7 +49,7 @@ def main():
     expected_stage = ROOT / f"build/installer-stage-{args.new}"
     # Prove the big runtime dependencies were not replaced by the patch.
     unchanged = {}
-    for relative in ("runtime/_internal/bin/webview2/msedgewebview2.exe", "runtime/_internal/python311.dll", "runtime/_internal/bin/sing-box.exe", "runtime/_internal/bin/mihomo.exe"):
+    for relative in ("runtime/_internal/bin/webview2/msedgewebview2.exe", "runtime/_internal/python311.dll", "runtime/_internal/bin/mihomo.exe"):
         path = INSTALL / relative
         unchanged[relative] = (digest(path), path.stat().st_ino)
     log = ROOT / f"build/apply-msp-{args.new.replace('.', '')}.log"

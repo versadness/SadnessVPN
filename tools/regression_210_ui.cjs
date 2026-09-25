@@ -38,11 +38,20 @@ const results=[];
  await test('dns_legacy_preset_label',()=>{ST.connected=false;ST.status='off';ST.tunnel.dns_preset='quad9';syncSettings();return {actual:ST.tunnel.dns_preset,label:ddDnsLbl.textContent};});
  await test('keyboard_dropdown',()=>[...document.querySelectorAll('.dd-trigger')].map(e=>({id:e.parentElement.id,tabIndex:e.tabIndex,role:e.getAttribute('role')})));
  await test('dynamic_button_aria',()=>{ST.status='on';ST.connected=true;applyStatus();return {visible:powerLbl.textContent,aria:connectBtn.getAttribute('aria-label')};});
- await page.evaluate(()=>{ST.connected=false;ST.status='off';ST.proto='vless';applyStatus();go('routing');promptRule();ruleExe.focus();});
+ // 3.0.8: «Новое правило» открывает диалог маршрутизации, а не прежнюю
+ // упрощённую форму #ruleExe внутри .modal-backdrop.
+ await page.evaluate(()=>{ST.connected=false;ST.status='off';ST.proto='vless';applyStatus();go('routing');promptRule();document.getElementById('routeValue').focus();});
  const focus=[];
- for(let i=0;i<14;i++){await page.keyboard.press('Tab');focus.push(await page.evaluate(()=>({id:document.activeElement.id,inside:!!document.activeElement.closest('.modal-backdrop.open')})));}
+ // Нативный модальный диалог раз за цикл отдаёт фокус самому <dialog> или
+ // body — остальная страница при этом inert. Ошибкой считается только фокус
+ // на управляющем элементе за пределами диалога.
+ for(let i=0;i<14;i++){await page.keyboard.press('Tab');focus.push(await page.evaluate(()=>{
+  const node=document.activeElement,dialog=document.querySelector('dialog.routing-editor[open]');
+  const neutral=node===document.body||node===document.documentElement||node===dialog;
+  return {id:node.id,tag:node.tagName,inside:!!dialog&&(neutral||dialog.contains(node))};
+ }));}
  results.push({case:'modal_focus_trap',evidence:focus});
- await page.evaluate(()=>{closeModal('ruleModal');zapSearch.value='';filterZapret();});
+ await page.evaluate(()=>{document.querySelector('dialog.routing-editor').close();zapSearch.value='';filterZapret();});
  for(const [width,height] of [[964,661],[764,561],[1384,861],[620,440]]){
   await page.setViewportSize({width,height});
   for(const pg of ['home','servers','wg','routing','settings','zapret']){
@@ -66,7 +75,18 @@ const results=[];
  for(const pg of ['home','routing']){
   await page.evaluate(p=>go(p),pg);
   await page.screenshot({path:path.join(root,`build/regression-210-${pg}-min.png`)});
-  await test('bottom_controls_'+pg,()=>[...document.querySelectorAll('.page.active button')].filter(e=>{const r=e.getBoundingClientRect();return r.height&&r.bottom>innerHeight;}).map(e=>({id:e.id,text:e.textContent.trim(),bottom:e.getBoundingClientRect().bottom})));
+  // Ниже сгиба элемент оказаться может — страницы прокручиваются. Ошибка
+  // в другом: до кнопки нельзя добраться, потому что ни один предок не
+  // прокручивается и она просто обрезана.
+  await test('bottom_controls_'+pg,()=>[...document.querySelectorAll('.page.active button')].filter(e=>{
+   const r=e.getBoundingClientRect();
+   if(!r.height||r.bottom<=innerHeight)return false;
+   for(let node=e.parentElement;node;node=node.parentElement){
+    const style=getComputedStyle(node);
+    if(/(auto|scroll)/.test(style.overflowY)&&node.scrollHeight>node.clientHeight+1)return false;
+   }
+   return true;
+  }).map(e=>({id:e.id,text:e.textContent.trim(),bottom:e.getBoundingClientRect().bottom})));
  }
  await page.evaluate(()=>{go('servers');closeDropdowns();});
  await page.locator('#ddSort .dd-trigger').evaluate(e=>e.focus());
@@ -78,6 +98,10 @@ const results=[];
   results.push({case:'server_render_load',count,milliseconds:timing});
  }
  results.push({case:'page_errors',evidence:errors});
+ // Улики пишем до проверок: иначе первое же падение уносит с собой весь
+ // собранный материал и разбираться приходится вслепую.
+ fs.mkdirSync(path.join(root,'build'),{recursive:true});
+ fs.writeFileSync(path.join(root,'build/regression-210-ui-results.json'),JSON.stringify(results,null,2));
  const find=name=>results.find(r=>r.case===name).evidence;
  assert.equal(find('backend_disconnect_status').title,'Статус неизвестен');
  assert.equal(find('backend_disconnect_status').connectDisabled,true);
@@ -92,11 +116,10 @@ const results=[];
  assert.equal(find('import_wg_protocol_state').frontendProtocol,'wg');
  assert.equal(find('auto_connect_manual_race').includes('/api/disconnect'),false);
  assert.equal(find('sort_keyboard_open'),true);
- assert.equal(find('bottom_controls_home').length,0);
+ assert.equal(find('bottom_controls_home').length,0,'кнопка на главной недостижима: обрезана и не прокручивается');
  assert.equal(results.filter(r=>r.case==='layout').every(r=>!r.evidence.overflowX),true);
  assert.equal(errors.length,0);
 
- fs.writeFileSync(path.join(root,'build/regression-210-ui-results.json'),JSON.stringify(results,null,2));
  console.log(JSON.stringify({cases:results.length,pageErrors:errors,resultsFile:'build/regression-210-ui-results.json',load:results.filter(r=>r.case==='server_render_load')},null,2));
  await browser.close();
 })().catch(e=>{console.error(e);process.exitCode=1;});

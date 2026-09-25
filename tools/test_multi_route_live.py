@@ -1,4 +1,9 @@
-"""Two processes, two real SS servers, one Mihomo: loopback-only routing proof."""
+"""Два процесса, два локальных SS-сервера, один клиент Mihomo.
+
+Доказательство одновременной маршрутизации разных приложений в разные
+серверы. Всё на loopback: ни подписки, ни TUN, ни внешней сети. Роль
+SS-сервера тоже играет mihomo — sing-box из проекта удалён.
+"""
 import http.server
 import json
 import os
@@ -34,20 +39,27 @@ def main():
         directory=Path(scratch)
         try:
             nodes=[]
-            for label in ('route-A','route-B'):
-                target=http.server.ThreadingHTTPServer(('127.0.0.1',0),handler(label));targets.append(target)
+            # Один и тот же URL обязан приводить в разные серверы, поэтому цели
+            # слушают один порт на разных адресах loopback, а каждый SS-сервер
+            # разрешает общее имя в свой адрес через hosts.
+            target_port=port()
+            for label,address in (('route-A','127.0.0.2'),('route-B','127.0.0.3')):
+                target=http.server.ThreadingHTTPServer((address,target_port),handler(label));targets.append(target)
                 threading.Thread(target=target.serve_forever,daemon=True).start()
                 listen=port()
-                config={'log':{'level':'error'},'inbounds':[{'type':'shadowsocks','listen':'127.0.0.1','listen_port':listen,'method':'aes-256-gcm','password':'local-test-only'}],
-                        'outbounds':[{'type':'direct','override_address':'127.0.0.1','override_port':target.server_port}]}
-                path=directory/(label+'.json');path.write_text(json.dumps(config))
-                children.append(subprocess.Popen([str(ROOT/'bin/sing-box.exe'),'run','-c',str(path)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=0x08000000))
+                config={'log-level':'error','hosts':{'probe.invalid':address},
+                        'listeners':[{'name':'ss-in','type':'shadowsocks','listen':'127.0.0.1',
+                                      'port':listen,'cipher':'aes-256-gcm','password':'local-test-only'}],
+                        'proxies':[],'rules':['MATCH,DIRECT']}
+                folder=directory/label;folder.mkdir()
+                path=folder/'config.yaml';path.write_text(json.dumps(config))
+                children.append(subprocess.Popen([str(ROOT/'bin/mihomo.exe'),'-d',str(folder),'-f',str(path)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=0x08000000))
                 nodes.append({'ui_id':label,'protocol':'ss','method':'aes-256-gcm','password':'local-test-only','host':'127.0.0.1','port':listen})
             routes=assignments([{'exe':'curl.exe','destination':'server:route-A'},{'exe':'python.exe','destination':'server:route-B'}],[{'servers':nodes}])
             http_port=port()
             config=build_multi_route_config(nodes[0],routes,http_port=http_port,socks_port=port())
             config['tun']['enable']=False;config['dns']['enable']=False;config.pop('external-controller')
-            path=directory/'client.json';path.write_text(json.dumps(config))
+            path=directory/'client.yaml';path.write_text(json.dumps(config))
             log=open(directory/'mihomo.log','w',encoding='utf-8')
             children.append(subprocess.Popen([str(ROOT/'bin/mihomo.exe'),'-d',str(directory),'-f',str(path)],stdout=log,stderr=log,creationflags=0x08000000))
             try:
@@ -56,7 +68,7 @@ def main():
                         with socket.create_connection(('127.0.0.1',http_port),timeout=.1):break
                     except OSError:time.sleep(.1)
                 proxy=f'http://127.0.0.1:{http_port}'
-                url='http://198.18.0.42:12345/'
+                url=f'http://probe.invalid:{target_port}/'
                 curl=['curl.exe','--silent','--show-error','--max-time','8','--noproxy','','--proxy',proxy,url]
                 code="import urllib.request; o=urllib.request.build_opener(urllib.request.ProxyHandler({'http':"+repr(proxy)+"})); print(o.open("+repr(url)+",timeout=8).read().decode())"
                 env=dict(os.environ);env['NO_PROXY']='';env['no_proxy']=''

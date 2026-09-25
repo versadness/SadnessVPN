@@ -1,7 +1,7 @@
 #page-settings>.settings-search{flex:0 0 42px;height:42px;margin-bottom:12px;min-height:42px;padding:0 14px;display:flex;align-items:center}
-.reduce-effects #aurora .blob,.reduce-effects #petals *{animation:none!important}.reduce-effects #petals{display:none}.reduce-effects .page{animation:none!important}
+.reduce-effects #aurora .blob{animation:none!important}.reduce-effects .page{animation:none!important}
 .settings-search input{width:100%;min-width:0;background:transparent;border:0;color:var(--text-1);font:inherit;outline-offset:4px}
-#settingNav{gap:8px;padding-bottom:14px;scrollbar-width:thin}
+#settingNav{gap:8px;padding-bottom:14px}
 #settingNav button{padding:10px 14px;border-radius:12px;font-size:12px;transition:background .15s,color .15s}
 #settingNav button[aria-pressed=true]{color:#fff;background:linear-gradient(120deg,#7560cd,#6357b4);border-color:#a995ff;box-shadow:inset 0 1px 0 #ffffff25}
 #page-settings .settings-group[hidden],#page-settings .settings-group>[hidden],.settings-empty[hidden]{display:none!important}

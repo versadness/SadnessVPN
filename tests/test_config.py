@@ -1,7 +1,9 @@
 import base64
+import json
 import unittest
 
-from engine.config import build_singbox_config, parse_link
+from engine.config import parse_link
+from engine.core_config import build_mihomo_config
 
 
 class ProxyLinkParsingTests(unittest.TestCase):
@@ -38,6 +40,20 @@ class ProxyLinkParsingTests(unittest.TestCase):
         self.assertEqual(server["type"], "grpc")
         self.assertEqual(server["serviceName"], "vpn")
 
+    def test_parse_vmess_link(self):
+        payload = base64.b64encode(json.dumps({
+            "ps": "Test VMess", "add": "vpn.example.com", "port": "443",
+            "id": "00000000-0000-0000-0000-000000000000", "aid": "0",
+            "net": "ws", "path": "/vm", "host": "edge.example.com", "tls": "tls",
+        }).encode()).decode()
+        server = parse_link("vmess://" + payload)
+
+        self.assertEqual(server["protocol"], "vmess")
+        self.assertEqual(server["remark"], "Test VMess")
+        self.assertEqual(server["type"], "ws")
+        self.assertEqual(server["security"], "tls")
+        self.assertEqual(server["alter_id"], 0)
+
     def test_parse_hysteria2_link(self):
         server = parse_link(
             "hysteria2://test-password@vpn.example.com:443"
@@ -51,6 +67,8 @@ class ProxyLinkParsingTests(unittest.TestCase):
 
 
 class ProxyRoutingConfigTests(unittest.TestCase):
+    """Маршрутизация собирается ядром Mihomo — второго ядра в проекте нет."""
+
     def setUp(self):
         self.server = {
             "host": "198.51.100.20",
@@ -62,55 +80,66 @@ class ProxyRoutingConfigTests(unittest.TestCase):
         }
 
     def test_whitelist_routes_selected_process_to_proxy(self):
-        config = build_singbox_config(
+        config = build_mihomo_config(
             self.server,
             routing_mode="whitelist",
             routed_apps=["chrome.exe"],
         )
 
-        rules = config["route"]["rules"]
-        self.assertIn(
-            {"process_name": ["chrome.exe"], "outbound": "proxy"},
-            rules,
-        )
-        self.assertEqual(rules[-1], {"outbound": "direct"})
-        self.assertTrue(config["route"]["find_process"])
+        rules = config["rules"]
+        self.assertIn("PROCESS-NAME,chrome.exe,proxy", rules)
+        self.assertEqual(rules[-1], "MATCH,DIRECT")
+        self.assertEqual(config["find-process-mode"], "always")
 
     def test_blacklist_routes_selected_process_directly(self):
-        config = build_singbox_config(
+        config = build_mihomo_config(
             self.server,
             routing_mode="blacklist",
             routed_apps=["game.exe"],
         )
 
-        self.assertIn(
-            {"process_name": ["game.exe"], "outbound": "direct"},
-            config["route"]["rules"],
-        )
-        self.assertEqual(config["route"]["final"], "proxy")
+        self.assertIn("PROCESS-NAME,game.exe,DIRECT", config["rules"])
+        self.assertEqual(config["rules"][-1], "MATCH,proxy")
 
-    def test_lan_mode_exposes_only_proxy_inbounds(self):
-        config = build_singbox_config(self.server, allow_lan=True)
-        listens = {
-            inbound["tag"]: inbound.get("listen")
-            for inbound in config["inbounds"]
-        }
+    def test_lan_mode_opens_only_the_proxy_listeners(self):
+        config = build_mihomo_config(self.server, allow_lan=True)
+        self.assertTrue(config["allow-lan"])
+        self.assertEqual(config["bind-address"], "*")
+        # TUN не становится доступным из локальной сети вместе с прокси.
+        self.assertNotIn("listen", config["tun"])
 
-        self.assertEqual(listens["socks-in"], "0.0.0.0")
-        self.assertEqual(listens["http-in"], "0.0.0.0")
-        self.assertNotEqual(listens["tun-in"], "0.0.0.0")
+    def test_local_bind_is_the_default(self):
+        config = build_mihomo_config(self.server)
+        self.assertFalse(config["allow-lan"])
+        self.assertEqual(config["bind-address"], "127.0.0.1")
 
-    def test_tun_uses_current_address_field(self):
-        inbound = build_singbox_config(self.server)["inbounds"][0]
-        self.assertEqual(inbound["address"], ["172.19.0.1/30"])
-        self.assertNotIn("inet4_address", inbound)
+    def test_tun_subnet_comes_from_the_dns_block(self):
+        config = build_mihomo_config(self.server)
+        self.assertTrue(config["tun"]["enable"])
+        self.assertEqual(config["dns"]["fake-ip-range"], "172.19.0.1/30")
+        self.assertEqual(config["dns"]["enhanced-mode"], "redir-host")
 
     def test_adguard_ui_preset_builds_adguard_dns_servers(self):
-        config = build_singbox_config(self.server, dns_preset="adguard")
-        addresses = [item["address"] for item in config["dns"]["servers"]]
+        config = build_mihomo_config(self.server, dns_preset="adguard")
+        self.assertEqual(config["dns"]["nameserver"],
+                         ["tls://94.140.14.14", "tls://94.140.15.15"])
 
-        self.assertIn("tls://94.140.14.14", addresses)
-        self.assertIn("tls://94.140.15.15", addresses)
+    def test_smart_dns_preset_bootstraps_through_its_own_raw_address(self):
+        config = build_mihomo_config(self.server, dns_preset="xbox_dot")
+        dns = config["dns"]
+        self.assertEqual(dns["nameserver"], ["tls://xbox-dns.ru", "tls://xbox-dns.ru"])
+        self.assertEqual(dns["default-nameserver"], ["111.88.96.50"])
+        # Адрес самого VPN-сервера резолвится обычным публичным DNS.
+        self.assertEqual(dns["proxy-server-nameserver"], ["1.1.1.1", "8.8.8.8"])
+        self.assertFalse(dns["respect-rules"])
+        self.assertFalse(config["ipv6"])
+
+    def test_block_udp_precedes_process_rules(self):
+        config = build_mihomo_config(self.server, block_udp=True,
+                                     routing_mode="whitelist", routed_apps=["a.exe"])
+        rules = config["rules"]
+        self.assertLess(rules.index("NETWORK,UDP,REJECT"),
+                        rules.index("PROCESS-NAME,a.exe,proxy"))
 
 
 if __name__ == "__main__":

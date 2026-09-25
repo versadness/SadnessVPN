@@ -13,7 +13,9 @@ import hashlib
 import json
 import uuid as _uuid_mod
 
-from engine.apps import load_apps
+from engine.apps import load_apps, save_apps
+from engine.diagnostics import journal
+from engine.route_repair import repair_routing
 from engine.storage import load_groups, save_groups
 from engine.wg_storage import load_wg_groups, save_wg_groups
 
@@ -56,6 +58,34 @@ if ensure_server_ids(wg_groups):
     save_wg_groups(wg_groups)
 
 apps_config: dict = load_apps()
+
+
+def repair_saved_routes() -> dict:
+    """Свести сохранённые маршруты с текущим списком серверов.
+
+    Возвращает отчёт engine.route_repair. Сохранение на диск не обязано
+    удаться: даже если запись не прошла, в памяти конфигурация уже
+    исправлена и подключение не будет заблокировано потерянным сервером.
+    """
+    repaired, report = repair_routing(apps_config, groups)
+    if not report["changed"]:
+        return report
+    apps_config.clear()
+    apps_config.update(repaired)
+    try:
+        save_apps(apps_config)
+        report["saved"] = True
+    except OSError as exc:
+        journal.warning("Не удалось сохранить восстановленную маршрутизацию: %s", exc)
+        report["saved"] = False
+    return report
+
+
+# Профиль мог пережить удаление подписки: сводим маршруты сразу при загрузке,
+# чтобы первое же подключение не упало на отсутствующем сервере.
+_startup_repair = repair_saved_routes()
+if _startup_repair["changed"]:
+    journal.info("%s", _startup_repair["message"])
 
 
 def save_proxy_groups():

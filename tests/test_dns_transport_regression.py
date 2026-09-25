@@ -1,21 +1,32 @@
 import unittest
 
-from engine.config import build_singbox_config, parse_link
+from engine.config import parse_link
+from engine.core_config import build_mihomo_config
 from engine.core_logs import ErrorNotifications, core_log_tag
 
 
 class DnsTransportTests(unittest.TestCase):
-    def test_plain_dns_both_transports_before_private_bypass(self):
+    """DNS не должен обходить правила и не должен зацикливаться на TUN."""
+
+    def test_private_ranges_bypass_before_any_process_rule(self):
         for link in ('hy2://test@example.com:443/',
                      'vless://00000000-0000-0000-0000-000000000001@example.com:443?security=tls'):
             for mode in ('all', 'whitelist', 'blacklist'):
                 with self.subTest(link=link, mode=mode):
-                    config = build_singbox_config(parse_link(link), routing_mode=mode,
-                                                   routed_apps=['test.exe'], block_udp=True)
-                    rules = config['route']['rules']
-                    self.assertEqual(rules[0], {'network': ['udp', 'tcp'], 'port': 53, 'outbound': 'dns-out'})
-                    self.assertTrue(rules[1]['ip_is_private'])
-                    self.assertFalse(any(r.get('port') == 853 and r.get('outbound') == 'dns-out' for r in rules))
+                    config = build_mihomo_config(parse_link(link), routing_mode=mode,
+                                                 routed_apps=['test.exe'], block_udp=True)
+                    rules = config['rules']
+                    self.assertTrue(rules[0].startswith('IP-CIDR,127.0.0.0/8,DIRECT'))
+                    private = max(index for index, rule in enumerate(rules)
+                                  if rule.startswith(('IP-CIDR,', 'IP-CIDR6,')))
+                    self.assertLess(private, rules.index('NETWORK,UDP,REJECT'))
+                    self.assertEqual(rules[-1].split(',')[0], 'MATCH')
+
+    def test_dns_is_hijacked_on_tun_so_plain_queries_cannot_leak(self):
+        config = build_mihomo_config(parse_link(
+            'vless://00000000-0000-0000-0000-000000000001@example.com:443?security=tls'))
+        self.assertEqual(config['tun']['dns-hijack'], ['any:53', 'tcp://any:53'])
+        self.assertTrue(config['dns']['enable'])
 
 
 class NotificationTests(unittest.TestCase):
