@@ -1,12 +1,15 @@
 # Sadness VPN · BETA
 
+> [!WARNING]
+> **Приложение находится в бета-тестировании и может работать нестабильно.**
+> Возможны ошибки запуска, подключения и маршрутизации. Не используйте Sadness VPN как единственный VPN для важных подключений.
+> Нашли ошибку — [сообщите в Issues](https://github.com/versadness/SadnessVPN/issues/new).
+
 ![Status: Beta](https://img.shields.io/badge/status-BETA-orange)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_10%2F11_x64-0078D4)
 ![Release: 3.1.4 Beta](https://img.shields.io/badge/release-3.1.4_Beta-8b5cf6)
 
 VPN-клиент для Windows с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
-
-> **Это Beta для тестирования, не стабильный релиз.** Возможны ошибки запуска, подключения и маршрутизации. Не используйте бета-версию как единственный вариант для критически важных подключений.
 
 ## Скачать 3.1.4 Beta
 
