@@ -65,6 +65,10 @@
 .gf-coverage-notes{margin:0;padding:0 0 0 18px;display:flex;flex-direction:column;gap:6px;font-size:12px;line-height:1.45;color:#b3a9cd}
 .gf-coverage-notes:empty{display:none}
 .gf-coverage-notes li{overflow-wrap:anywhere}
+/* Telegram WS Proxy: тот же блок, что и охват обхода. */
+#tgProxy .rule-value .inp{flex:1 1 auto;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.tgp-actions{display:flex;flex-wrap:wrap;gap:8px}
+.tgp-actions .btn-zap{flex:1 1 220px;width:auto;margin-top:0}
 /* Узкое окно: подпись и значение перестают тянуть строку в горизонтальный скролл. */
 @media (max-width:560px){
   .gf-row{flex-direction:column;align-items:flex-start;gap:2px}

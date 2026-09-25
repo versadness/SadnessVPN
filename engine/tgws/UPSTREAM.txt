@@ -1,0 +1,4 @@
+Vendored copy of Flowseal/tg-ws-proxy (MIT, see LICENSE).
+Source:  https://github.com/Flowseal/tg-ws-proxy
+Commit:  caa949bee0873d2b95dfb4fbeb1b7868b0ee3843 (proxy/ package, version 1.10.4)
+Files are copied unchanged; SadnessVPN runs them through engine/tg_proxy.py.

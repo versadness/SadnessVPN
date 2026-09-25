@@ -175,6 +175,16 @@
   <div class="gf-coverage-title">Что попадает под обход сейчас</div>
   <dl class="gf-effective" id="gfEffective"></dl>
   <ul class="gf-coverage-notes" id="gfCoverageNotes"></ul>
+</section><section class="zap-gamefilter glass" id="tgProxy">
+  <div class="gf-head"><div><div class="gf-title">Telegram WS Proxy</div><div class="gf-sub" id="tgpSummary">Выключен</div></div></div>
+  <p class="gf-note">Локальный MTProto-прокси для Telegram Desktop: соединения идут к Telegram через WebSocket, как у веб-версии. Работает без VPN и независимо от Zapret.</p>
+  <div class="gf-field"><label class="form-label" for="tgpPort">Порт на 127.0.0.1</label>
+    <input class="inp" id="tgpPort" type="number" min="1024" max="65535" inputmode="numeric" value="1443" oninput="renderTgProxy()">
+    <p class="set-desc">Новый порт применяется при запуске; если прокси уже работает, он перезапустится.</p></div>
+  <div class="gf-field"><label class="form-label" for="tgpSecret">Ключ (secret)</label>
+    <div class="rule-value"><input class="inp" id="tgpSecret" readonly spellcheck="false"><button type="button" class="btn btn-ghost" onclick="regenTgProxySecret()">Новый ключ</button></div></div>
+  <p class="gf-error" id="tgpError" role="alert"></p>
+  <div class="tgp-actions"><button type="button" class="btn btn-zap" id="tgpBtn" onclick="toggleTgProxy()">▶ Запустить прокси</button><button type="button" class="btn btn-ghost" id="tgpOpen" onclick="openTgProxy()">Добавить в Telegram</button><button type="button" class="btn btn-ghost" onclick="copyTgProxyLink()">Скопировать ссылку</button></div>
 </section><div class="sec-lbl zap-strategy-title">Стратегии <span id="zapCount">0</span></div><div class="sec-line" style="margin-bottom:var(--sp-3)"></div><div id="zapList"></div></div></div>
   </div></div></div>
 </div>

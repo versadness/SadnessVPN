@@ -111,6 +111,13 @@ class UiContractTests(unittest.TestCase):
         # Перетаскивание не должно повторно переключать VPN щелчком.
         self.assertIn("stopImmediatePropagation", self.javascript)
 
+    def test_telegram_proxy_card_lives_on_the_zapret_page(self):
+        zapret_page = self.html.split('id="page-zapret"', 1)[1]
+        for element_id in ("tgProxy", "tgpPort", "tgpSecret", "tgpBtn", "tgpOpen", "tgpError", "tgpSummary"):
+            self.assertIn(f'id="{element_id}"', zapret_page, element_id)
+        self.assertIn("case 'tgproxy_status'", self.javascript)
+        self.assertIn("/api/tgproxy/start", self.javascript)
+
     def test_every_static_inline_handler_has_a_defined_function(self):
         handlers = set(re.findall(
             r'on\w+\s*=\s*["\']\s*(?:event\.stopPropagation\(\);\s*)?'

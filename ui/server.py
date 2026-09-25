@@ -47,6 +47,7 @@ from engine.hwid import generate_hwid
 from engine import autostart
 from ui import profile_state
 from ui.zapret_service import ZapretService
+from engine.tg_proxy import TgProxyManager
 from engine.paths import data_dir
 from engine.connection_state import ConnectionCoordinator
 from engine.reconnect import Reconnector
@@ -968,6 +969,8 @@ def _ensure_clash_port() -> int:
 
 zapret_service = ZapretService(log_callback=_log, broadcast=_broadcast)
 zapret_engine = zapret_service.engine
+tg_proxy_engine = TgProxyManager(log_callback=_log,
+                                 exit_callback=lambda error: _tg_proxy_routes.handle_exit(error))
 
 
 def _recover_after_crash():
@@ -1157,6 +1160,7 @@ def ws_handler(ws):
             _active_vpn_mode(),
         ),
         "zapretSelected"  : _app_settings.get("zapret_strategy"),
+        "tgProxy"         : _tg_proxy_routes.status(),
         "appVersion"       : APP_VERSION,
         "engineVersion"    : MIHOMO_VERSION,
     }))
@@ -1684,6 +1688,10 @@ def shutdown_engines():
         zapret_service.stop()
     except Exception:
         journal.exception("Не удалось завершить Zapret")
+    try:
+        tg_proxy_engine.stop(quiet=True)
+    except Exception:
+        journal.exception("Не удалось завершить Telegram-прокси")
 
 
 class _Late:
@@ -1716,6 +1724,7 @@ from ui.routes import settings as _settings_routes  # noqa: E402
 from ui.routes import system as _system_routes  # noqa: E402
 from ui.routes import wireguard as _wireguard_routes  # noqa: E402
 from ui.routes import zapret as _zapret_routes  # noqa: E402
+from ui.routes import tg_proxy as _tg_proxy_routes  # noqa: E402
 
 _system_routes.init(broadcast=_broadcast)
 app.register_blueprint(_system_routes.bp)
@@ -1723,6 +1732,14 @@ app.register_blueprint(_system_routes.bp)
 _zapret_routes.init(service=zapret_service, broadcast=_broadcast, log=_log,
                     vpn_servers=_vpn_endpoints, vpn_mode=_active_vpn_mode)
 app.register_blueprint(_zapret_routes.bp)
+
+_tg_proxy_routes.init(manager=tg_proxy_engine, broadcast=_broadcast, log=_log,
+                      reserved_ports=lambda: {
+                          _app_settings["socks"]: "SOCKS5-прокси Sadness VPN",
+                          _app_settings["http"]: "HTTP-прокси Sadness VPN",
+                          _clash_port: "API ядра Mihomo",
+                      })
+app.register_blueprint(_tg_proxy_routes.bp)
 
 _appearance_routes.init(broadcast=_broadcast)
 app.register_blueprint(_appearance_routes.bp)
@@ -1756,4 +1773,6 @@ app.register_blueprint(_apps_routes.bp)
 
 
 def run(host="127.0.0.1", port=45678):
+    threading.Thread(target=_tg_proxy_routes.autostart, daemon=True,
+                     name="tg-proxy-autostart").start()
     app.run(host=host, port=port, debug=False, use_reloader=False)

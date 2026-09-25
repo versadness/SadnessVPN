@@ -8,7 +8,7 @@
 import json
 import os
 
-from engine import game_filter
+from engine import game_filter, tg_proxy
 from engine.diagnostics import journal
 from engine.json_store import atomic_write_json
 from engine.paths import data_dir
@@ -82,6 +82,9 @@ DEFAULT_SETTINGS = {
     # Игровой фильтр Zapret. По умолчанию выключен: включать перехват всего
     # игрового трафика у существующего пользователя без его согласия нельзя.
     "zapret_game_filter": dict(game_filter.DEFAULTS),
+    # Telegram WS Proxy: порт и секрет пользователя; секрет создаётся при
+    # первой загрузке настроек.
+    "tg_proxy": {"enabled": False, "port": tg_proxy.DEFAULT_PORT, "secret": ""},
 }
 
 
@@ -187,6 +190,7 @@ def load_settings() -> dict:
         settings["zapret_game_filter"] = game_filter.normalize_stored(
             settings.get("zapret_game_filter")
         )
+        settings["tg_proxy"] = tg_proxy.normalize_stored(settings.get("tg_proxy"))
         if not isinstance(settings.get("zapret_strategy"), str) or not settings["zapret_strategy"]:
             settings["zapret_strategy"] = DEFAULT_SETTINGS["zapret_strategy"]
         if migrated:
