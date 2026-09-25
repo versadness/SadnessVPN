@@ -54,7 +54,8 @@ class UiContractTests(unittest.TestCase):
         self.assertNotIn(".connect-btn", short_window_css)
 
     def test_close_button_exits_and_first_launch_has_no_autostart_prompt(self):
-        self.assertIn("api('/api/window/close',{force:true})", self.javascript)
+        bridge = (Path(__file__).resolve().parent.parent / "renderer" / "js" / "shell-bridge.js").read_text(encoding="utf-8")
+        self.assertIn("window.winClose = function () { shell.window.close(); };", bridge)
         self.assertNotIn('id="onboardingModal"', self.html)
         self.assertNotIn("showOnboardingIfNeeded", self.javascript)
         self.assertNotIn('data-sk="mintray"', self.html)

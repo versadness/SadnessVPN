@@ -14,15 +14,17 @@ import time
 
 from flask import jsonify
 
+from engine import autostart
 from engine.diagnostics import journal
 from engine.legacy_cleanup import remove_obsolete_files
+from ui import app_state, window_control
 from ui.server import app, run as run_server, shutdown_engines
 
 
 # Повторный запуск не должен поднимать второе окно. Лаунчер спрашивает этот
 # API и, если оболочка на связи, просто просит показать уже открытое окно —
 # без запроса прав администратора и без старта второго процесса Electron.
-_show_request = threading.Event()
+_show_request = window_control.show_request
 _shell_seen_at = 0.0
 _SHELL_WAIT_SECONDS = 25.0
 # Оболочка перезапрашивает ожидание сразу после ответа, поэтому пропуск
@@ -52,7 +54,24 @@ def shell_show_wait():
     if shown:
         _show_request.clear()
     _shell_seen_at = time.monotonic()
+    if window_control.quit_request.is_set():
+        # Updater перед восстановлением: оболочка завершает приложение целиком.
+        window_control.quit_request.clear()
+        return jsonify({"show": False, "quit": True})
     return jsonify({"show": shown})
+
+
+@app.route("/api/shell/ready", methods=["POST"])
+def shell_ready():
+    """Окно загружено. По этому признаку updater решает, что новая версия запустилась."""
+    window_control.shell_ready.set()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/shell/startup", methods=["GET"])
+def shell_startup():
+    """Настройки запуска, которые нужны оболочке до показа окна."""
+    return jsonify({"ok": True, "silent": app_state.app_settings.get("silent") is True})
 
 
 @app.route("/api/shell/shutdown", methods=["POST"])
@@ -79,6 +98,11 @@ def main():
         remove_obsolete_files()
     except Exception:
         journal.exception("Очистка устаревших файлов не удалась")
+    try:
+        if autostart.ensure_current():
+            journal.info("Автозапуск перенаправлен на лаунчер: %s", autostart.target_path())
+    except Exception:
+        journal.exception("Не удалось проверить задачу автозапуска")
     journal.info("Backend: запуск на 127.0.0.1:%s", port)
     run_server(host="127.0.0.1", port=port)
 

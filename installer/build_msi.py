@@ -318,6 +318,14 @@ def main():
     # Never runs on patching, repair or removal; those paths retain their cache.
     add_data(db,'CustomAction',[('CacheRecoveryMsi',3602,updater_file,'--cache-installed "[OriginalDatabase]"')])
     add_data(db,'InstallExecuteSequence',[('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH AND NOT REINSTALL',6500)])
+    # Полное удаление снимает то, что приложение создало вне каталога установки:
+    # задачу автозапуска и службу туннеля AmneziaWG. Deferred + no-impersonate
+    # (1024+2048), результат игнорируется (64): удаление не должно срываться из-за
+    # уже отсутствующей задачи. До RemoveFiles (3500), пока updater ещё на месте.
+    # Откат updater'а (msiexec /x с SADNESS_ROLLBACK=1) настройки пользователя сохраняет.
+    add_data(db,'CustomAction',[('UninstallCleanup',3154,updater_file,'--uninstall-cleanup')])
+    add_data(db,'InstallExecuteSequence',[('UninstallCleanup',
+        'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND NOT SADNESS_ROLLBACK',1600)])
     add_ui(db)
     add_data(db, "InstallUISequence", [("WelcomeDlg", "NOT Installed", 1230),
         ("UpdateDlg", "Installed AND PATCH AND NOT REMOVE", 1232),

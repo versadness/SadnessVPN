@@ -31,6 +31,12 @@ class ShellPermissionTests(unittest.TestCase):
     def test_permission_is_scoped_to_the_local_backend_origin(self):
         self.assertIn("backend.baseUrl", self.source)
 
+    def test_window_never_navigates_away_from_the_local_interface(self):
+        # Мост sadnessShell не должен достаться чужой странице.
+        for event in ("'will-navigate'", "'will-redirect'"):
+            self.assertIn(f"win.webContents.on({event}, keepLocal)", self.source)
+        self.assertIn("event.preventDefault()", self.source)
+
     def test_ui_still_copies_through_the_clipboard_api(self):
         ui = UI_JS.read_text(encoding="utf-8")
         self.assertEqual(ui.count("navigator.clipboard.writeText"), 2)

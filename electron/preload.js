@@ -39,8 +39,6 @@ contextBridge.exposeInMainWorld('sadnessShell', {
     version: () => ipcRenderer.invoke('app:version'),
     openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
     openDataDir: () => ipcRenderer.invoke('app:open-data-dir'),
-    setAutostart: (enabled) => ipcRenderer.invoke('app:set-autostart', enabled),
-    getAutostart: () => ipcRenderer.invoke('app:get-autostart'),
     quit: () => ipcRenderer.invoke('app:quit'),
   },
 

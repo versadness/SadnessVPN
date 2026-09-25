@@ -139,6 +139,23 @@ def _clash_node(node):
         "insecure": bool(node.get("skip-cert-verify")), "encryption": node.get("encryption", "none"),
         "obfs": node.get("obfs", ""), "obfs_password": node.get("obfs-password", ""),
     }
+    if network == "http":
+        # В Clash network: http — это TCP с маскировкой под HTTP/1.1, а не
+        # HTTP/2 (type=http в ссылках Xray). Раньше узел молча становился h2.
+        paths = transport.get("path") or ["/"]
+        hosts = headers.get("Host") or []
+        server["type"], server["header_type"] = "tcp", "http"
+        server["path"] = str(paths[0] if isinstance(paths, list) else paths)
+        server["host_header"] = ",".join(map(str, hosts)) if isinstance(hosts, list) else str(hosts)
+    elif isinstance(server["host_header"], list):
+        # h2-opts.host в Clash — список; внутренняя модель хранит одно имя.
+        server["host_header"] = str(server["host_header"][0]) if server["host_header"] else ""
+    if proto == "ss" and node.get("plugin"):
+        from engine.core_config import SUPPORTED_SS_PLUGINS
+        if node["plugin"] not in SUPPORTED_SS_PLUGINS:
+            raise ValueError(f"Shadowsocks: плагин {node['plugin']} не поддерживается ядром Mihomo")
+        server["plugin"] = node["plugin"]
+        server["plugin_opts"] = copy.deepcopy(node.get("plugin-opts") or {})
     if proto == "vmess":
         # Mihomo собирает VMess нативно; alterId по умолчанию 0 (AEAD).
         try:
@@ -147,6 +164,10 @@ def _clash_node(node):
             raise ValueError("VMess: alterId должен быть числом") from None
         server["method"] = str(node.get("cipher") or "auto")
     if network == "xhttp":
+        if "download-settings" in transport:
+            # Как и для ссылок (downloadSettings): отдельный нижний канал XHTTP
+            # не поддерживается, сервер отклоняется, а не собирается без него.
+            raise ValueError("XHTTP: раздельный канал загрузки (download-settings) не поддерживается")
         server["mihomo_xhttp"] = copy.deepcopy(transport)
     if proto == "hysteria2":
         from engine.hysteria2 import validate, fingerprint

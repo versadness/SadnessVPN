@@ -12,10 +12,10 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertNotIn("OTHER", result)
         self.assertNotIn("TOKEN", result)
 
-    def test_unavailable_window_never_targets_another_app(self):
-        with mock.patch.object(server.window_control, "controller", None):
-            response = server.app.test_client().post("/api/window/minimize", base_url="http://127.0.0.1:45678")
-        self.assertEqual(response.status_code, 503)
+    def test_backend_has_no_window_commands(self):
+        # Окном владеет Electron; прежние команды окна pywebview удалены.
+        response = server.app.test_client().post("/api/window/minimize", base_url="http://127.0.0.1:45678")
+        self.assertEqual(response.status_code, 404)
 
     def test_export_reads_backend_history(self):
         with mock.patch.object(system_routes, "export_journal", return_value="startup error before UI"):

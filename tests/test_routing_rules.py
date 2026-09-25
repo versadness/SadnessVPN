@@ -35,4 +35,17 @@ class RoutingRuleTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate_rules([self.rule('geoip','no_such_country')],[])
 
 
+class GeoCategoryNameTests(unittest.TestCase):
+    def test_categories_with_exclamation_mark_are_accepted(self):
+        # В списке выбора есть category-ai-!cn: проверка не должна его отвергать.
+        rule=normalize_rule(dict(kind='geosite',value='category-ai-!cn'))
+        self.assertEqual(rule['value'],'category-ai-!cn')
+        self.assertEqual(len(validate_rules([rule],[])),1)
+
+    def test_rule_syntax_characters_are_still_rejected(self):
+        for value in ('a,b','x(y)','a b'):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                normalize_rule(dict(kind='geosite',value=value))
+
+
 if __name__=='__main__':unittest.main()

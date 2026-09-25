@@ -114,6 +114,9 @@ def api_tunnel_settings_post():
             "ok": False,
             "error": "LAN-прокси требует SOCKS5-аутентификацию, логин и пароль",
         })
+    if candidate.get("dns_preset") == "custom" and not str(candidate.get("custom_dns") or "").strip():
+        # Иначе пустой «Свой DNS» молча подменялся бы Cloudflare + Google.
+        return jsonify({"ok": False, "error": "Для пресета «Свой DNS» укажите хотя бы один адрес"})
     previous = {key: settings.get(key) for key in updates}
     settings.update(updates)
     if not app_state.save_settings(settings):

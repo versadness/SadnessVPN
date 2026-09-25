@@ -72,7 +72,7 @@
   function open(rule=null){
     editing=rule?.id||null;title.textContent=rule?'Изменить правило':'Новое правило';error.textContent='';value.value=rule?.value||'';name.value=rule?.name||'';action.value=rule?.destination==='direct'?'direct':'proxy';
     server.replaceChildren();const automatic=el('option','Авто — сервер с главного экрана');automatic.value='proxy';server.append(automatic);
-    for(const group of ST.groups){const og=el('optgroup');og.label=group.name;for(const s of group.servers||[]){if(!s.ui_id||['wg','wireguard','amneziawg','awg'].includes((s.protocol||'').toLowerCase()))continue;const ping=ST.pings?.[s.ui_id];const o=el('option',`${s.remark} · ${s.country||'страна не указана'} · ${(s.protocol||'vless').toUpperCase()} / ${s.transport||s.type||'tcp'} · Reality: ${s.reality||s.security==='reality'?'да':'нет'} · ${ping?.label||'пинг не проверен'}`);o.value='server:'+s.ui_id;og.append(o);}server.append(og);}
+    for(const group of ST.groups){const og=el('optgroup');og.label=group.name;for(const s of group.servers||[]){if(!s.ui_id||['wg','wireguard','amneziawg','awg'].includes((s.protocol||'').toLowerCase()))continue;const ping=ST.pings?.[s.ui_id];const o=el('option',`${s.remark} · ${(s.protocol||'vless').toUpperCase()} / ${s.transport||s.type||'tcp'} · Reality: ${s.reality||s.security==='reality'?'да':'нет'} · ${ping?.label||'пинг не проверен'}`);o.value='server:'+s.ui_id;og.append(o);}server.append(og);}
     const target=rule?.destination||'proxy';if(target.startsWith('server:')&&![...server.options].some(o=>o.value===target)){const o=el('option','Сервер недоступен — выберите замену');o.value=target;server.append(o);}server.value=target==='direct'?'proxy':target;pickKind(rule?.kind||'process');initial=snapshot();modal.showModal();value.focus();
   }
   function close(){if(busy)return;if(snapshot()!==initial&&!confirm('Закрыть без сохранения изменений?'))return;modal.close();}
@@ -203,7 +203,7 @@
       ['suffix','pypi.org'],['suffix','pythonhosted.org'],['suffix','crates.io'],['suffix','docker.com'],['suffix','docker.io'],
       ['suffix','stackoverflow.com'],['suffix','jetbrains.com'],['suffix','visualstudio.com'],['suffix','gradle.org'],['suffix','maven.org']]},
     {title:'Российские сервисы напрямую',note:'Идут мимо VPN: банки, госуслуги, магазины',destination:'direct',items:[
-      ['suffix','ru'],['suffix','рф'],['suffix','su'],
+      ['suffix','ru'],['suffix','xn--p1ai','рф'],['suffix','su'],
       ['suffix','yandex.ru'],['suffix','yandex.net'],['suffix','mail.ru'],['suffix','vk.com'],['suffix','vk.ru'],['suffix','userapi.com'],
       ['suffix','ok.ru'],['suffix','sberbank.ru'],['suffix','sber.ru'],['suffix','tinkoff.ru'],['suffix','alfabank.ru'],['suffix','vtb.ru'],
       ['suffix','gosuslugi.ru'],['suffix','nalog.ru'],['suffix','avito.ru'],['suffix','wildberries.ru'],['suffix','wbbasket.ru'],
@@ -217,14 +217,16 @@
     const count=el('span',preset.items.length+' правил','preset-set-count');
     head.append(info,count);
     const details=el('details',null,'preset-set-details');
-    details.append(el('summary','Показать состав'),el('p',preset.items.map(x=>x[1]).join(', '),'set-desc'));
+    details.append(el('summary','Показать состав'),el('p',preset.items.map(x=>x[2]||x[1]).join(', '),'set-desc'));
     const button=el('button','Добавить набор','btn btn-primary');button.type='button';
     button.onclick=async()=>{
       if(!confirm(`Добавить набор «${preset.title}» — ${preset.items.length} правил?`))return;
       const rules=current().slice();let added=0;
-      for(const [kind,value]of preset.items){
+      // Значения набора уже в том виде, в котором их хранит бэкенд (домены — в
+      // punycode), иначе повторное добавление не распознавало дубликаты.
+      for(const [kind,value,label]of preset.items){
         if(rules.some(r=>r.kind===kind&&r.value.toLowerCase()===value.toLowerCase()))continue;
-        rules.push({id:crypto.randomUUID(),kind,value,name:value,destination:preset.destination,enabled:true});added++;
+        rules.push({id:crypto.randomUUID(),kind,value,name:label||value,destination:preset.destination,enabled:true});added++;
       }
       if(!added){toast('Все правила набора уже добавлены','ok');return;}
       try{await persist(rules);toast(`Добавлено правил: ${added}`,'ok');}catch(e){toast(e.message,'err');}

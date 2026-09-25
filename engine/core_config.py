@@ -14,6 +14,9 @@ SUPPORTED_PROTOCOLS = ("vless", "vmess", "ss", "trojan", "hysteria2")
 # Транспорты, которые ядро умеет для прокси-протоколов поверх TCP.
 SUPPORTED_NETWORKS = ("tcp", "ws", "httpupgrade", "grpc", "http", "h2", "xhttp", "splithttp")
 
+# Плагины Shadowsocks, которые Mihomo собирает сам.
+SUPPORTED_SS_PLUGINS = ("obfs", "v2ray-plugin")
+
 
 def ensure_supported(server):
     """Проверить сервер против возможностей Mihomo до запуска ядра.
@@ -31,9 +34,17 @@ def ensure_supported(server):
         from engine.hysteria2 import validate
         validate(server)
         return server
+    if protocol == "ss":
+        if server.get("plugin") not in (None, "", *SUPPORTED_SS_PLUGINS):
+            raise ValueError(f"Shadowsocks: плагин {server['plugin']} не поддерживается ядром Mihomo")
+        return server
     network = server.get("type", "tcp")
     if network not in SUPPORTED_NETWORKS:
         raise ValueError(f"Транспорт {network} не поддерживается ядром Mihomo")
+    header = server.get("header_type") or "none"
+    if header != "none" and not (header == "http" and network == "tcp"):
+        # Иначе сервер с маскировкой заголовка молча собирался как обычный TCP.
+        raise ValueError(f"Маскировка заголовка {header} для транспорта {network} не поддерживается")
     if network in {"xhttp", "splithttp"}:
         if protocol != "vless":
             raise ValueError("Mihomo поддерживает XHTTP только для VLESS")
@@ -50,6 +61,9 @@ def _mihomo_proxy(server):
              "port": int(server["port"]), "udp": True}
     if proto == "ss":
         proxy.update(cipher=server["method"], password=server["password"])
+        if server.get("plugin"):
+            proxy["plugin"] = server["plugin"]
+            proxy["plugin-opts"] = dict(server.get("plugin_opts") or {})
         return proxy
     tls = server.get("security") in {"tls", "reality"} or proto in {"trojan", "hysteria2"}
     if proto == "vless":
@@ -105,8 +119,16 @@ def _mihomo_proxy(server):
         proxy["network"] = "grpc"
         proxy["grpc-opts"] = {"grpc-service-name": server.get("serviceName", "")}
     elif network in {"http", "h2"}:
+        # В ссылках Xray type=http — это HTTP/2.
         proxy["network"] = "h2"
         proxy["h2-opts"] = {"path": path, "host": [host]}
+    elif network == "tcp" and server.get("header_type") == "http":
+        # TCP с маскировкой под HTTP/1.1 — в Mihomo это network: http.
+        opts = {"method": "GET", "path": [server.get("path") or "/"]}
+        if server.get("host_header"):
+            opts["headers"] = {"Host": [item.strip() for item in server["host_header"].split(",") if item.strip()]}
+        proxy["network"] = "http"
+        proxy["http-opts"] = opts
     return proxy
 
 
@@ -116,6 +138,7 @@ def _dns_block(settings, ipv6):
     Xbox/Comss подменяют ответы по реальному адресу клиента, поэтому их
     запросы обязаны уходить напрямую, а не через прокси; имя DoT-сервера
     резолвится бутстрапом по его же raw IP, иначе получается петля.
+    Остальные пресеты следуют правилам маршрутизации (respect-rules).
     """
     preset = settings.get("dns_preset", "cf_google")
     if preset == "custom":
@@ -137,23 +160,37 @@ def _dns_block(settings, ipv6):
         # Бутстрап имени DoT-сервера. Для Smart DNS это его же raw IP:
         # резолвить xbox-dns.ru через сам xbox-dns.ru нельзя.
         "default-nameserver": default_nameserver,
-        # DNS не идёт через правила маршрутизации: Smart DNS обязан видеть
-        # реальный адрес клиента, иначе подмена ответов не срабатывает.
-        "respect-rules": False,
+        # Обычный DNS подчиняется правилам маршрутизации и в режиме «весь ПК»
+        # уходит в туннель, а не напрямую к провайдеру DNS. Smart DNS — наоборот:
+        # он обязан видеть реальный адрес клиента, иначе подмена ответов не
+        # срабатывает, поэтому его запросы идут мимо туннеля.
+        "respect-rules": preset not in SMART_DNS_BOOTSTRAP,
     }
     return dns
 
 
-def build_mihomo_config(server, socks_port=1080, http_port=8080, clash_port=9090,
-                        routing_mode="all", routed_apps=None, **settings):
-    proxy = _mihomo_proxy(server)
-    if settings.get("mux") and proxy["type"] != "hysteria2" and proxy.get("network") != "xhttp" and not proxy.get("flow"):
+def build_mihomo_config(server, **settings):
+    return assemble_config(_mihomo_proxy(server), **settings)
+
+
+def assemble_config(proxy, socks_port=1080, http_port=8080, clash_port=9090,
+                    routing_mode="all", routed_apps=None, **settings):
+    """Полная конфигурация Mihomo вокруг готового outbound с именем proxy."""
+    if settings.get("mux") and proxy["type"] not in {"hysteria2", "wireguard"} and proxy.get("network") != "xhttp" and not proxy.get("flow"):
         proxy["smux"] = {"enabled": True, "protocol": "smux", "max-connections": 4}
     preset = settings.get("dns_preset", "cf_google")
-    ipv6 = settings.get("preferred_ip", "ipv4") != "ipv4" and preset not in {"xbox", "xbox_dot"}
+    ipv4_only = settings.get("preferred_ip", "ipv4") == "ipv4"
+    # Предпочтение IP влияет только на DNS (есть ли AAAA-ответы). Сам TUN всегда
+    # захватывает и IPv6: с ipv6: false Mihomo не выдаёт TUN IPv6-адрес и не
+    # ставит IPv6-маршрут, и такой трафик шёл бы мимо туннеля.
+    ipv6 = not ipv4_only and preset not in {"xbox", "xbox_dot"}
     rules = ["IP-CIDR,127.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
              "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
              "IP-CIDR6,fc00::/7,DIRECT,no-resolve", "IP-CIDR6,fe80::/10,DIRECT,no-resolve"]
+    if ipv4_only:
+        # Режим «только IPv4»: внешний IPv6 закрыт, а не выпущен напрямую.
+        # Приложения быстро переходят на IPv4 и идут по обычным правилам.
+        rules.append("IP-CIDR6,::/0,REJECT,no-resolve")
     if settings.get("block_udp"):
         rules.append("NETWORK,UDP,REJECT")
     for exe in routed_apps or []:
@@ -166,7 +203,7 @@ def build_mihomo_config(server, socks_port=1080, http_port=8080, clash_port=9090
         "socks-port": socks_port, "port": http_port, "allow-lan": bool(settings.get("allow_lan")),
         "bind-address": "*" if settings.get("allow_lan") else "127.0.0.1",
         "external-controller": f"127.0.0.1:{clash_port}", "mode": "rule", "log-level": "info",
-        "ipv6": ipv6, "find-process-mode": "always", "geo-auto-update": False,
+        "ipv6": True, "find-process-mode": "always", "geo-auto-update": False,
         "profile": {"store-selected": False, "store-fake-ip": False},
         "tun": {"enable": True, "device": "SadnessMihomo", "stack": "system",
                 "auto-route": True, "auto-detect-interface": True,

@@ -22,8 +22,9 @@ const PRESET_SET=[['telegram.exe','Telegram'],['Discord.exe','Discord'],['chrome
 async function requestJson(path,{method='POST',body=null,timeoutMs=10000}={}){ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),options={method,signal:controller.signal,headers:{}};if(method!=='GET'){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body||{});}try{const r=await fetch(path,options);let data;try{data=await r.json();}catch(_){data={ok:false,error:`HTTP ${r.status}: некорректный ответ`};}if(!r.ok&&data.ok!==false)data={...data,ok:false,error:data.error||`HTTP ${r.status}`};return data;}catch(e){return {ok:false,error:e.name==='AbortError'?'Превышено время ожидания ответа':'Нет связи с приложением'};}finally{clearTimeout(timer);} }
 function api(path,body,timeoutMs=10000){ return requestJson(path,{method:'POST',body,timeoutMs}); }
 function apiGet(path,timeoutMs=10000){ return requestJson(path,{method:'GET',timeoutMs}); }
-async function windowAction(path){ const r=await api(path); if(!r.ok) toast(r.error||'Команда окна не выполнена','err'); return r; }
-function winMin(){ windowAction('/api/window/minimize'); } function winMax(){ windowAction('/api/window/togglemax'); } function winClose(){ api('/api/window/close',{force:true}).then(r=>{if(!r.ok)toast(r.error||'Не удалось закрыть окно','err');}); }
+// Кнопками окна управляет Electron: renderer/js/shell-bridge.js подменяет эти
+// функции. В обычном браузере окном владеет сам браузер.
+function winMin(){} function winMax(){} function winClose(){}
 function setBackendOnline(online){ ST.backendOnline=online; if(!online)applyStatus(); }
 function connectWS(){ if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return; clearTimeout(wsTimer); const scheme=location.protocol==='https:'?'wss':'ws'; ws=new WebSocket(`${scheme}://${location.host}/ws`); ws.onopen=()=>{wsRetry=0;setBackendOnline(false);}; ws.onmessage=ev=>{try{handle(JSON.parse(ev.data));}catch(e){addLog('Некорректное сообщение интерфейса: '+e,'warn');}}; ws.onerror=()=>ws.close(); ws.onclose=()=>{setBackendOnline(false);const delay=Math.min(15000,1000*Math.pow(1.7,wsRetry++));wsTimer=setTimeout(connectWS,delay);}; }
 function handle(d){ switch(d.type){
@@ -59,7 +60,7 @@ async function setProto(p){if(ST.connected||ST.status==='connecting'||ST.status=
 // Кнопка включает Comss — Xbox требует регистрации IP и у пользователей
 // с динамическим адресом перестаёт работать молча.
 const SMART_DNS_PRESETS=['xbox','xbox_dot','comss','comss_dot'];
-async function toggleSecureDns(){ if(isNativeAwg()||ST.connected||ST.status==='connecting'||ST.status==='stopping'){toast('AI-DNS настраивается до подключения TUN/WireGuard','err');return;} const next=SMART_DNS_PRESETS.includes(ST.tunnel.dns_preset)?'cf_google':'comss_dot';const r=await api('/api/tunnel-settings',{dns_preset:next});if(!r.ok){toast(r.error||'Не удалось изменить AI-DNS','err');return;}ST.tunnel.dns_preset=next;syncSettings();toast(next==='xbox_dot'?'AI-DNS будет активен внутри туннеля':'AI-DNS выключен','ok'); }
+async function toggleSecureDns(){ if(isNativeAwg()||ST.connected||ST.status==='connecting'||ST.status==='stopping'){toast('AI-DNS настраивается до подключения TUN/WireGuard','err');return;} const next=SMART_DNS_PRESETS.includes(ST.tunnel.dns_preset)?'cf_google':'comss_dot';const r=await api('/api/tunnel-settings',{dns_preset:next});if(!r.ok){toast(r.error||'Не удалось изменить AI-DNS','err');return;}ST.tunnel.dns_preset=next;syncSettings();toast(SMART_DNS_PRESETS.includes(next)?'AI-DNS включён · применится при подключении':'AI-DNS выключен','ok'); }
 async function refreshPublicIp(){ const value=document.getElementById('ipVal'),note=document.getElementById('ipNote');value.textContent='Проверяю…';note.textContent='Определение внешнего адреса';const r=await api('/api/network/ip',{},15000);if(r.ok){value.textContent=r.ip;const version=r.version?`IPv${r.version}`:'IP';note.textContent=ST.connected?`${version} при работающем туннеле`:`Текущий внешний ${version}`;}else{value.textContent='Не определён';note.textContent=r.error||'Ошибка проверки';toast(note.textContent,'err');} }
 function maybeAutoConnect(){ if(autoConnectAttempted||!ST.settings.autoconn)return;autoConnectAttempted=true;setTimeout(()=>{if(!manualConnect&&ST.backendOnline&&ST.status==='off'&&ST.settings.autoconn&&selectedServer())toggleConnect(true);},300); }
 function fmtBytes(n){ n=n||0; if(n<1024)return n+' B'; const u=['KB','MB','GB','TB']; let i=-1; do{n/=1024;i++;}while(n>=1024&&i<u.length-1); return n.toFixed(1)+' '+u[i]; }
@@ -90,7 +91,8 @@ async function probeServer(gid,idx,button){
   probeBusy=true;button?.classList.add('scanning');
   toast('Проверяем соединение через сервер…');
   try{
-    const r=await api('/api/servers/probe',{group_id:gid,index:idx});
+    // Проверка поднимает отдельное ядро и ждёт ответа сервера до ~35 с.
+    const r=await api('/api/servers/probe',{group_id:gid,index:idx},45000);
     if(!r.ok){toast(r.error||'Не удалось проверить сервер','err');return;}
     toast(r.label+(r.detail?' · '+r.detail:''),r.state==='connected'?'ok':'err');
   }catch(_){toast('Не удалось проверить сервер','err');}
@@ -163,7 +165,7 @@ function ddToggle(id){ const el=document.getElementById(id),willOpen=!el.classLi
 document.addEventListener('click',e=>{ if(!e.target.closest('.dd')) closeDropdowns(); });
 async function setServerSort(v){ if(await updateTunnel({server_sort:v})){ST.srvSort=v;renderServers();renderWg();} }
 async function pickSort(v,_lbl,_el){ closeDropdowns();await setServerSort(v); }
-async function pickDns(v,_lbl,_el){ closeDropdowns();await updateTunnel({dns_preset:v}); }
+async function pickDns(v,_lbl,_el){ closeDropdowns();if(v==='custom'&&!(ST.tunnel.custom_dns||'').trim()){toast('Сначала укажите адреса в поле «Свой DNS»','err');document.getElementById('customDns')?.focus();return;}await updateTunnel({dns_preset:v}); }
 function segSet(id,val){ document.querySelectorAll(`#${id} button`).forEach(b=>b.classList.toggle('on',b.dataset.v===val)); }
 function syncSettings(){
   const s=ST.settings,t=ST.tunnel;
@@ -182,7 +184,8 @@ function syncSettings(){
   const sortMap={default:'По умолчанию',ping:'По пингу',name:'По имени'};
   document.getElementById('ddSortLbl').textContent=sortMap[ST.srvSort]||sortMap.default;
   document.querySelectorAll('#ddSort .dd-item').forEach(i=>i.classList.toggle('on',i.dataset.v===ST.srvSort));
-  const dnsMap={cf_google:'Cloudflare + Google',cloudflare:'Cloudflare (1.1.1.1)',google:'Google (8.8.8.8)',adguard:'AdGuard',xbox:'Xbox DNS',xbox_dot:'Xbox DNS · защищённый',yandex:'Яндекс DNS',quad9:'Quad9',custom:'Свой DNS'};
+  const dnsMap={cf_google:'Cloudflare + Google',cloudflare:'Cloudflare (1.1.1.1)',google:'Google (8.8.8.8)',adguard:'AdGuard',xbox:'Xbox · Smart DNS',xbox_dot:'Xbox · Smart DNS',comss:'Comss · Smart DNS',comss_dot:'Comss · Smart DNS',quad9:'Quad9',custom:'Свой DNS'};
+  const customDns=document.getElementById('customDns');if(customDns&&document.activeElement!==customDns)customDns.value=t.custom_dns||'';
   const dv=t.dns_preset||'cf_google';document.getElementById('ddDnsLbl').textContent=dnsMap[dv]||dv;
   document.querySelectorAll('#ddDns .dd-item').forEach(i=>i.classList.toggle('on',i.dataset.v===dv));
   const geminiOn=SMART_DNS_PRESETS.includes(dv);document.getElementById('tgSecureDns').classList.toggle('on',geminiOn);document.getElementById('geminiDnsLabel').textContent=geminiOn?'AI-DNS · выбран':'AI-DNS';syncCapabilities();
@@ -299,14 +302,14 @@ let _tt; function toast(msg,kind){ const el=document.getElementById('toast'); el
 connectWS();
 function isNativeAwg(){return ST.proto==='wg'&&!!selectedServer()?.is_awg;}
 function syncCapabilities(){
-  const awg=isNativeAwg(),locked=ST.connected||ST.status==='connecting'||ST.status==='stopping', selected=['xbox','xbox_dot'].includes(ST.tunnel.dns_preset);
+  const awg=isNativeAwg(),locked=ST.connected||ST.status==='connecting'||ST.status==='stopping', selected=SMART_DNS_PRESETS.includes(ST.tunnel.dns_preset);
   const dns=document.getElementById('tgSecureDns');dns.disabled=awg||locked;
   dns.classList.toggle('on',!awg&&selected);
   document.getElementById('geminiDnsLabel').textContent=awg?'DNS из AWG':selected?(ST.connected?'AI-DNS · действует':'AI-DNS · выбран'):'AI-DNS';
-  dns.title=awg?'DNS берётся из конфигурации AmneziaWG':locked?'Для изменения отключите туннель':'Применяется внутри туннеля TUN/WireGuard';
+  dns.title=awg?'DNS берётся из конфигурации AmneziaWG':locked?'Для изменения отключите туннель':'Smart DNS для TUN/WireGuard: запросы идут к нему напрямую, мимо туннеля, иначе подмена ответов не работает';
   document.getElementById('hcMode').textContent=awg?'Весь ПК · AWG':({all:'Весь ПК',whitelist:'Только выбранные',blacklist:'Кроме выбранных'})[ST.appsConfig.mode]||'Весь ПК';
   document.querySelectorAll('.awg-limit').forEach(el=>el.classList.toggle('hidden',!awg));
-  document.querySelectorAll('#portSocks,#portHttp,#s5user,#s5pass,#ddDns,[data-tk]').forEach(el=>{
+  document.querySelectorAll('#portSocks,#portHttp,#s5user,#s5pass,#ddDns,#customDns,[data-tk]').forEach(el=>{
     const container=el.closest('.set-row,.port-card')||el;
     container.classList.toggle('unavailable',awg);
     container.title=awg?'Не применяется к нативному AmneziaWG':'';

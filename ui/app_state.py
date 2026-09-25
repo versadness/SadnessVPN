@@ -15,6 +15,8 @@ from engine.paths import data_dir
 
 DATA_DIR = data_dir()
 SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
+# Предыдущая валидная версия settings.json — на случай повреждения основного.
+SETTINGS_BAK_PATH = SETTINGS_PATH + ".bak"
 # Резервная копия делается один раз, перед первой миграцией на новое ядро.
 # Имя фиксировано: цель — вернуть прежний профиль вручную, а не вести архив.
 SETTINGS_BACKUP_PATH = os.path.join(DATA_DIR, "settings.before-mihomo-migration.json")
@@ -83,12 +85,47 @@ DEFAULT_SETTINGS = {
 }
 
 
-def load_settings() -> dict:
+def _read_settings_file(path):
+    """Словарь настроек из файла; None — файла нет; ValueError — файл повреждён."""
     try:
-        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             loaded = json.load(f)
-        if not isinstance(loaded, dict):
-            raise ValueError("Invalid settings")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(str(exc)) from None
+    if not isinstance(loaded, dict):
+        raise ValueError("settings.json не содержит объект настроек")
+    return loaded
+
+
+def _read_stored_settings():
+    """Основной файл, а при его повреждении — резервная копия.
+
+    Повреждённый файл откладывается рядом, а не перезаписывается: иначе при
+    следующем сохранении пропал бы и HWID, и провайдер подписки увидел бы
+    новое устройство.
+    """
+    try:
+        return _read_settings_file(SETTINGS_PATH)
+    except ValueError as exc:
+        journal.warning("settings.json повреждён (%s); используется резервная копия", exc)
+        try:
+            os.replace(SETTINGS_PATH, SETTINGS_PATH + ".corrupt")
+        except OSError:
+            pass
+    try:
+        return _read_settings_file(SETTINGS_BAK_PATH)
+    except ValueError:
+        journal.warning("Резервная копия настроек тоже повреждена; загружены значения по умолчанию")
+        return None
+
+
+def load_settings() -> dict:
+    loaded = _read_stored_settings()
+    if loaded is None:
+        return dict(DEFAULT_SETTINGS)
+    try:
         settings = {**DEFAULT_SETTINGS, **loaded}
         for key in (
             "startup", "autoconn", "silent", "lan", "mintray", "animations", "reconnect",
@@ -159,7 +196,13 @@ def load_settings() -> dict:
             save_settings(settings)
         return settings
     except Exception:
-        return dict(DEFAULT_SETTINGS)
+        # Сбой нормализации не должен стоить пользователю идентификатора
+        # устройства: без него провайдер регистрирует новое устройство.
+        journal.exception("Не удалось разобрать настройки; загружены значения по умолчанию")
+        settings = dict(DEFAULT_SETTINGS)
+        if isinstance(loaded.get("hwid"), str):
+            settings["hwid"] = loaded["hwid"]
+        return settings
 
 
 def backup_settings(raw: dict) -> bool:
@@ -188,7 +231,7 @@ def normalize_zapret_game_filter(value):
 
 def save_settings(cfg: dict) -> bool:
     try:
-        atomic_write_json(SETTINGS_PATH, cfg)
+        atomic_write_json(SETTINGS_PATH, cfg, backup_path=SETTINGS_BAK_PATH)
         return True
     except Exception as exc:
         # В собранном приложении stdout никуда не ведёт: пишем в журнал,
@@ -211,6 +254,29 @@ def port_number(value, default=None) -> int:
     return port
 
 
+_DNS_SCHEMES = ("udp://", "tcp://", "tls://", "https://", "quic://")
+
+
+def normalize_custom_dns(value: str) -> str:
+    """Список адресов DNS через запятую: IP или scheme://хост[:порт][/путь]."""
+    import ipaddress
+    import re
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    for item in items:
+        scheme = next((prefix for prefix in _DNS_SCHEMES if item.lower().startswith(prefix)), "")
+        rest = item[len(scheme):]
+        if not scheme:
+            try:
+                ipaddress.ip_address(rest)
+                continue
+            except ValueError:
+                raise ValueError(f"DNS «{item}»: без схемы нужен IP-адрес; для имени "
+                                 "укажите tls://, https:// или quic://") from None
+        if not re.fullmatch(r"[A-Za-z0-9.\-]+(?::\d{1,5})?(?:/[^\s,]*)?|\[[0-9A-Fa-f:.]+\](?::\d{1,5})?", rest):
+            raise ValueError(f"Некорректный адрес DNS: {item}")
+    return ", ".join(items)
+
+
 def normalize_tunnel_setting(key, value):
     if key in REMOVED_SETTING_KEYS:
         raise ValueError("Выбора ядра больше нет: VPN работает на Mihomo")
@@ -221,6 +287,8 @@ def normalize_tunnel_setting(key, value):
     if key in ("socks5_user", "socks5_pass", "custom_dns"):
         if not isinstance(value, str) or len(value) > 2048:
             raise ValueError(f"Invalid {key}")
+        if key == "custom_dns":
+            return normalize_custom_dns(value)
         return value
     if key == "preferred_ip":
         if value not in ("ipv4", "ipv6", "auto"):

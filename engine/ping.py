@@ -25,6 +25,21 @@ def tcp_ping(host: str, port: int, timeout: float = 3.0):
     except Exception:
         return None
 
+def _decode_console(raw: bytes) -> str:
+    """ping.exe пишет в OEM-кодировке консоли (cp866 на русской Windows)."""
+    encoding = "utf-8"
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            encoding = f"cp{ctypes.windll.kernel32.GetOEMCP()}"
+        except (AttributeError, OSError):
+            pass
+    try:
+        return raw.decode(encoding, errors="replace")
+    except LookupError:
+        return raw.decode("utf-8", errors="replace")
+
+
 def icmp_ping(host: str, timeout: float = 3.0):
     try:
         system = platform.system().lower()
@@ -36,19 +51,18 @@ def icmp_ping(host: str, timeout: float = 3.0):
         result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
             timeout=timeout + 2,
             creationflags=0x08000000 if system == "windows" else 0,
         )
-        output = result.stdout
-
         if result.returncode != 0:
             return None
+        output = _decode_console(result.stdout)
 
+        # Подпись поля локализована («время», «time», «Zeit»…), единица — нет.
+        # Строка ответа Windows несёт ещё и TTL=: так «узел недоступен» с
+        # нулевым кодом возврата не принимается за ответ.
         if system == "windows":
-            m = re.search(r'[Вв]ремя[<=]\s*(\d+)', output)
-            if not m:
-                m = re.search(r'[Tt]ime[<=]\s*(\d+)', output)
+            m = re.search(r'[=<]\s*(\d+)\s*(?:ms|мс)\b.*TTL=', output, re.IGNORECASE)
         else:
             m = re.search(r'time[=<]\s*([\d.]+)', output)
 
@@ -91,7 +105,7 @@ def tunnel_ping(test_url="https://www.gstatic.com/generate_204", timeout=3.0,
                 native_awg=False, clash_port=9090):
     """Measure the proxy outbound, not the local TUN TCP accept latency.
 
-    Both sing-box and Mihomo expose a delay test for the owned 'proxy' outbound.
+    Mihomo exposes a delay test for the owned 'proxy' outbound.
     Native AWG has no Clash API, so use an HTTPS response through its system route.
     Never fall back to a TCP connect, which may only reach a local TUN listener.
     """
@@ -127,28 +141,18 @@ def ping_server(
     test_url   : str   = "",
     timeout    : float = 3.0,
 ):
+    """Задержка до адреса сервера. HTTP-режимы меряются через ядро (ping_groups)."""
     if ping_type == "icmp":
         ms = icmp_ping(host, timeout)
         if ms is None:
             ms = tcp_ping(host, port, timeout=1.5)
         return ms
-    elif ping_type in ("http_get", "http_head"):
-        url    = test_url or PING_URL_PRESETS["google204"]
-        method = "GET" if ping_type == "http_get" else "HEAD"
-        ms     = http_ping(url, method=method, timeout=timeout)
-        if ms is None:
-            # Fallback на TCP
-            ms = tcp_ping(host, port, timeout=1.5)
-        return ms
-    else:
-        return tcp_ping(host, port, timeout=timeout)
+    return tcp_ping(host, port, timeout=timeout)
 
-def wg_ping(host: str, port: int, timeout: float = 3.0,
-            ping_type: str = "icmp", test_url: str = ""):
-    # Reachability probe only, not proof of a WireGuard handshake.
-    if ping_type == "icmp":
-        return icmp_ping(host, timeout)
-    return ping_server(host, port, ping_type=ping_type, timeout=timeout, test_url=test_url)
+def wg_ping(host: str, port: int, timeout: float = 3.0):
+    # WireGuard работает по UDP: TCP-порт у него не слушает, поэтому только ICMP.
+    # Это доступность адреса, а не подтверждение handshake.
+    return icmp_ping(host, timeout)
 
 def ping_color(ms) -> str:
     if ms is None:
@@ -170,7 +174,19 @@ def ping_groups(
     """
     Пингует все серверы в группах.
     Использует пул потоков для защиты от лавинообразного создания Thread.
+    HTTP-режимы — настоящий URL-тест через каждый сервер (engine.url_test).
     """
+    if ping_type in ("http_get", "http_head"):
+        from engine.url_test import delays
+        for g in groups:
+            if stop_event and stop_event.is_set():
+                return
+            gid = g["id"]
+            delays(g.get("servers", []), test_url or PING_URL_PRESETS["google204"],
+                   timeout=timeout, stop_event=stop_event,
+                   on_result=lambda i, ms, gid=gid: on_result(gid, i, ms, ping_color(ms)))
+        return
+
     def _ping(gid, i, host, port):
         if stop_event and stop_event.is_set():
             return

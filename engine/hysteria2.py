@@ -61,12 +61,6 @@ def validate(server):
         fingerprint(server["pinned_cert"])
 
 
-def requires_mihomo(server):
-    # sing-box 1.10.7 has neither HY2 hopping, certificate fingerprint pinning
-    # nor ECH.
-    return any(server.get(k) for k in ("ports", "pinned_cert", "up", "down",
-                                       "hop_interval", "verify_cert_name", "ech"))
-
 
 def parse_uri(link):
     parsed = urlsplit(link.strip())

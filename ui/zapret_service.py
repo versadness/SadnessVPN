@@ -90,6 +90,34 @@ class ZapretService:
             self.state = "on" if started else "off"
             return started
 
+    def protect_vpn(self, servers):
+        """Перед подключением VPN исключить его серверы из работающего обхода.
+
+        winws читает список исключений только при старте. Если сервер выбран
+        уже после запуска Zapret, собственный winws перезапускается с тем же
+        профилем и игровым фильтром. Возвращает True, если был перезапуск.
+        """
+        from engine import zapret_exclusions
+        with self._lock:
+            if self.state != "on" or not self.engine.running:
+                return False
+            addresses = zapret_exclusions.collect(servers)
+            if set(addresses) <= set(self.engine.excluded_addresses):
+                return False
+            strategy = self.engine._strategy
+            config = self.engine._game_filter_config
+            self.engine.log_cb("Zapret перезапускается, чтобы исключить адрес VPN-сервера из обработки", "info")
+            self.engine.stop()
+            started = self.engine.start(strategy, config, servers)
+            self.running = started
+            self.strategy = self.engine._strategy if started else None
+            self.state = "on" if started else "off"
+            if not started:
+                self._generation += 1
+            status = self.status()
+        self._broadcast({"type": "zapret_status", **status})
+        return True
+
     def begin_stop(self):
         """Немедленно отменяет запуск, не дожидаясь лока движка в HTTP-потоке."""
         if self.state == "stopping":

@@ -51,7 +51,7 @@ function refreshGlass(win = mainWindow) {
   return glassStatus;
 }
 
-function createWindow() {
+function createWindow({ hidden = false } = {}) {
   const saved = windowState.load();
   const win = new BrowserWindow({
     width: saved.width,
@@ -92,10 +92,11 @@ function createWindow() {
   win.once('ready-to-show', () => {
     refreshGlass(win);
     if (saved.maximized) win.maximize();
-    if (!startup.startedByAutostart()) win.show();
+    if (!hidden) win.show();
     // Установленный лаунчер ждёт это событие до 60 секунд и без него
     // сообщает пользователю о сорванном запуске.
     startup.signalReady();
+    backend.notifyReady();
   });
 
   // Стекло и стиль интерфейса подмешиваются в страницу, которую отдаёт backend,
@@ -148,6 +149,16 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // Окно показывает только локальный интерфейс: мост sadnessShell не должен
+  // оказаться у чужой страницы. Внешние ссылки уходят в браузер.
+  const keepLocal = (event, url) => {
+    if (String(url).startsWith(`${backend.baseUrl}/`)) return;
+    event.preventDefault();
+    if (/^https?:/i.test(url)) shell.openExternal(url);
+  };
+  win.webContents.on('will-navigate', keepLocal);
+  win.webContents.on('will-redirect', keepLocal);
+
   win.webContents.on('render-process-gone', (_event, details) => {
     dialog.showErrorBox(
       'Sadness VPN',
@@ -170,11 +181,13 @@ async function bootstrap() {
     return;
   }
 
-  mainWindow = createWindow();
+  // Автозапуск Windows прячет окно в трей только при включённом «Тихом запуске».
+  const hidden = startup.startedByAutostart() && (await backend.startupPreferences()).silent;
+  mainWindow = createWindow({ hidden });
   registerIpc();
   // Лаунчер активирует уже запущенное окно через бэкенд. Второй экземпляр
   // Electron (app.on('second-instance')) остаётся запасным путём.
-  backend.watchShowRequests(showWindow);
+  backend.watchShowRequests(showWindow, () => { quitting = true; app.quit(); });
   await mainWindow.loadURL(`${backend.baseUrl}/?desktop=1&shell=electron`);
 
   tray.create({
@@ -271,10 +284,5 @@ function registerIpc() {
     if (/^https?:/i.test(String(url))) shell.openExternal(url);
   });
   ipcMain.handle('app:open-data-dir', () => shell.openPath(require('./lib/paths').dataDir()));
-  ipcMain.handle('app:set-autostart', (_event, enabled) => {
-    app.setLoginItemSettings({ openAtLogin: enabled === true, args: ['--silent'] });
-    return app.getLoginItemSettings().openAtLogin;
-  });
-  ipcMain.handle('app:get-autostart', () => app.getLoginItemSettings().openAtLogin);
   ipcMain.handle('tray:set-state', (_event, connected) => tray.setState(connected === true));
 }

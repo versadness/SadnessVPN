@@ -4,26 +4,45 @@
 повышенных прав (/RL HIGHEST), которых запись в Run не даёт. Старая запись в
 Run осталась от прежних версий и снимается при любом изменении, иначе
 приложение стартовало бы дважды.
+
+Задача запускает лаунчер с --autostart, а не бэкенд: сам по себе бэкенд не
+поднимает ни окна, ни трея, и автоподключение (оно живёт в интерфейсе) при
+таком запуске не срабатывало.
 """
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 TASK_NAME = "SadnessVPN"
+AUTOSTART_ARGUMENT = "--autostart"
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _command() -> tuple[str, list[str]]:
+    """(исполняемый файл, аргументы) для запуска приложения при входе в Windows."""
+    if getattr(sys, "frozen", False):
+        # INSTALLDIR/runtime/SadnessVPN.exe — бэкенд, INSTALLDIR/SadnessVPN.exe — лаунчер.
+        launcher = Path(sys.executable).resolve().parent.parent / "SadnessVPN.exe"
+        if not launcher.is_file():
+            raise RuntimeError("Не найден лаунчер Sadness VPN рядом с установленной программой")
+        return str(launcher), [AUTOSTART_ARGUMENT]
+    electron = _PROJECT_ROOT / "node_modules" / "electron" / "dist" / "electron.exe"
+    return str(electron), [str(_PROJECT_ROOT), AUTOSTART_ARGUMENT]
 
 
 def target_path() -> str:
-    if getattr(sys, "frozen", False):
-        return sys.executable
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "main.py"))
+    return _command()[0]
+
+
+def _quote(value: str) -> str:
+    return f'"{value}"' if " " in value or not value else value
 
 
 def _task_command() -> str:
-    path = target_path()
-    if getattr(sys, "frozen", False):
-        return f'"{path}"'
-    return f'"{sys.executable}" "{path}"'
+    executable, arguments = _command()
+    return " ".join([f'"{executable}"', *(_quote(item) for item in arguments)])
 
 
 def _run(*arguments):
@@ -61,19 +80,20 @@ def disable():
     _drop_legacy_run_entry()
 
 
-def enabled():
+def _read_task():
+    """(включена, путь, аргументы) задачи или None, если задачи нет."""
     if sys.platform != "win32":
-        return False
+        return None
     import pythoncom
     import win32com.client
     pythoncom.CoInitialize()
-    scheduler = folder = task = None
+    scheduler = folder = task = action = None
     try:
         scheduler = win32com.client.Dispatch("Schedule.Service")
         scheduler.Connect()
         try:
             folder = scheduler.GetFolder("\\")
-            task = folder.GetTask("SadnessVPN")
+            task = folder.GetTask(TASK_NAME)
         except pythoncom.com_error as exc:
             # HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND): no owned task.
             details = exc.excepinfo
@@ -81,11 +101,38 @@ def enabled():
             if exc.hresult == -2147024894 or (
                 exc.hresult == -2147352567 and nested_code == -2147024894
             ):
-                return False
+                return None
             raise
-        return bool(task.Enabled)
+        path = arguments = ""
+        try:
+            action = task.Definition.Actions.Item(1)
+            path, arguments = str(action.Path or ""), str(action.Arguments or "")
+        except Exception:
+            pass
+        return bool(task.Enabled), path, arguments
     finally:
         # Release COM interfaces on the same initialized thread, before COM
         # teardown. This avoids IUnknown release errors on missing tasks.
-        task = folder = scheduler = None
+        action = task = folder = scheduler = None
         pythoncom.CoUninitialize()
+
+
+def enabled():
+    task = _read_task()
+    return bool(task and task[0])
+
+
+def ensure_current() -> bool:
+    """Перенаправить задачу прежних версий с бэкенда на лаунчер.
+
+    Возвращает True, если задача была пересоздана.
+    """
+    task = _read_task()
+    if not task or not task[0]:
+        return False
+    executable, _arguments = _command()
+    path = os.path.normcase(os.path.abspath(task[1].strip('"'))) if task[1] else ""
+    if path == os.path.normcase(os.path.abspath(executable)) and AUTOSTART_ARGUMENT in task[2]:
+        return False
+    enable()
+    return True

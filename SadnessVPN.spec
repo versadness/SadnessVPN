@@ -17,7 +17,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        # The notification-area icon is loaded at runtime by ui.tray.
+        # Иконку трея Electron ищет в runtime/_internal/app.ico (electron/lib/tray.js).
         ('app.ico', '.'),
         ('PORTABLE-README.txt', '.'),
         # Шаблоны Flask — попадают в _internal/ui/templates (там и используются)

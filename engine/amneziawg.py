@@ -1,8 +1,8 @@
 """Native AmneziaWG tunnel service integration for Windows.
 
-AWG obfuscation fields are not part of standard WireGuard and are not
-supported by sing-box.  This manager uses the official AmneziaWG Windows
-tunnel service for AWG configs while leaving normal WireGuard on sing-box.
+AWG obfuscation fields are not part of standard WireGuard.  This manager uses
+the official AmneziaWG Windows tunnel service for AWG configs; normal
+WireGuard is connected through Mihomo (engine/wg_config.py).
 """
 
 from __future__ import annotations
@@ -144,6 +144,10 @@ class AmneziaWGManager:
 
     def _service_exists(self) -> bool:
         return self._service_state() != 0
+
+    def has_owned_service(self) -> bool:
+        """Служба AmneziaWGTunnel$SadnessVPN установлена (в любом состоянии)."""
+        return self._service_state() >= 1
 
     def _service_state(self) -> int:
         if platform.system() != "Windows":
@@ -301,7 +305,9 @@ class AmneziaWGManager:
         with self._lock:
             was_running = self.running
             self._stop_requested.set()
-            if not was_running and not self._config_file:
+            # Служба могла остаться от прошлого запуска, пережившего сбой
+            # приложения: тогда running=False, но туннель всё ещё поднят.
+            if not was_running and not self._config_file and not self.has_owned_service():
                 return True
             if not self._uninstall_owned_service(log_errors=True):
                 raise RuntimeError("Не удалось подтвердить остановку службы AmneziaWG. Повторите отключение.")

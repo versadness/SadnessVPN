@@ -2,7 +2,7 @@
 /**
  * Управление backend-процессом.
  *
- * Пока движки (sing-box, mihomo, AmneziaWG, zapret) живут в Python,
+ * Пока движки (mihomo, AmneziaWG, zapret) живут в Python,
  * Electron запускает их сервер дочерним процессом и ждёт /api/health.
  * Переезд на Node идёт помодульно — контракт HTTP остаётся тем же, поэтому
  * этот файл меняется в одном месте, когда Python перестанет быть нужен.
@@ -154,8 +154,9 @@ async function start(onLog) {
  * Держит один длинный запрос к бэкенду и поднимает окно, когда лаунчер
  * попросил активировать уже запущенный экземпляр. Так повторный клик по
  * ярлыку не поднимает второй процесс Electron и не просит прав администратора.
+ * Тем же каналом updater просит завершить приложение перед восстановлением.
  */
-function watchShowRequests(onShow) {
+function watchShowRequests(onShow, onQuit) {
   let stopped = false;
 
   const ask = () => new Promise((resolve) => {
@@ -166,7 +167,8 @@ function watchShowRequests(onShow) {
         response.on('data', (chunk) => { body += chunk; });
         response.on('end', () => {
           try {
-            resolve(JSON.parse(body).show === true);
+            const payload = JSON.parse(body);
+            resolve(payload.quit === true ? 'quit' : payload.show === true);
           } catch (error) {
             resolve(null);
           }
@@ -186,6 +188,10 @@ function watchShowRequests(onShow) {
         await wait(2000);
         continue;
       }
+      if (show === 'quit') {
+        if (typeof onQuit === 'function') onQuit();
+        return;
+      }
       if (show) {
         try { onShow(); } catch (error) { console.error('show-request:', error); }
       }
@@ -193,6 +199,39 @@ function watchShowRequests(onShow) {
   })();
 
   return () => { stopped = true; };
+}
+
+function request(method, requestPath, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: HOST, port: PORT, path: requestPath, method, timeout: timeoutMs },
+      (response) => {
+        let body = '';
+        response.on('data', (chunk) => { body += chunk; });
+        response.on('end', () => {
+          try {
+            resolve(response.statusCode === 200 ? JSON.parse(body) : null);
+          } catch (error) {
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
+/** Окно загружено: updater по этому признаку считает новую версию запущенной. */
+function notifyReady() {
+  return request('POST', '/api/shell/ready');
+}
+
+/** Настройки запуска, известные бэкенду (тихий запуск). */
+async function startupPreferences() {
+  const payload = await request('GET', '/api/shell/startup');
+  return { silent: Boolean(payload && payload.silent === true) };
 }
 
 /** Корректная остановка: сначала движки, потом сам процесс. */
@@ -247,4 +286,7 @@ async function stop() {
   child = null;
 }
 
-module.exports = { start, stop, requestShutdown, watchShowRequests, health, HOST, PORT, baseUrl: `http://${HOST}:${PORT}` };
+module.exports = {
+  start, stop, requestShutdown, watchShowRequests, health, notifyReady, startupPreferences,
+  HOST, PORT, baseUrl: `http://${HOST}:${PORT}`,
+};

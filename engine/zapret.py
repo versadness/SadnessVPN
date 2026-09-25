@@ -8,7 +8,7 @@ import os
 import platform
 import time
 
-from engine import game_filter, zapret_exclusions
+from engine import game_filter, owned_process, zapret_exclusions
 from engine.flowseal_profiles import FLOWSEAL_COMMIT, FLOWSEAL_PROFILES, PROFILE_BY_ID
 from engine.game_filter import GameFilterError
 from engine.paths import bin_path
@@ -29,6 +29,10 @@ class ZapretManager:
         self.exit_cb   = exit_callback or (lambda return_code: None)
         self._strategy = None
         self._game_filter = game_filter.summary(None)
+        self._game_filter_config = None
+        # Адреса VPN-серверов, которые работающий winws прочитал при старте.
+        self.excluded_addresses: list[str] = []
+        self._restore_timestamps = False
         self._stop_requested = None
 
     # ── Пути ──────────────────────────────────────────────────────────────────
@@ -207,19 +211,57 @@ class ZapretManager:
         ]
         return [self._winws_path(), *args]
 
+    @staticmethod
+    def _netsh(*arguments):
+        return subprocess.run(
+            ["netsh", "interface", "tcp", *arguments],
+            capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+
+    def _tcp_timestamps_state(self):
+        """'enabled' / 'disabled' или None, если состояние определить не удалось."""
+        try:
+            result = self._netsh("show", "global")
+        except Exception:
+            return None
+        text = result.stdout.decode("utf-8", errors="replace").lower()
+        for line in text.splitlines():
+            if "1323" in line and ":" in line:
+                value = line.rsplit(":", 1)[1].strip()
+                if value in ("enabled", "disabled"):
+                    return value
+        return None
+
     def _enable_tcp_timestamps(self):
-        # Zapret использует --dpi-desync-fooling=ts, которому нужны TCP timestamps
+        """Включить TCP timestamps для --dpi-desync-fooling=ts и запомнить прежнее значение.
+
+        Это глобальная настройка Windows: она возвращается при остановке обхода,
+        если приложение само её меняло.
+        """
         if platform.system() != "Windows":
             return
+        previous = self._tcp_timestamps_state()
+        if previous == "enabled":
+            return
         try:
-            subprocess.run(
-                ["netsh", "interface", "tcp", "set", "global", "timestamps=enabled"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+            self._netsh("set", "global", "timestamps=enabled")
         except Exception:
-            pass
+            return
+        if previous == "disabled":
+            self._restore_timestamps = True
+            self.log_cb("Zapret: включены TCP timestamps Windows (нужны стратегиям с fooling=ts); "
+                        "прежнее значение вернётся при остановке обхода", "info")
+
+    def _restore_tcp_timestamps(self):
+        if not self._restore_timestamps:
+            return
+        self._restore_timestamps = False
+        try:
+            self._netsh("set", "global", "timestamps=disabled")
+            self.log_cb("Zapret: TCP timestamps Windows возвращены в прежнее состояние", "info")
+        except Exception:
+            self.log_cb("Zapret: не удалось вернуть TCP timestamps в прежнее состояние", "warn")
 
     # ── Start ─────────────────────────────────────────────────────────────────
 
@@ -264,9 +306,7 @@ class ZapretManager:
 
         # Порядок важен: исключения должны лежать на диске до того, как
         # winws прочитает их при старте.
-        self.protect_vpn_endpoints(vpn_servers)
-
-        self._enable_tcp_timestamps()
+        excluded = self.protect_vpn_endpoints(vpn_servers)
 
         if not os.path.exists(self._winws_path()):
             self.log_cb(
@@ -286,6 +326,7 @@ class ZapretManager:
             self.log_cb(f"Неизвестная стратегия: {strategy_id}", "err")
             return False
 
+        self._enable_tcp_timestamps()
         try:
             process = subprocess.Popen(
                 cmd,
@@ -301,6 +342,9 @@ class ZapretManager:
             self._stop_requested = stop_requested
             self.running   = True
             self._strategy = canonical_strategy
+            self._game_filter_config = game_filter_config
+            self.excluded_addresses = list(excluded)
+            owned_process.remember("winws", process.pid)
 
             time.sleep(0.8)
             if process.poll() is not None:
@@ -311,6 +355,7 @@ class ZapretManager:
                         self.log_cb(f"  {line}", "err")
                 self._cleanup(process)
                 self.running = False
+                self._restore_tcp_timestamps()
                 return False
 
             threading.Thread(
@@ -340,10 +385,12 @@ class ZapretManager:
                 "err",
             )
             self._cleanup()
+            self._restore_tcp_timestamps()
             return False
         except Exception as e:
             self.log_cb(f"Ошибка запуска winws.exe: {e}", "err")
             self._cleanup()
+            self._restore_tcp_timestamps()
             return False
 
     # ── Stop ──────────────────────────────────────────────────────────────────
@@ -368,14 +415,18 @@ class ZapretManager:
                 self.running   = False
                 self._strategy = None
                 self._cleanup(process)
+        self._restore_tcp_timestamps()
         time.sleep(0.3)
         self.log_cb("zapret остановлен", "info")
 
     def _cleanup(self, expected_process=None):
         if expected_process is not None and self.process is not expected_process:
             return False
+        if self.process is not None:
+            owned_process.forget("winws")
         self.process = None
         self._stop_requested = None
+        self.excluded_addresses = []
         return True
 
     # ── Output reader ─────────────────────────────────────────────────────────
@@ -386,13 +437,13 @@ class ZapretManager:
                 line = line.rstrip()
                 if not line:
                     continue
+                # У winws нет уровней в выводе: слово «error» внутри строки — не
+                # повод для всплывающего уведомления на каждую строку. Такие
+                # строки остаются предупреждениями журнала, а настоящий сбой
+                # (процесс завершился) сообщается ниже одной ошибкой.
                 low = line.lower()
-                if any(w in low for w in ["error", "failed", "fatal", "cannot", "could not"]):
-                    tag = "err"
-                elif "warn" in low:
+                if any(w in low for w in ["error", "failed", "fatal", "cannot", "could not", "warn"]):
                     tag = "warn"
-                elif any(w in low for w in ["start", "listen", "init", "ok", "loaded", "capture"]):
-                    tag = "ok"
                 else:
                     tag = "log"
                 self.log_cb(f"[zapret] {line}", tag)
@@ -408,6 +459,7 @@ class ZapretManager:
         self._strategy = None
         self._cleanup(process)
         if unexpected:
+            self._restore_tcp_timestamps()
             self.log_cb("Процесс zapret неожиданно завершился", "err")
             try:
                 self.exit_cb(return_code)

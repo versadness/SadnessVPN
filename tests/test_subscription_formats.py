@@ -119,6 +119,26 @@ class RemnawaveFormatTests(unittest.TestCase):
         self.assertEqual((len(servers), received), (1, 2))
         self.assertIn("downloadSettings", rejected[0]["reason"])
 
+    def test_yaml_xhttp_download_settings_rejected_like_links(self):
+        from engine.transports import parse_clash_nodes
+        raw = """proxies:
+  - name: Split XHTTP
+    type: vless
+    server: 203.0.113.8
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000001
+    tls: true
+    network: xhttp
+    xhttp-opts:
+      path: /x
+      download-settings:
+        server: 203.0.113.9
+        port: 443
+"""
+        rejected = []
+        self.assertEqual(parse_clash_nodes(raw, rejected=rejected), [])
+        self.assertIn("download-settings", rejected[0]["reason"])
+
     def test_all_rejected_is_an_error_that_keeps_current_servers(self):
         from engine.subscriptions import SubscriptionError
         with self.assertRaises(SubscriptionError) as caught:

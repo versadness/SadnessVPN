@@ -36,7 +36,8 @@ def normalize_rule(raw):
         if not re.fullmatch(r'[^\\/:*?"<>|,()\s][^\\/:*?"<>|,()\r\n]*\.exe', value, re.I) or value.lower() in BLOCKED_PROCESSES:
             raise ValueError('Укажите имя пользовательского приложения .exe')
     elif kind in {'geoip', 'geosite'}:
-        if not re.fullmatch(r'[a-zA-Z0-9_-]+(?:@[a-zA-Z0-9_-]+)?', value):
+        # «!» — часть имён базы (category-ai-!cn = «кроме Китая»), а не синтаксис правила.
+        if not re.fullmatch(r'[a-zA-Z0-9_!-]+(?:@[a-zA-Z0-9_!-]+)?', value):
             raise ValueError('Некорректное имя категории')
         value = value.lower()
     elif not re.fullmatch(r'[a-zA-Z0-9._-]+', value):

@@ -45,7 +45,10 @@ def ensure_server_ids(groups: list) -> bool:
 
 
 def server_fingerprint(server):
-    fields = {k: v for k, v in server.items() if k not in {"ui_id", "remark", "ping", "name"}}
+    # Пустые поля не различают серверы: новое поле парсера со значением по
+    # умолчанию не должно превращать сохранённый сервер в «другой».
+    fields = {k: v for k, v in server.items()
+              if k not in {"ui_id", "remark", "ping", "name"} and v not in ("", None, [], {})}
     return hashlib.sha256(json.dumps(fields, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 

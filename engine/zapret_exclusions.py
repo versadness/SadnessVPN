@@ -45,7 +45,8 @@ def collect(servers) -> list[str]:
     for server in servers or []:
         if not isinstance(server, dict):
             continue
-        host = str(server.get("host") or "")
+        # Прокси-серверы хранят адрес в host, WireGuard/AmneziaWG — в endpoint.
+        host = str(server.get("host") or server.get("endpoint") or "")
         try:
             port = int(server.get("port") or 443)
         except (TypeError, ValueError):

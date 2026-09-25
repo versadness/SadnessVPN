@@ -54,6 +54,11 @@ def bin_path(filename: str) -> str:
 
 
 def _development_data_dir() -> str:
+    # Тесты подменяют каталог данных, чтобы не трогать профиль разработчика
+    # в ./data. Установленная версия эту переменную не читает.
+    override = os.environ.get("SADNESS_DATA_DIR")
+    if override:
+        return override
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 

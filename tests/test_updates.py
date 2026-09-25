@@ -48,6 +48,26 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(fetch.call_count,1)
             self.assertEqual(manager.state['status'],'ready')
 
+    def test_network_failure_of_recovery_package_does_not_block_a_verified_patch(self):
+        import io
+        import urllib.error
+        patch_package={**self.package,'url':self.package['url'].replace('.msi','.msp')}
+        data=self.sign({**self.data,'patches':{'2.0.19':patch_package}})
+        with tempfile.TemporaryDirectory() as directory:
+            manager=UpdateManager(directory);manager.manifest=data;manager.package=patch_package
+            responses=[io.BytesIO(b'abc'),urllib.error.URLError('timed out')]
+
+            def fetch(url):
+                item=responses.pop(0)
+                if isinstance(item,Exception):raise item
+                return item
+
+            with patch('engine.updates.fetch',side_effect=fetch):
+                manager._download()
+            self.assertEqual(manager.state['status'],'ready')
+            self.assertIn('восстановления', manager.state['message'])
+            self.assertEqual(list(Path(directory,'updates').glob('*.download')),[])
+
     def test_patch_only_empty_or_backward_rejected(self):
         data={**self.data,'distribution':'patch-only','patches':{}};data.pop('full')
         with self.assertRaises(ValueError):verify(self.sign(data),self.public,['updates.example.com'],'beta')

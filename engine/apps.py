@@ -39,28 +39,36 @@ POPULAR_APPS = [
 def _default_apps() -> dict:
     return {"mode": "all", "apps": []}
 
+def _load_apps_file(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or not isinstance(data.get("apps", []), list):
+        raise ValueError("Invalid routing data")
+    mode = data.get("mode", "all")
+    if mode not in ("all", "whitelist", "blacklist"):
+        mode = "all"
+    valid_apps = [
+        item for item in data.get("apps", [])
+        if isinstance(item, dict) and isinstance(item.get("exe"), str)
+    ]
+    result = {"mode": mode, "apps": valid_apps}
+    if isinstance(data.get("rules"), list):
+        result["rules"] = data["rules"]
+    return result
+
+
 def load_apps() -> dict:
-    try:
-        with open(_APPS_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, dict) or not isinstance(data.get("apps", []), list):
-                return _default_apps()
-            mode = data.get("mode", "all")
-            if mode not in ("all", "whitelist", "blacklist"):
-                mode = "all"
-            valid_apps = [
-                item for item in data["apps"]
-                if isinstance(item, dict) and isinstance(item.get("exe"), str)
-            ]
-            result = {"mode": mode, "apps": valid_apps}
-            if isinstance(data.get("rules"), list):
-                result["rules"] = data["rules"]
-            return result
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return _default_apps()
+    # Повреждённый apps.json не должен молча стать пустым набором правил,
+    # который следующее сохранение запишет поверх: берём резервную копию.
+    for path in (_APPS_PATH, _APPS_PATH + ".bak"):
+        try:
+            return _load_apps_file(path)
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+            continue
+    return _default_apps()
 
 def save_apps(data: dict):
-    atomic_write_json(_APPS_PATH, data)
+    atomic_write_json(_APPS_PATH, data, backup_path=_APPS_PATH + ".bak")
 
 def get_running_processes() -> list:
     """Возвращает список уникальных .exe процессов которые сейчас запущены"""

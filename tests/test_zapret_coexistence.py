@@ -95,7 +95,8 @@ class ManagerIntegrationTests(unittest.TestCase):
         self.assertFalse(started)
         popen.assert_not_called()
         self.assertIn("198.51.100.7", written)
-        self.assertEqual(order, ["timestamps"])
+        # Глобальная настройка Windows не меняется, если winws так и не запущен.
+        self.assertEqual(order, [])
         self.assertTrue(any("исключены из перехвата" in message for message in messages))
 
     def test_profiles_actually_pass_the_exclusion_file_to_winws(self):
@@ -107,6 +108,103 @@ class ManagerIntegrationTests(unittest.TestCase):
                     arg.startswith("--ipset-exclude=") and arg.endswith("ipset-exclude-user.txt")
                     for arg in profile["args"]
                 ), profile["id"])
+
+
+class TcpTimestampsTests(unittest.TestCase):
+    """Глобальная настройка Windows возвращается, если её менял обход."""
+
+    def manager(self, state):
+        manager = ZapretManager()
+        calls = []
+
+        def netsh(*arguments):
+            calls.append(arguments)
+            import subprocess
+            output = f"RFC 1323 Timestamps                 : {state}\r\n".encode()
+            return subprocess.CompletedProcess(arguments, 0, output, b"")
+
+        manager._netsh = netsh
+        return manager, calls
+
+    def test_disabled_setting_is_enabled_and_then_restored(self):
+        manager, calls = self.manager("disabled")
+        with mock.patch("engine.zapret.platform.system", return_value="Windows"):
+            manager._enable_tcp_timestamps()
+            manager._restore_tcp_timestamps()
+        self.assertIn(("set", "global", "timestamps=enabled"), calls)
+        self.assertEqual(calls[-1], ("set", "global", "timestamps=disabled"))
+
+    def test_already_enabled_setting_is_left_untouched(self):
+        manager, calls = self.manager("enabled")
+        with mock.patch("engine.zapret.platform.system", return_value="Windows"):
+            manager._enable_tcp_timestamps()
+            manager._restore_tcp_timestamps()
+        self.assertEqual(calls, [("show", "global")])
+
+
+class WinwsLogTagTests(unittest.TestCase):
+    def test_error_words_in_output_do_not_raise_popups(self):
+        import threading
+        logged = []
+        manager = ZapretManager(log_callback=lambda message, tag: logged.append((message, tag)))
+        process = mock.Mock()
+        process.stdout = ["windivert: could not resolve hostname\n", "filter loaded\n"]
+        process.poll.return_value = 0
+        manager.process = process
+        stop = threading.Event()
+        stop.set()
+        manager._read_output(process, stop)
+        tags = {message: tag for message, tag in logged}
+        # «err» превращается во всплывающее уведомление: для строк вывода — только warn.
+        self.assertEqual(tags["[zapret] windivert: could not resolve hostname"], "warn")
+        self.assertEqual(tags["[zapret] filter loaded"], "log")
+        self.assertNotIn("err", [tag for _message, tag in logged])
+
+
+class WireGuardEndpointTests(unittest.TestCase):
+    def test_wireguard_endpoint_is_excluded(self):
+        # WG/AWG хранят адрес в endpoint, а не в host.
+        servers = [{"endpoint": "198.51.100.40", "port": 51820, "private_key": "секрет"}]
+        self.assertEqual(zapret_exclusions.collect(servers), ["198.51.100.40"])
+
+
+class ProtectRunningBypassTests(unittest.TestCase):
+    """VPN, выбранный после запуска Zapret, всё равно исключается из обработки."""
+
+    def service(self, excluded):
+        from ui.zapret_service import ZapretService
+        broadcast = mock.Mock()
+        service = ZapretService(log_callback=lambda *_: None, broadcast=broadcast)
+        service.state, service.running = "on", True
+        engine = service.engine
+        engine.running = True
+        engine._strategy = "flowseal_general"
+        engine._game_filter_config = {"scope": "standard"}
+        engine.excluded_addresses = list(excluded)
+        engine.stop = mock.Mock()
+        engine.start = mock.Mock(return_value=True)
+        return service, broadcast
+
+    def test_new_server_restarts_own_winws_with_same_profile(self):
+        service, broadcast = self.service(excluded=["198.51.100.7"])
+        servers = [{"host": "198.51.100.8"}]
+        self.assertTrue(service.protect_vpn(servers))
+        service.engine.stop.assert_called_once()
+        service.engine.start.assert_called_once_with("flowseal_general", {"scope": "standard"}, servers)
+        self.assertEqual(service.state, "on")
+        broadcast.assert_called_once()
+
+    def test_already_excluded_server_changes_nothing(self):
+        service, broadcast = self.service(excluded=["198.51.100.8"])
+        self.assertFalse(service.protect_vpn([{"host": "198.51.100.8"}]))
+        service.engine.stop.assert_not_called()
+        broadcast.assert_not_called()
+
+    def test_stopped_bypass_is_left_alone(self):
+        service, _broadcast = self.service(excluded=[])
+        service.state = "off"
+        self.assertFalse(service.protect_vpn([{"host": "198.51.100.8"}]))
+        service.engine.start.assert_not_called()
 
 
 if __name__ == "__main__":

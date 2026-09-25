@@ -123,25 +123,42 @@ class UpdateManager:
             if self.cancel.is_set():raise InterruptedError()
             verify_file(temporary,package);os.replace(temporary,final)
             full=self.manifest.get('full')
+            recovery_ready=True
             if full and full!=package:
+                # Полный пакет нужен только для будущего восстановления. Его
+                # сбой не отменяет уже проверенный патч.
                 self.change(message='Скачивание полного пакета для будущего восстановления…',progress=0)
                 recovery=self.directory/(full['sha256']+'.msi')
                 temporary=recovery.with_suffix('.msi.download')
-                if temporary.exists():temporary.unlink()
-                count=0
-                with fetch(full['url']) as response,temporary.open('xb') as stream:
-                    while True:
-                        if self.cancel.is_set():raise InterruptedError()
-                        chunk=response.read(128*1024)
-                        if not chunk:break
-                        count+=len(chunk)
-                        if count>full['size']:raise ValueError('Размер превышен')
-                        stream.write(chunk);self.change(progress=min(99,int(count*100/full['size'])))
-                    stream.flush();os.fsync(stream.fileno())
-                if self.cancel.is_set():raise InterruptedError()
-                verify_file(temporary,full);os.replace(temporary,recovery)
+                try:
+                    if temporary.exists():temporary.unlink()
+                    count=0
+                    with fetch(full['url']) as response,temporary.open('xb') as stream:
+                        while True:
+                            if self.cancel.is_set():raise InterruptedError()
+                            chunk=response.read(128*1024)
+                            if not chunk:break
+                            count+=len(chunk)
+                            if count>full['size']:raise ValueError('Размер превышен')
+                            stream.write(chunk);self.change(progress=min(99,int(count*100/full['size'])))
+                        stream.flush();os.fsync(stream.fileno())
+                    if self.cancel.is_set():raise InterruptedError()
+                    verify_file(temporary,full);os.replace(temporary,recovery)
+                except (InterruptedError,ValueError):
+                    # Отмена — решение пользователя; несовпадение хеша или
+                    # размера — признак подмены на сервере: оба случая
+                    # останавливают обновление целиком.
+                    raise
+                except OSError:
+                    # Сетевой сбой (включая таймауты и ошибки HTTP) не отменяет
+                    # уже проверенный патч.
+                    recovery_ready=False
             atomic_write_json(str(self.directory/'manifest.json'),self.manifest)
-            self.path=final;self.change(status='ready',progress=100,message='Готово к установке')
+            self.path=final
+            self.change(status='ready',progress=100,
+                        message='Готово к установке' if recovery_ready else
+                        'Готово к установке. Полный пакет для восстановления скачать не удалось — '
+                        'обновление установится, но автоматический откат полной версией будет недоступен.')
         except InterruptedError:self.change(status='cancelled',message='Загрузка отменена')
         except Exception:self.change(status='error',message='Не удалось скачать или проверить пакет. Установка отменена.')
         finally:

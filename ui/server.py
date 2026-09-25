@@ -54,7 +54,6 @@ from engine.json_store import atomic_write_json
 from engine.task_state import BackgroundTaskCoordinator
 
 from engine.diagnostics import journal, export_journal
-from ui import window_control
 from engine.app_meta import APP_VERSION
 # Настройки живут в ui/app_state.py. Имена сохранены прежними: словарь
 # _app_settings — тот же объект, что и app_state.app_settings.
@@ -156,7 +155,7 @@ def _traffic_loop(attempt, stop_event):
                     _log(
                         f"Туннель поднят, но за {int(_TRAFFIC_STALL_TICKS * _TRAFFIC_POLL_SECONDS)} с "
                         f"не прошло ни байта при {len(conns)} активных соединениях. "
-                        "Трафик не доходит до сервера — проверьте сервер и выбранное ядро.",
+                        "Трафик не доходит до сервера — проверьте сервер или выберите другой.",
                         "warn",
                     )
 
@@ -311,28 +310,7 @@ _DATA_DIR      = data_dir()
 from ui.update_api import register as register_updates
 
 
-def _close_for_update():
-    """Закрыть интерфейс перед установкой обновления.
-
-    В сборке на Electron окном владеет оболочка, контроллера здесь нет, и
-    обращение к нему роняло установку: /api/updates/install отвечал 500 уже
-    после запуска установщика с правами администратора. Приложение при этом
-    не закрывалось, установщик не дожидался освобождения файлов и отменял
-    обновление, а статус навсегда оставался 'installing' — все следующие
-    попытки получали «Пакет не готов».
-
-    Возвращает True, если окно закрыто здесь, и False, если закрыть его
-    должна оболочка: тогда об этом сообщается странице.
-    """
-    controller = window_control.controller
-    if controller is None:
-        return False
-    controller.close()
-    return True
-
-
-_updates = register_updates(app, lambda: _connection.state == 'off' and zapret_service.state == 'off',
-                            _close_for_update)
+_updates = register_updates(app, lambda: _connection.state == 'off' and zapret_service.state == 'off')
 
 
 @app.before_request
@@ -506,6 +484,9 @@ def _update_one_subscription(target, url, name, is_new, wireguard):
     groups, save, broadcast = _subscription_scope(wireguard)
     label = target.get("name") or name or "подписка"
     _log(f"Загрузка подписки «{label}»…", "info")
+    if url.lower().startswith("http://"):
+        _log(f"Подписка «{label}» загружается без шифрования (http://): её содержимое и "
+             "ID устройства видны в сети. Попросите у провайдера ссылку https://.", "warn")
     error = ""
     metadata = {}
     servers = None
@@ -845,9 +826,9 @@ def _vpn_endpoints() -> list:
     ради списка исключений Zapret и долго, и незачем.
     """
     servers = []
-    selected = _get_selected_server()
-    if selected:
-        servers.append(selected)
+    for selected in (_get_selected_server(), _get_selected_wg_server()):
+        if selected:
+            servers.append(selected)
     lookup = {
         server.get("ui_id"): server
         for group in profile_state.groups or []
@@ -862,6 +843,16 @@ def _vpn_endpoints() -> list:
             if server is not None and server not in servers:
                 servers.append(server)
     return servers
+
+
+def _protect_vpn_from_zapret():
+    """Работающий обход не должен обрабатывать соединение с VPN-сервером."""
+    try:
+        zapret_service.protect_vpn(_vpn_endpoints())
+    except Exception:
+        journal.exception("Не удалось обновить исключения Zapret перед подключением")
+        _log("Zapret: не удалось исключить адрес VPN-сервера из обработки. "
+             "Если соединение нестабильно, перезапустите обход.", "warn")
 
 
 def _get_routed_exes() -> list:
@@ -977,6 +968,34 @@ def _ensure_clash_port() -> int:
 
 zapret_service = ZapretService(log_callback=_log, broadcast=_broadcast)
 zapret_engine = zapret_service.engine
+
+
+def _recover_after_crash():
+    """Разобраться с движками, пережившими аварийное завершение прошлого запуска.
+
+    Если порт бэкенда занят, работает другой экземпляр приложения: его
+    процессы не трогаем.
+    """
+    global _vpn_error
+    if not vpn_engine._port_free(45678):
+        return
+    from engine import owned_process
+    for name, executable, label in (("mihomo", vpn_engine._core_path(), "Mihomo"),
+                                    ("winws", zapret_engine._winws_path(), "winws")):
+        if owned_process.reap(name, executable):
+            _log(f"{label} остался от прошлого запуска после сбоя и остановлен", "warn")
+    if awg_engine.has_owned_service():
+        # Туннель AWG поднят, хотя приложение его не запускало: показываем
+        # ошибку, чтобы «Отключить» было доступно и сняло службу.
+        _vpn_error = True
+        _log("Служба AmneziaWG осталась от прошлого запуска. Нажмите «Отключить», "
+             "чтобы остановить туннель.", "warn")
+
+
+try:
+    _recover_after_crash()
+except Exception:
+    journal.exception("Проверка движков после сбоя не удалась")
 
 
 def _start_vpn_for_attempt(attempt: int, config: dict) -> bool:
@@ -1417,6 +1436,11 @@ def api_process_icon():
 # ── Ping all ─────────────────────────────────────────
 @app.route("/api/ping/all", methods=["POST"])
 def api_ping_all():
+    if _app_settings.get("ping_type") in ("http_get", "http_head") and (_stopping or _connection.state != "off"):
+        # Проверочное ядро без TUN при активном VPN ушло бы в туннель основного
+        # сервера, и все серверы показали бы его задержку.
+        return jsonify(ok=False, error="HTTP-проверка через серверы доступна при отключённом VPN. "
+                                       "TCP- и ICMP-пинг работают всегда."), 409
     generation, stop = _ping_scans.begin()
     results = {}
     groups_snapshot = [
@@ -1496,9 +1520,9 @@ def api_connect():
 
     if proto == "wg":
         if any(r.get("enabled", True) for r in profile_state.apps_config.get("rules", [])):
-            return jsonify(ok=False, error="Пользовательские правила работают только в режиме TUN. Переключите протокол на TUN на главном экране — смена ядра в настройках здесь не помогает: WG/AWG поднимает системный туннель без ядра."), 400
+            return jsonify(ok=False, error="Пользовательские правила работают только в режиме TUN. Переключите протокол на TUN на главном экране или выключите правила."), 400
         if any(a.get("enabled") is not False and a.get("destination", "default") != "default" for a in profile_state.apps_config.get("apps", [])):
-            return jsonify(ok=False, error="Индивидуальные серверы требуют TUN с ядром Авто / Mihomo. В режиме WG/AWG верните назначения на основной маршрут."), 400
+            return jsonify(ok=False, error="Индивидуальные серверы работают только в режиме TUN. В режиме WG/AWG верните назначения на основной маршрут."), 400
         server = _get_selected_wg_server()
         if not server:
             return jsonify({"ok": False, "error": "WG сервер не выбран"})
@@ -1541,6 +1565,7 @@ def api_connect():
 
             if not _connection.run_if_current(attempt, announce):
                 return
+            _protect_vpn_from_zapret()
             if is_awg:
                 _finish_awg_attempt(attempt, server, server.get("remark", ""))
             else:
@@ -1608,6 +1633,7 @@ def api_connect():
 
             if not _connection.run_if_current(attempt, announce):
                 return
+            _protect_vpn_from_zapret()
             _finish_vpn_attempt(attempt, cfg, server.get("remark", ""))
 
         threading.Thread(target=do_connect_vless, daemon=True).start()
@@ -1644,22 +1670,7 @@ def api_disconnect():
 
 
 
-def _window_command(command):
-    if window_control.controller is None:
-        return jsonify({"ok": False, "error": "Оконный интерфейс не запущен"}), 503
-    try:
-        getattr(window_control.controller, command)()
-        return jsonify({"ok": True})
-    except Exception as exc:
-        journal.exception("Команда окна: %s", command)
-        return jsonify({"ok": False, "error": str(exc)}), 500
-
-
-def close_to_tray_enabled():
-    return _app_settings.get('mintray') is True
-
-
-# Роуты окна, статистики и диагностики живут в ui/routes/system.py.
+# Роуты статистики и диагностики живут в ui/routes/system.py.
 # Роуты портов, настроек, туннеля и пинга — в ui/routes/settings.py.
 
 
@@ -1706,7 +1717,7 @@ from ui.routes import system as _system_routes  # noqa: E402
 from ui.routes import wireguard as _wireguard_routes  # noqa: E402
 from ui.routes import zapret as _zapret_routes  # noqa: E402
 
-_system_routes.init(broadcast=_broadcast, window_command=_window_command)
+_system_routes.init(broadcast=_broadcast)
 app.register_blueprint(_system_routes.bp)
 
 _zapret_routes.init(service=zapret_service, broadcast=_broadcast, log=_log,

@@ -4,6 +4,7 @@ import copy
 from flask import Blueprint, jsonify, request
 
 from engine.config import parse_link
+from engine.core_config import ensure_supported
 from ui import profile_state
 from ui.app_state import app_settings as _app_settings
 
@@ -81,6 +82,9 @@ def api_add_server():
         return jsonify({"ok": False, "error": "Пустая ссылка"})
     try:
         parsed = parse_link(link)
+        # Та же проверка, что при импорте подписки: неподдерживаемый сервер
+        # отклоняется сразу, а не ошибкой при подключении.
+        ensure_supported(parsed)
         mg = _ensure_manual_group()
         mg["servers"].append(parsed)
         profile_state.save_proxy_groups()
@@ -167,6 +171,9 @@ def api_delete_server():
                 _save_settings(_app_settings)
                 _log(f"Удалён: {name}", "warn")
                 _broadcast_groups()
+                # Маршруты на этот сервер переводятся на основной VPN сразу,
+                # а не при следующем подключении.
+                _repair_saved_routes("удаление сервера")
                 return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Не найдено"})
 

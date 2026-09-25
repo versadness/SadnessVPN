@@ -57,7 +57,27 @@ class UpdaterFlowTests(unittest.TestCase):
         code,result,commands,count=self.run_case(ready=False)
         self.assertEqual(code,2);self.assertFalse(result['ok']);self.assertEqual(len(commands),3)
         self.assertIn('/x',commands[1].args[0]);self.assertIn('/i',commands[2].args[0]);self.assertEqual(count,1)
+        # Удаление при откате помечено: задача автозапуска и служба не снимаются.
+        self.assertIn('SADNESS_ROLLBACK=1',commands[1].args[0])
 
     def test_bad_signature_never_starts_installer(self):
         code,result,commands,count=self.run_case(signature=False)
         self.assertEqual(code,1);self.assertFalse(result['ok']);self.assertEqual(commands,[]);self.assertEqual(count,0)
+
+
+class UninstallCleanupTests(unittest.TestCase):
+    def test_removes_only_the_apps_own_task_and_tunnel_service(self):
+        with tempfile.TemporaryDirectory() as d:
+            manager=Path(d,'runtime','_internal','bin','amneziawg','amneziawg.exe')
+            manager.parent.mkdir(parents=True);manager.write_bytes(b'MZ')
+            run=Mock(return_value=Mock(returncode=0))
+            updater.uninstall_cleanup(d,run=run)
+        commands=[call.args[0] for call in run.call_args_list]
+        self.assertIn(['schtasks.exe','/Delete','/F','/TN','SadnessVPN'],commands)
+        self.assertIn([str(manager),'/uninstalltunnelservice','SadnessVPN'],commands)
+        self.assertIn(['sc.exe','delete','AmneziaWGTunnel$SadnessVPN'],commands)
+
+    def test_msi_runs_cleanup_only_on_real_removal(self):
+        source=Path('installer/build_msi.py').read_text(encoding='utf-8')
+        self.assertIn("'--uninstall-cleanup'",source)
+        self.assertIn('REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND NOT SADNESS_ROLLBACK',source)

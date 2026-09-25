@@ -132,7 +132,28 @@ class ProxyRoutingConfigTests(unittest.TestCase):
         # Адрес самого VPN-сервера резолвится обычным публичным DNS.
         self.assertEqual(dns["proxy-server-nameserver"], ["1.1.1.1", "8.8.8.8"])
         self.assertFalse(dns["respect-rules"])
-        self.assertFalse(config["ipv6"])
+        self.assertFalse(dns["ipv6"])
+
+    def test_ipv6_traffic_never_bypasses_the_tunnel(self):
+        # С ipv6: false Mihomo не маршрутизирует IPv6 в TUN, и он шёл мимо VPN.
+        for preferred in ("ipv4", "ipv6", "auto"):
+            config = build_mihomo_config(self.server, preferred_ip=preferred)
+            self.assertTrue(config["ipv6"], preferred)
+        ipv4 = build_mihomo_config(self.server, preferred_ip="ipv4")
+        self.assertFalse(ipv4["dns"]["ipv6"])
+        rules = ipv4["rules"]
+        self.assertLess(rules.index("IP-CIDR6,fe80::/10,DIRECT,no-resolve"),
+                        rules.index("IP-CIDR6,::/0,REJECT,no-resolve"))
+        dual = build_mihomo_config(self.server, preferred_ip="auto")
+        self.assertTrue(dual["dns"]["ipv6"])
+        self.assertNotIn("IP-CIDR6,::/0,REJECT,no-resolve", dual["rules"])
+
+    def test_regular_dns_follows_routing_rules_into_the_tunnel(self):
+        for preset in ("cf_google", "adguard", "quad9"):
+            config = build_mihomo_config(self.server, dns_preset=preset)
+            self.assertTrue(config["dns"]["respect-rules"], preset)
+            # respect-rules требует отдельного резолвера для адреса самого сервера.
+            self.assertTrue(config["dns"]["proxy-server-nameserver"])
 
     def test_block_udp_precedes_process_rules(self):
         config = build_mihomo_config(self.server, block_udp=True,

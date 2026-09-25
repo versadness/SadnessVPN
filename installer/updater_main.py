@@ -69,8 +69,34 @@ def protected_directory():
     return root
 
 
+AUTOSTART_TASK='SadnessVPN'
+AWG_TUNNEL='SadnessVPN'
+
+
+def uninstall_cleanup(install_root, run=subprocess.run):
+    """Снять задачу автозапуска и службу AWG при полном удалении программы.
+
+    Только объекты с фиксированными именами самого приложения; отсутствие
+    любого из них — не ошибка.
+    """
+    flags=dict(capture_output=True,creationflags=CREATE_NO_WINDOW)
+    run(['schtasks.exe','/Delete','/F','/TN',AUTOSTART_TASK],**flags)
+    manager=Path(install_root)/'runtime'/'_internal'/'bin'/'amneziawg'/'amneziawg.exe'
+    if manager.is_file():
+        run([str(manager),'/uninstalltunnelservice',AWG_TUNNEL],**flags)
+    service='AmneziaWGTunnel$'+AWG_TUNNEL
+    run(['sc.exe','stop',service],**flags)
+    run(['sc.exe','delete',service],**flags)
+
+
 def main():
     import psutil
+    if len(sys.argv)==2 and sys.argv[1]=='--uninstall-cleanup':
+        if not ctypes.windll.shell32.IsUserAnAdmin():return 1
+        try:
+            uninstall_cleanup(Path(sys.executable).resolve().parent)
+            return 0
+        except Exception:return 1
     if len(sys.argv)>1:
         if len(sys.argv)!=3 or sys.argv[1]!='--cache-installed' or not ctypes.windll.shell32.IsUserAnAdmin():return 1
         try:
@@ -107,8 +133,13 @@ def main():
             rollback_package=recovery_package(protected,previous)
         if data.get('full'):
             full_source=directory/(data['full']['sha256']+'.msi')
-            verify_file(full_source,data['full'])
-            cache_full(full_source,protected,data['version'])
+            try:
+                verify_file(full_source,data['full'])
+                cache_full(full_source,protected,data['version'])
+            except (OSError,ValueError):
+                # Для патча полный пакет — только запас на будущее восстановление;
+                # без него патч ставится и откатывается собственным uninstall.
+                if extension=='.msi':raise
         source=directory/(package['sha256']+extension)
         verify_file(source,package)
         # Stage in an administrator-only directory before asking MSI to open it.
@@ -164,8 +195,11 @@ def main():
                 # Windows Installer cannot reliably downgrade a minor-updated
                 # component graph in place. Preserve the validated MSI cache and
                 # user profile, remove the failed product, then restore that MSI.
+                # SADNESS_ROLLBACK=1: это не удаление программы пользователем,
+                # задача автозапуска и настройки должны пережить откат.
                 remove_code=subprocess.run(['msiexec.exe','/x',policy.PRODUCT_CODE,'/qn','/norestart',
-                    '/L*v',str(protected/'rollback-remove.log')],creationflags=CREATE_NO_WINDOW).returncode
+                    'SADNESS_ROLLBACK=1','/L*v',str(protected/'rollback-remove.log')],
+                    creationflags=CREATE_NO_WINDOW).returncode
                 if remove_code not in (0,3010):raise ValueError('Не удалось подготовить восстановление приложения')
                 rollback=['msiexec.exe','/i',str(rollback_package)]
             rollback+=['/qn','/norestart','/L*v',str(protected/'rollback.log')]

@@ -103,6 +103,7 @@ def parse_vless_link(link: str) -> dict:
         "path":          params.get("path", ""),
         "host_header":   params.get("host", ""),
         "serviceName":   params.get("serviceName", ""),
+        "header_type":   params.get("headerType", ""),
         "alpn":          params.get("alpn", ""),
         "allowInsecure": params.get("allowInsecure", "0"),
         "pinned_cert":   params.get("pcs", params.get("pinnedPeerCertSha256", "")),
@@ -163,6 +164,8 @@ def parse_vmess_link(link: str) -> dict:
         "path":          str(node.get("path") or ""),
         "host_header":   str(node.get("host") or ""),
         "serviceName":   str(node.get("path") or "") if network == "grpc" else "",
+        # В v2rayN-формате поле type — это маскировка заголовка у TCP.
+        "header_type":   str(node.get("type") or "") if network == "tcp" else "",
         "alpn":          str(node.get("alpn") or ""),
         "allowInsecure": "1" if str(node.get("allowInsecure", "")) in ("1", "true") else "0",
     }
@@ -180,8 +183,11 @@ def parse_ss_link(link: str) -> dict:
         rest, remark_enc = rest.rsplit("#", 1)
         remark = urllib.parse.unquote(remark_enc)
 
+    query_str = ""
     if "?" in rest:
-        rest = rest.split("?", 1)[0]
+        rest, query_str = rest.split("?", 1)
+    # SIP002: «host:port/?plugin=…» — косая черта перед запросом не часть порта.
+    rest = rest.rstrip("/")
 
     if "@" in rest:
         userinfo, hostport = rest.rsplit("@", 1)
@@ -214,7 +220,7 @@ def parse_ss_link(link: str) -> dict:
     else:
         raise ValueError("Нет порта в ss:// ссылке")
 
-    return {
+    server = {
         "protocol": "ss",
         "remark":   remark,
         "host":     host,
@@ -222,6 +228,41 @@ def parse_ss_link(link: str) -> dict:
         "method":   method.strip(),
         "password": password.strip(),
     }
+    plugin = dict(urllib.parse.parse_qsl(query_str)).get("plugin", "")
+    if plugin:
+        # Раньше плагин молча отбрасывался, и сервер подключался без
+        # обязательной маскировки — то есть не подключался вовсе.
+        server["plugin"], server["plugin_opts"] = parse_ss_plugin(plugin)
+    return server
+
+
+def parse_ss_plugin(value: str) -> tuple[str, dict]:
+    """SIP003 «name;key=value;flag» → (плагин Mihomo, plugin-opts)."""
+    name, *parts = [part.strip() for part in value.split(";") if part.strip()] or [""]
+    options = {}
+    for part in parts:
+        key, separator, item = part.partition("=")
+        options[key.strip()] = item.strip() if separator else True
+    if name in ("obfs-local", "simple-obfs", "obfs"):
+        mode = options.get("obfs", "http")
+        if mode not in ("http", "tls"):
+            raise ValueError(f"Shadowsocks obfs: режим {mode} не поддерживается")
+        opts = {"mode": mode}
+        if isinstance(options.get("obfs-host"), str):
+            opts["host"] = options["obfs-host"]
+        return "obfs", opts
+    if name == "v2ray-plugin":
+        mode = options.get("mode", "websocket")
+        if mode != "websocket":
+            raise ValueError(f"Shadowsocks v2ray-plugin: режим {mode} не поддерживается ядром Mihomo")
+        opts = {"mode": "websocket", "tls": options.get("tls") is True}
+        for key in ("host", "path"):
+            if isinstance(options.get(key), str):
+                opts[key] = options[key]
+        if options.get("mux") is True or options.get("mux") == "1":
+            opts["mux"] = True
+        return "v2ray-plugin", opts
+    raise ValueError(f"Shadowsocks: плагин {name or 'без имени'} не поддерживается ядром Mihomo")
 
 
 # ─── Парсинг Trojan ───────────────────────────────────────────────────────────
@@ -271,6 +312,7 @@ def parse_trojan_link(link: str) -> dict:
         "path":          params.get("path", ""),
         "host_header":   params.get("host", ""),
         "serviceName":   params.get("serviceName", ""),
+        "header_type":   params.get("headerType", ""),
     }
 
 

@@ -1,6 +1,13 @@
+import json
+import os
+import subprocess
+import tempfile
 import unittest
 
+from engine.paths import bin_path
 from engine.wg_config import build_wg_tun_config, parse_wg_conf
+
+MIHOMO = bin_path("mihomo.exe")
 
 
 class WireGuardParsingTests(unittest.TestCase):
@@ -54,53 +61,65 @@ class WireGuardParsingTests(unittest.TestCase):
 
 
 class WireGuardRoutingConfigTests(unittest.TestCase):
+    """Обычный WireGuard собирается в конфигурацию Mihomo, а не sing-box."""
+
     def setUp(self):
         self.server = {
             "endpoint": "198.51.100.30",
             "port": 51820,
-            "address": ["10.0.0.2/32"],
+            "address": ["10.0.0.2/32", "fd00::2/128"],
             "private_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             "peer_public_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
             "mtu": 1280,
+            "persistent_keepalive": 25,
         }
+
+    def test_config_is_mihomo_with_tun_and_controller(self):
+        config = build_wg_tun_config(self.server, clash_port=19090)
+        for sing_box_key in ("inbounds", "outbounds", "route"):
+            self.assertNotIn(sing_box_key, config)
+        self.assertTrue(config["tun"]["enable"])
+        self.assertEqual(config["external-controller"], "127.0.0.1:19090")
+
+    def test_wireguard_outbound_fields(self):
+        proxy = build_wg_tun_config(self.server)["proxies"][0]
+        self.assertEqual(proxy["name"], "proxy")
+        self.assertEqual(proxy["type"], "wireguard")
+        self.assertEqual(proxy["server"], "198.51.100.30")
+        self.assertEqual(proxy["port"], 51820)
+        self.assertEqual(proxy["ip"], "10.0.0.2")
+        self.assertEqual(proxy["ipv6"], "fd00::2")
+        self.assertEqual(proxy["private-key"], self.server["private_key"])
+        self.assertEqual(proxy["public-key"], self.server["peer_public_key"])
+        self.assertEqual(proxy["persistent-keepalive"], 25)
+        self.assertNotIn("smux", build_wg_tun_config(self.server, mux=True)["proxies"][0])
 
     def test_whitelist_routes_selected_process_to_proxy(self):
-        config = build_wg_tun_config(
-            self.server,
-            routing_mode="whitelist",
-            routed_apps=["browser.exe"],
-        )
+        rules = build_wg_tun_config(
+            self.server, routing_mode="whitelist", routed_apps=["browser.exe"],
+        )["rules"]
+        self.assertIn("PROCESS-NAME,browser.exe,proxy", rules)
+        self.assertEqual(rules[-1], "MATCH,DIRECT")
 
-        rules = config["route"]["rules"]
-        self.assertIn(
-            {"process_name": ["browser.exe"], "outbound": "proxy"},
-            rules,
-        )
-        self.assertEqual(rules[-1], {"outbound": "direct"})
-
-    def test_default_config_contains_wireguard_outbound(self):
-        config = build_wg_tun_config(self.server)
-
-        outbound = config["outbounds"][0]
-        self.assertEqual(outbound["type"], "wireguard")
-        self.assertEqual(outbound["server"], "198.51.100.30")
-        self.assertEqual(outbound["server_port"], 51820)
-
-    def test_lan_mode_exposes_only_proxy_inbounds(self):
+    def test_lan_mode_opens_only_proxy_listeners(self):
         config = build_wg_tun_config(self.server, allow_lan=True)
-        listens = {
-            inbound["tag"]: inbound.get("listen")
-            for inbound in config["inbounds"]
-        }
+        self.assertEqual(config["bind-address"], "*")
+        self.assertTrue(config["allow-lan"])
 
-        self.assertEqual(listens["socks-in"], "0.0.0.0")
-        self.assertEqual(listens["http-in"], "0.0.0.0")
-        self.assertNotEqual(listens["tun-in"], "0.0.0.0")
+    def test_awg_server_is_refused(self):
+        with self.assertRaises(ValueError):
+            build_wg_tun_config({**self.server, "is_awg": True})
 
-    def test_tun_uses_current_address_field(self):
-        inbound = build_wg_tun_config(self.server)["inbounds"][0]
-        self.assertEqual(inbound["address"], ["172.19.0.1/30"])
-        self.assertNotIn("inet4_address", inbound)
+    @unittest.skipUnless(os.path.isfile(MIHOMO), "bin/mihomo.exe отсутствует")
+    def test_bundled_mihomo_accepts_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "wg.yaml")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(build_wg_tun_config(self.server), handle)
+            result = subprocess.run([MIHOMO, "-d", directory, "-f", path, "-t"],
+                                    capture_output=True, text=True, encoding="utf-8",
+                                    errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout[-500:])
 
 
 if __name__ == "__main__":

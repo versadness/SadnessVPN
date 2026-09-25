@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 
+from engine import owned_process
 from engine.connection_health import DialHealth
 from engine.core_logs import core_log_tag
 from engine.paths import bin_path, data_dir
@@ -280,30 +281,28 @@ class MihomoManager:
         """
         hosts = config.setdefault("hosts", {})
         for proxy in config.get("proxies", []):
-            endpoints = [proxy, (proxy.get("xhttp-opts") or {}).get("download-settings") or {}]
-            for endpoint in endpoints:
-                hostname = endpoint.get("server")
-                if not hostname:
-                    continue
-                try:
-                    ipaddress.ip_address(hostname)
-                    continue
-                except ValueError:
-                    pass
-                try:
-                    addresses = socket.getaddrinfo(
-                        hostname, endpoint.get("port", 443),
-                        socket.AF_UNSPEC if config.get("ipv6") else socket.AF_INET,
-                        socket.SOCK_STREAM,
-                    )
-                    hosts[hostname] = list(dict.fromkeys(item[4][0] for item in addresses))
-                except OSError:
-                    self.log_cb(
-                        "Mihomo: не удалось определить адрес VPN-сервера до запуска TUN. "
-                        "Проверьте DNS и доступность сети.",
-                        "err",
-                    )
-                    return False
+            hostname = proxy.get("server")
+            if not hostname:
+                continue
+            try:
+                ipaddress.ip_address(hostname)
+                continue
+            except ValueError:
+                pass
+            try:
+                addresses = socket.getaddrinfo(
+                    hostname, proxy.get("port", 443),
+                    socket.AF_UNSPEC if (config.get("dns") or {}).get("ipv6") else socket.AF_INET,
+                    socket.SOCK_STREAM,
+                )
+                hosts[hostname] = list(dict.fromkeys(item[4][0] for item in addresses))
+            except OSError:
+                self.log_cb(
+                    "Mihomo: не удалось определить адрес VPN-сервера до запуска TUN. "
+                    "Проверьте DNS и доступность сети.",
+                    "err",
+                )
+                return False
         return True
 
     # -- Start ----------------------------------------------------------------
@@ -387,6 +386,7 @@ class MihomoManager:
             self.process = process
             self._stop_requested = stop_requested
             self.running = True
+            owned_process.remember("mihomo", process.pid)
 
             time.sleep(0.8)
             if process.poll() is not None:
@@ -453,6 +453,8 @@ class MihomoManager:
     def _cleanup(self, expected_process=None):
         if expected_process is not None and self.process is not expected_process:
             return False
+        if self.process is not None:
+            owned_process.forget("mihomo")
         if self._config_file and os.path.exists(self._config_file):
             try:
                 os.remove(self._config_file)

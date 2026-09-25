@@ -44,6 +44,14 @@ def api_apps_add():
         return jsonify({"ok": False, "error": "Нет exe"})
     if len(exe) > 260 or not name or len(name) > 256 or len(path) > 4096:
         return jsonify({"ok": False, "error": "Слишком длинное имя или путь"})
+    # Те же требования, что у правила «Программа»: иначе недопустимое имя
+    # (запятая, скобки, служебный процесс) ломало сборку конфигурации только
+    # при подключении.
+    from engine.routing_rules import normalize_rule
+    try:
+        exe = normalize_rule({"kind": "process", "value": exe})["value"]
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)})
     for a in profile_state.apps_config["apps"]:
         if a["exe"].lower() == exe.lower():
             return jsonify({"ok": False, "error": "Уже добавлено"})

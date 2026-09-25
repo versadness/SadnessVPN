@@ -9,6 +9,46 @@ from ui import server
 BASE = "http://127.0.0.1:45678"
 
 
+class ShellReadyTests(unittest.TestCase):
+    """Updater считает новую версию запущенной только по ui_ready."""
+
+    def setUp(self):
+        from ui import window_control
+        self.window_control = window_control
+        self.client = server.app.test_client()
+        window_control.shell_ready.clear()
+        self.addCleanup(window_control.shell_ready.clear)
+
+    def test_update_state_reports_electron_window_readiness(self):
+        state = self.client.get("/api/updates/state", base_url=BASE).get_json()
+        self.assertFalse(state["ui_ready"])
+
+        response = self.client.post("/api/shell/ready", base_url=BASE)
+        self.assertEqual(response.get_json(), {"ok": True})
+        state = self.client.get("/api/updates/state", base_url=BASE).get_json()
+        self.assertTrue(state["ui_ready"])
+
+    def test_updater_recovery_asks_the_shell_to_quit(self):
+        # Раньше close-for-recovery в Electron-сборке ничего не закрывал, и
+        # updater через 30 с сообщал «не удалось завершить новую версию».
+        self.addCleanup(self.window_control.quit_request.clear)
+        self.addCleanup(self.window_control.show_request.clear)
+        with mock.patch.object(server._connection, "_state", "off"):
+            response = self.client.post("/api/updates/close-for-recovery", base_url=BASE).get_json()
+        self.assertTrue(response["ok"])
+        with mock.patch.object(backend_main, "_SHELL_WAIT_SECONDS", 0.05):
+            self.assertEqual(self.client.get("/api/shell/show-wait", base_url=BASE).get_json(),
+                             {"show": False, "quit": True})
+            # Команда выхода выдаётся один раз.
+            self.assertEqual(self.client.get("/api/shell/show-wait", base_url=BASE).get_json(),
+                             {"show": False})
+
+    def test_startup_preferences_expose_only_silent_flag(self):
+        with mock.patch.dict(server._app_settings, {"silent": True}):
+            payload = self.client.get("/api/shell/startup", base_url=BASE).get_json()
+        self.assertEqual(payload, {"ok": True, "silent": True})
+
+
 class ShellActivationTests(unittest.TestCase):
     def setUp(self):
         self.client = server.app.test_client()

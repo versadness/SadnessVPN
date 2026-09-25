@@ -8,14 +8,13 @@ from engine.updates import UpdateManager
 from engine.paths import data_dir
 
 
-def register(app, idle, close):
+def register(app, idle):
     manager=UpdateManager(data_dir())
 
     @app.get('/api/updates/state')
     def update_state():
         from ui import window_control
-        controller=window_control.controller
-        return jsonify(**manager.snapshot(),ui_ready=bool(controller and controller.ready.is_set()))
+        return jsonify(**manager.snapshot(),ui_ready=window_control.ui_ready())
 
     @app.post('/api/updates/check')
     def update_check():
@@ -51,11 +50,15 @@ def register(app, idle, close):
             code=ctypes.windll.shell32.ShellExecuteW(None,'runas',str(staged),None,str(protected),0)
             if code<=32:
                 manager.state['status']='ready';return jsonify(ok=False,error='Запрос Windows отменён'),400
-        # False означает, что окном владеет оболочка и выйти должна она.
-        return jsonify(ok=True, shell_quit=not close())
+        # Окном владеет Electron: страница по shell_quit просит его выйти.
+        return jsonify(ok=True, shell_quit=True)
 
     @app.post('/api/updates/close-for-recovery')
     def update_recovery_close():
+        # Вызывает updater, а не страница: выход передаётся оболочке через
+        # её длинный опрос /api/shell/show-wait.
         if not idle():return jsonify(ok=False,error='Соединение активно'),409
-        return jsonify(ok=True,shell_quit=not close())
+        from ui import window_control
+        window_control.request_quit()
+        return jsonify(ok=True,shell_quit=True)
     return manager

@@ -9,7 +9,8 @@ socket.onmessage = async event => {
   socket.close();
   if(process.argv.includes('--close-idle')){
     if(state.status!=='off'||state.connected||state.zapretRunning)throw Error('Active connection: refusing close');
-    const reply=await fetch('http://127.0.0.1:45678/api/window/close',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    // Бэкенд сам проверяет, что VPN и Zapret выключены, и просит Electron выйти.
+    const reply=await fetch('http://127.0.0.1:45678/api/updates/close-for-recovery',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     console.log('Graceful close: '+reply.status);
   }
 };
