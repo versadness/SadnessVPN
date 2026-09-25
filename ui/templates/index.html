@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="/static/css/settings-workspace.css">
 <link rel="stylesheet" href="/static/css/routing-editor.css">
 <link rel="stylesheet" href="/static/css/process-picker.css">
+<link rel="stylesheet" href="/static/css/home.css">
 <!-- defer: загрузка идёт параллельно разбору страницы, порядок выполнения
      сохраняется, а код запускается после готовности DOM — как и раньше,
      когда теги стояли в конце body вперемешку с таблицами стилей. -->
@@ -48,23 +49,41 @@
   <div class="main"><div class="pages">
     <div class="page active" id="page-home">
       <div class="home-heading"><div><div class="eyebrow">SADNESS PRIVATE NETWORK</div><h1>Твоя сеть. Твой контроль.</h1><p>Безопасное подключение начинается здесь</p></div><span class="proto-badge vless" id="protoBadge">VLESS</span></div>
-      <div class="home-wrap">
-        <section class="connection-hero glass">
-          <div class="hero-orbit" aria-hidden="true"></div>
-          <div class="power-wrap"><div class="power-ring"></div><div class="power-ring r2"></div><div class="power-arc" id="powerArc"></div><button class="connect-btn" id="connectBtn" aria-label="Подключить или отключить VPN" onclick="toggleConnect()"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.5 7a8 8 0 1011 0"/></svg><span class="power-lbl" id="powerLbl">Подключить</span></button></div>
-          <div class="status-title" id="statusTitle">Не защищено</div><div class="status-desc" id="statusDesc">Нажмите, чтобы включить защиту</div>
-          <div class="hero-footnote"><span></span>Личный туннель · полный контроль</div>
+      <div class="home-dash">
+        <section class="dash-hero glass" aria-label="Сервер и скорость">
+          <div class="dash-server">
+            <div class="dash-lbl">Сервер</div>
+            <div class="dash-country">
+              <span class="dash-globe" id="hcServerFlag" aria-hidden="true"></span>
+              <div class="dash-country-text">
+                <div class="dash-country-name" id="homeCountry">Сервер не выбран</div>
+                <div class="dash-route" id="hcServer">Выберите сервер в списке</div>
+                <div class="dash-chips"><span class="dash-chip good" id="homePing" hidden></span><span class="dash-chip" id="hcMode">Весь ПК</span><button type="button" class="dash-link" onclick="go(ST.proto==='wg'?'wg':'servers')">Сменить сервер ↗</button><button type="button" class="dash-link" onclick="go('routing')">Режим ↗</button></div>
+              </div>
+            </div>
+            <div class="dash-status"><div class="status-title" id="statusTitle">Не защищено</div><div class="status-desc" id="statusDesc">Нажмите, чтобы включить защиту</div></div>
+          </div>
+          <div class="dash-gauge">
+            <svg viewBox="0 0 280 166" role="img" aria-label="Текущая скорость загрузки">
+              <defs><linearGradient id="dashGaugeGradient" x1="0" x2="1"><stop offset="0" class="gauge-start"/><stop offset="1" class="gauge-end"/></linearGradient></defs>
+              <path class="gauge-track" d="M30 150 A110 110 0 0 1 250 150"/>
+              <path class="gauge-value" id="gaugeArc" d="M30 150 A110 110 0 0 1 250 150" stroke-dasharray="345.6" stroke-dashoffset="345.6"/>
+              <text x="30" y="166" text-anchor="middle">0</text><text x="250" y="166" text-anchor="middle" id="gaugeMax">50</text>
+            </svg>
+            <div class="dash-gauge-read"><b id="stDown">0.0</b><small>↓ Мбит/с сейчас</small></div>
+          </div>
         </section>
-        <div class="home-cards">
-          <div class="hc glass hc-server"><button type="button" class="hc-action" onclick="go(ST.proto==='wg'?'wg':'servers')">Изменить ↗</button><div class="hc-lbl">Сервер</div><div class="hc-val hc-val-server"><span class="hc-flag" id="hcServerFlag" aria-hidden="true"></span><span id="hcServer">Не выбран</span></div></div>
-          <div class="hc glass hc-mode"><button type="button" class="hc-action" onclick="go('routing')">Настроить ↗</button><div class="hc-lbl">Режим</div><div class="hc-val" id="hcMode">Весь ПК</div></div>
+        <button type="button" class="dash-slide" id="connectBtn" aria-label="Подключить VPN" onclick="toggleConnect()">
+          <span class="dash-slide-fill" aria-hidden="true"></span>
+          <span class="dash-slide-label" id="powerLbl">Проведите или нажмите, чтобы подключить</span>
+          <span class="dash-slide-knob" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9"/><path d="M6.5 7a8 8 0 1011 0"/></svg></span>
+        </button>
+        <div class="dash-stats">
+          <div class="glass dash-tile"><span class="dash-lbl">Отдача</span><b id="stUp">0.0</b><small>↑ Мбит/с</small></div>
+          <div class="glass dash-tile"><span class="dash-lbl">Сессия</span><b id="stSession">00:00</b><small>время подключения</small></div>
+          <div class="glass dash-tile"><span class="dash-lbl">Сегодня</span><b id="stToday">0 B</b><small>трафика через VPN</small></div>
+          <button type="button" class="glass dash-tile dash-ip" onclick="refreshPublicIp()"><span class="dash-lbl">Ваш IP-адрес ↗</span><b id="ipVal">•••.•••.•••.•••</b><small id="ipNote">Нажмите, чтобы проверить</small></button>
         </div>
-        <div class="home-stats">
-          <div class="stat glass"><div class="stat-val down" id="stDown">0.0</div><div class="stat-unit">↓ Мбит/с</div></div>
-          <div class="stat glass"><div class="stat-val up" id="stUp">0.0</div><div class="stat-unit">↑ Мбит/с</div></div>
-          <div class="stat glass"><div class="stat-val" id="stSession">00:00</div><div class="stat-unit">сессия</div></div>
-        </div>
-        <button type="button" class="ip-card glass" onclick="refreshPublicIp()"><div class="ip-lbl">Ваш IP-адрес ↗</div><div class="ip-val" id="ipVal">•••.•••.•••.•••</div><div class="ip-note" id="ipNote">Нажмите, чтобы проверить внешний адрес</div></button>
         <div class="home-toggles"><button type="button" class="htg glass on" id="tgTun" onclick="setProto('vless')">TUN</button><button type="button" class="htg glass" id="tgWg" onclick="setProto('wg')">WG</button><button type="button" class="htg glass gemini-dns" id="tgSecureDns" onclick="toggleSecureDns()"><span class="gemini-star">✦</span><span id="geminiDnsLabel">AI-DNS</span><span class="gemini-star gemini-star-end">✧</span></button></div>
       </div>
     </div>

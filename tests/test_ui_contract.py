@@ -93,6 +93,24 @@ class UiContractTests(unittest.TestCase):
         self.assertIn(".set-row.dd-open", self.styles)
         self.assertIn("classList.add('dd-open')", self.javascript)
 
+    def test_home_dashboard_keeps_every_element_the_app_updates(self):
+        # app.js обновляет эти элементы по id; потеря любого ломает главный экран.
+        for element_id in ("connectBtn", "powerLbl", "statusTitle", "statusDesc", "hcServer",
+                           "hcServerFlag", "hcMode", "homeCountry", "homePing", "stDown", "stUp",
+                           "stSession", "stToday", "ipVal", "ipNote", "gaugeArc", "gaugeMax",
+                           "tgTun", "tgWg", "tgSecureDns", "geminiDnsLabel", "protoBadge"):
+            self.assertIn(f'id="{element_id}"', self.html, element_id)
+        self.assertIn('/static/css/home.css', self.html)
+        self.assertIn('class="dash-slide" id="connectBtn"', self.html)
+
+    def test_home_dashboard_is_driven_by_live_data(self):
+        self.assertIn("renderHomeDash();}", self.javascript)
+        self.assertIn("setGauge(Math.max(0,dn))", self.javascript)
+        self.assertIn("case 'ping':", self.javascript)
+        self.assertIn("getElementById('stToday')", self.javascript)
+        # Перетаскивание не должно повторно переключать VPN щелчком.
+        self.assertIn("stopImmediatePropagation", self.javascript)
+
     def test_every_static_inline_handler_has_a_defined_function(self):
         handlers = set(re.findall(
             r'on\w+\s*=\s*["\']\s*(?:event\.stopPropagation\(\);\s*)?'

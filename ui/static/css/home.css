@@ -1,0 +1,300 @@
+/* Главный экран: карточка сервера со спидометром, ползунок подключения,
+   плитки сессии и переключатели протокола. Цвета берутся из переменных
+   оформления оболочки (renderer/css/glass-shell.css); запасные значения
+   нужны, когда страница открыта без неё. */
+
+.home-dash {
+  --dash-accent: color-mix(in srgb, rgb(var(--glass-accent, 168, 125, 248)) 58%, #ffffff);
+  --dash-ok: #5cd6a0;
+  --dash-ok-rgb: 92, 214, 160;
+  --dash-panel: var(--panel, rgba(30, 24, 56, .6));
+  --dash-edge: var(--edge, rgba(255, 255, 255, .08));
+  --dash-text-1: var(--text-1, #f7f5ff);
+  --dash-text-2: var(--text-2, #c9c3dd);
+  --dash-text-3: var(--text-3, #948cad);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 940px;
+  margin-inline: auto;
+}
+
+#page-home > .home-dash { margin-bottom: auto; }
+
+.dash-lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--dash-text-3);
+}
+
+/* --- карточка сервера со спидометром ------------------------------ */
+
+.dash-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 24px !important;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(var(--glass-accent, 168, 125, 248), .35), transparent 60%),
+    var(--dash-panel) !important;
+}
+
+.dash-country { display: flex; align-items: center; gap: 16px; margin-top: 12px; min-width: 0; }
+
+.dash-globe {
+  width: 76px;
+  height: 76px;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .06);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .12), 0 0 30px rgba(var(--glass-accent, 168, 125, 248), .45);
+}
+
+.dash-globe img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.dash-country-text { min-width: 0; }
+
+.dash-country-name {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--dash-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-route {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--dash-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+
+.dash-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dash-text-2);
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .09);
+}
+
+.dash-chip[hidden] { display: none; }
+.dash-chip.good { color: #7ee0b8; border-color: rgba(126, 224, 184, .3); background: rgba(126, 224, 184, .08); }
+.dash-chip.yellow { color: #f0cf7a; border-color: rgba(240, 207, 122, .3); background: rgba(240, 207, 122, .08); }
+.dash-chip.red, .dash-chip.err { color: #f2a0a0; border-color: rgba(242, 160, 160, .3); background: rgba(242, 160, 160, .08); }
+
+.dash-link {
+  padding: 3px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dash-accent);
+  cursor: pointer;
+}
+
+.dash-link:hover { text-decoration: underline; }
+
+.dash-hero .dash-status { margin-top: 18px; }
+
+/* Старые правила героя центрируют статус через grid-area и justify-self. */
+.dash-hero .status-title,
+.dash-hero .status-desc {
+  grid-area: auto !important;
+  justify-self: auto !important;
+  width: auto !important;
+}
+
+.dash-hero .status-title {
+  margin: 0 !important;
+  font-size: 22px !important;
+  font-weight: 800;
+  text-align: left !important;
+  color: var(--dash-text-1);
+}
+
+.dash-hero .status-desc {
+  margin: 5px 0 0 !important;
+  max-width: none !important;
+  font-size: 12.5px;
+  text-align: left !important;
+  color: var(--dash-text-2);
+}
+
+/* Спидометр: дуга 0…шкала, шкала растёт вместе со скоростью. */
+.dash-gauge { position: relative; width: 100%; max-width: 260px; justify-self: end; }
+.dash-gauge svg { display: block; width: 100%; height: auto; overflow: visible; }
+.dash-gauge .gauge-track { fill: none; stroke: rgba(255, 255, 255, .08); stroke-width: 14; stroke-linecap: round; }
+.dash-gauge .gauge-value {
+  fill: none;
+  stroke: url(#dashGaugeGradient);
+  stroke-width: 14;
+  stroke-linecap: round;
+  transition: stroke-dashoffset .8s ease;
+}
+.dash-gauge .gauge-start { stop-color: var(--dash-accent); }
+.dash-gauge .gauge-end { stop-color: var(--dash-ok); }
+.dash-gauge text { fill: var(--dash-text-3); font-size: 11px; }
+.dash-gauge-read { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; }
+.dash-gauge-read b {
+  display: block;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--dash-text-1);
+  font-variant-numeric: tabular-nums;
+}
+.dash-gauge-read small { font-size: 11px; color: var(--dash-text-3); }
+
+/* --- ползунок подключения ----------------------------------------- */
+
+.dash-slide {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 64px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 32px;
+  border: 1px solid rgba(var(--glass-accent, 168, 125, 248), .55);
+  background: rgba(var(--panel-rgb, 30, 24, 56), .9);
+  color: var(--dash-text-2);
+  font: inherit;
+  cursor: pointer;
+  touch-action: pan-y;
+  user-select: none;
+  transition: border-color .3s, background-color .3s;
+}
+
+.dash-slide:focus-visible { outline: 2px solid var(--dash-accent); outline-offset: 3px; }
+.dash-slide:disabled { cursor: default; opacity: .6; }
+
+.dash-slide-fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: linear-gradient(90deg, rgba(var(--dash-ok-rgb), .12), rgba(var(--dash-ok-rgb), .35));
+  transition: width .5s ease;
+}
+
+.dash-slide-label {
+  position: absolute;
+  inset: 0 72px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-slide-knob {
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 26px;
+  color: #fff;
+  background: var(--dash-accent);
+  box-shadow: 0 0 22px rgba(var(--glass-accent, 168, 125, 248), .6);
+  transition: left .5s ease, background-color .3s, transform .2s;
+}
+
+.dash-slide-knob svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+.dash-slide.on { border-color: rgba(var(--dash-ok-rgb), .6); background: rgba(18, 60, 48, .55); color: #d9f7ea; }
+.dash-slide.on .dash-slide-fill { width: 100%; }
+.dash-slide.on .dash-slide-knob { left: calc(100% - 58px); background: #3bb487; box-shadow: 0 0 22px rgba(var(--dash-ok-rgb), .6); }
+
+/* Подключение идёт: ручка посередине и пульсирует. */
+.dash-slide.connecting .dash-slide-knob { left: calc(50% - 26px); animation: dash-knob-pulse 1.2s ease-in-out infinite; }
+.dash-slide.connecting .dash-slide-fill { width: 50%; }
+@keyframes dash-knob-pulse { 50% { box-shadow: 0 0 34px rgba(var(--glass-accent, 168, 125, 248), .95); } }
+
+.dash-slide.dragging .dash-slide-knob { transition: none; }
+
+/* --- плитки -------------------------------------------------------- */
+
+.dash-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+
+.dash-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px 16px !important;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.dash-tile b {
+  margin-top: 4px;
+  max-width: 100%;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--dash-text-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-tile small { font-size: 11.5px; color: var(--dash-text-3); }
+button.dash-tile { cursor: pointer; }
+.dash-ip b { font-size: 15px; letter-spacing: .04em; }
+
+.home-dash .home-toggles { margin: 0 !important; }
+
+/* --- состояние «подключено» ---------------------------------------- */
+
+.home-dash.is-on .dash-globe { box-shadow: 0 0 0 3px rgba(var(--dash-ok-rgb), .45), 0 0 30px rgba(var(--dash-ok-rgb), .4); }
+
+/* --- компактные окна ----------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .dash-hero { grid-template-columns: minmax(0, 1fr) 220px; }
+  .dash-country-name { font-size: 23px; }
+}
+
+@media (max-width: 760px) {
+  .dash-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-height: 760px) {
+  .home-dash { gap: 10px; }
+  .dash-hero { padding: 16px 20px !important; }
+  .dash-globe { width: 60px; height: 60px; }
+  .dash-hero .dash-status { margin-top: 12px; }
+  .dash-slide { height: 56px; }
+  .dash-slide-knob { width: 44px; height: 44px; top: 5px; }
+  .dash-slide.on .dash-slide-knob { left: calc(100% - 50px); }
+  .dash-slide.connecting .dash-slide-knob { left: calc(50% - 22px); }
+  .dash-tile { padding: 11px 14px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-slide-knob, .dash-slide-fill, .dash-gauge .gauge-value { transition: none; }
+  .dash-slide.connecting .dash-slide-knob { animation: none; }
+}

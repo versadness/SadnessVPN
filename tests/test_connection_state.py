@@ -141,7 +141,7 @@ class ServerConnectionSafetyTests(unittest.TestCase):
             "ST.status==='on'||ST.status==='connecting'",
             source,
         )
-        self.assertIn("lbl.textContent='Отменить'", source)
+        self.assertIn("lbl.textContent='Подключение… нажмите, чтобы отменить'", source)
 
     def test_server_handles_unexpected_engine_exit(self):
         path = Path(__file__).resolve().parents[1].joinpath("ui", "server.py")
