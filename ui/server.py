@@ -619,6 +619,28 @@ def _start_subscription_refresh_all():
         return jsonify(ok=False, error="Нет подписок для обновления"), 400
     return _run_subscription_jobs(jobs)
 
+def _autoupdate_subscriptions_on_start(delay=3.0):
+    """Обновить все подписки при запуске приложения, если это не выключено.
+
+    Небольшая пауза даёт окну открыться, а автоподключению — начаться со
+    старым списком: очередь обновлений сохраняет выбранный сервер сама.
+    """
+    if not _app_settings.get("sub_autoupdate", True):
+        return
+    has_subscriptions = any(
+        str(g.get("url") or "").startswith(("https://", "http://"))
+        for wireguard in (False, True) for g in _subscription_scope(wireguard)[0])
+    if not has_subscriptions:
+        return
+    time.sleep(delay)
+    _log("Автообновление подписок при запуске", "info")
+    with app.app_context():
+        result = _start_subscription_refresh_all()
+    response = result[0] if isinstance(result, tuple) else result
+    if not (response.get_json() or {}).get("ok"):
+        _log("Автообновление подписок пропущено: " + str((response.get_json() or {}).get("error")), "warn")
+
+
 def _get_selected_server():
     if _app_settings["selected_group"] is None or _app_settings["selected_index"] is None:
         return None
@@ -1789,4 +1811,6 @@ app.register_blueprint(_apps_routes.bp)
 def run(host="127.0.0.1", port=45678):
     threading.Thread(target=_tg_proxy_routes.autostart, daemon=True,
                      name="tg-proxy-autostart").start()
+    threading.Thread(target=_autoupdate_subscriptions_on_start, daemon=True,
+                     name="subscriptions-autoupdate").start()
     app.run(host=host, port=port, debug=False, use_reloader=False)
