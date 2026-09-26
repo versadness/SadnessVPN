@@ -169,6 +169,34 @@ def _dns_block(settings, ipv6):
     return dns
 
 
+TUN_DEVICE = "SadnessMihomo"
+
+
+def host_has_global_ipv6() -> bool:
+    """Есть ли у компьютера внешний IPv6 помимо нашего TUN.
+
+    Глобальные адреса — 2000::/3 (включая Teredo). Локальные fe80::/fc00::
+    выхода в интернет не дают. Если определить не удалось, считаем, что IPv6
+    есть: так трафик точно не пойдёт мимо туннеля.
+    """
+    try:
+        import ipaddress
+        import socket
+        import psutil
+        for name, addresses in psutil.net_if_addrs().items():
+            if name == TUN_DEVICE:
+                continue
+            for address in addresses:
+                if address.family != socket.AF_INET6:
+                    continue
+                ip = ipaddress.IPv6Address(address.address.split("%", 1)[0])
+                if ip in ipaddress.IPv6Network("2000::/3"):
+                    return True
+        return False
+    except Exception:
+        return True
+
+
 def build_mihomo_config(server, **settings):
     return assemble_config(_mihomo_proxy(server), **settings)
 
@@ -180,17 +208,22 @@ def assemble_config(proxy, socks_port=1080, http_port=8080, clash_port=9090,
         proxy["smux"] = {"enabled": True, "protocol": "smux", "max-connections": 4}
     preset = settings.get("dns_preset", "cf_google")
     ipv4_only = settings.get("preferred_ip", "ipv4") == "ipv4"
-    # Предпочтение IP влияет только на DNS (есть ли AAAA-ответы). Сам TUN всегда
-    # захватывает и IPv6: с ipv6: false Mihomo не выдаёт TUN IPv6-адрес и не
-    # ставит IPv6-маршрут, и такой трафик шёл бы мимо туннеля.
+    # Предпочтение IP управляет DNS (есть ли AAAA-ответы). IPv6 в TUN:
+    # с ipv6: false Mihomo не выдаёт TUN IPv6-адрес и не ставит IPv6-маршрут.
+    # Отклонять IPv6 правилом REJECT нельзя: стек TUN уже принял TCP-соединение,
+    # и браузер видит ERR_CONNECTION_CLOSED вместо быстрого перехода на IPv4
+    # (особенно Chromium со своим DoH, который получает AAAA в обход DNS ядра).
+    # Поэтому в режиме IPv4 TUN без IPv6, если внешнего IPv6 у компьютера нет —
+    # утекать нечему, а браузер сразу идёт по IPv4. Если внешний IPv6 есть,
+    # TUN его перехватывает и ведёт через VPN, а не выпускает напрямую.
+    native_ipv6 = settings.get("native_ipv6")
+    if native_ipv6 is None:
+        native_ipv6 = host_has_global_ipv6() if ipv4_only else True
+    tun_ipv6 = not ipv4_only or bool(native_ipv6)
     ipv6 = not ipv4_only and preset not in {"xbox", "xbox_dot"}
     rules = ["IP-CIDR,127.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
              "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
              "IP-CIDR6,fc00::/7,DIRECT,no-resolve", "IP-CIDR6,fe80::/10,DIRECT,no-resolve"]
-    if ipv4_only:
-        # Режим «только IPv4»: внешний IPv6 закрыт, а не выпущен напрямую.
-        # Приложения быстро переходят на IPv4 и идут по обычным правилам.
-        rules.append("IP-CIDR6,::/0,REJECT,no-resolve")
     if settings.get("block_udp"):
         rules.append("NETWORK,UDP,REJECT")
     for exe in routed_apps or []:
@@ -203,9 +236,9 @@ def assemble_config(proxy, socks_port=1080, http_port=8080, clash_port=9090,
         "socks-port": socks_port, "port": http_port, "allow-lan": bool(settings.get("allow_lan")),
         "bind-address": "*" if settings.get("allow_lan") else "127.0.0.1",
         "external-controller": f"127.0.0.1:{clash_port}", "mode": "rule", "log-level": "info",
-        "ipv6": True, "find-process-mode": "always", "geo-auto-update": False,
+        "ipv6": tun_ipv6, "find-process-mode": "always", "geo-auto-update": False,
         "profile": {"store-selected": False, "store-fake-ip": False},
-        "tun": {"enable": True, "device": "SadnessMihomo", "stack": "system",
+        "tun": {"enable": True, "device": TUN_DEVICE, "stack": "system",
                 "auto-route": True, "auto-detect-interface": True,
                 "strict-route": bool(settings.get("kill_switch")), "mtu": 1500,
                 "dns-hijack": ["any:53", "tcp://any:53"]},

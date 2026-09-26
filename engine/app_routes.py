@@ -26,8 +26,19 @@ def assignments(apps, groups):
 
 
 def build_multi_route_config(server, routes, **settings):
-    from engine.core_config import build_mihomo_config, _mihomo_proxy
-    config = build_mihomo_config(server, **settings)
+    from engine.core_config import build_mihomo_config
+    return apply_routes(build_mihomo_config(server, **settings), routes)
+
+
+def apply_routes(config, routes):
+    """Добавить правила и индивидуальные серверы к готовой конфигурации Mihomo.
+
+    Основной outbound называется proxy и может быть любым — в том числе
+    обычным WireGuard, поэтому правила работают и в режиме WG.
+    """
+    from engine.core_config import _mihomo_proxy
+    if not routes:
+        return config
     if any(r.get('match', '').startswith(('GEOSITE,', 'GEOIP,')) for r in routes):
         config['geodata-mode'] = True
     added = {"proxy"}

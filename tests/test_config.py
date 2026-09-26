@@ -135,18 +135,25 @@ class ProxyRoutingConfigTests(unittest.TestCase):
         self.assertFalse(dns["ipv6"])
 
     def test_ipv6_traffic_never_bypasses_the_tunnel(self):
-        # С ipv6: false Mihomo не маршрутизирует IPv6 в TUN, и он шёл мимо VPN.
+        # С ipv6: false Mihomo не маршрутизирует IPv6 в TUN: при внешнем IPv6
+        # такой трафик шёл бы мимо VPN, поэтому тогда TUN его перехватывает.
         for preferred in ("ipv4", "ipv6", "auto"):
-            config = build_mihomo_config(self.server, preferred_ip=preferred)
+            config = build_mihomo_config(self.server, preferred_ip=preferred, native_ipv6=True)
             self.assertTrue(config["ipv6"], preferred)
-        ipv4 = build_mihomo_config(self.server, preferred_ip="ipv4")
+        ipv4 = build_mihomo_config(self.server, preferred_ip="ipv4", native_ipv6=True)
         self.assertFalse(ipv4["dns"]["ipv6"])
-        rules = ipv4["rules"]
-        self.assertLess(rules.index("IP-CIDR6,fe80::/10,DIRECT,no-resolve"),
-                        rules.index("IP-CIDR6,::/0,REJECT,no-resolve"))
         dual = build_mihomo_config(self.server, preferred_ip="auto")
         self.assertTrue(dual["dns"]["ipv6"])
-        self.assertNotIn("IP-CIDR6,::/0,REJECT,no-resolve", dual["rules"])
+
+    def test_ipv4_mode_never_rejects_ipv6_inside_the_tunnel(self):
+        # REJECT срабатывает после того, как стек TUN принял TCP-соединение:
+        # браузер получал ERR_CONNECTION_CLOSED и не переходил на IPv4.
+        for native in (True, False):
+            config = build_mihomo_config(self.server, preferred_ip="ipv4", native_ipv6=native)
+            self.assertFalse(any(rule.startswith("IP-CIDR6,::/0") for rule in config["rules"]))
+        # Без внешнего IPv6 утекать нечему: TUN только IPv4, браузер сразу идёт по IPv4.
+        ipv4_only_host = build_mihomo_config(self.server, preferred_ip="ipv4", native_ipv6=False)
+        self.assertFalse(ipv4_only_host["ipv6"])
 
     def test_regular_dns_follows_routing_rules_into_the_tunnel(self):
         for preset in ("cf_google", "adguard", "quad9"):

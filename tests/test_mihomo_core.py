@@ -113,11 +113,11 @@ class MihomoCoreTests(unittest.TestCase):
 
     def test_mihomo_default_tun_ipv4_and_subnet_collision(self):
         import ipaddress
-        config = build_mihomo_config(self.node())
-        # По умолчанию только IPv4: AAAA не выдаются, внешний IPv6 закрыт в TUN.
+        config = build_mihomo_config(self.node(), native_ipv6=True)
+        # По умолчанию только IPv4: AAAA не выдаются, внешний IPv6 идёт в TUN.
         self.assertFalse(config["dns"]["ipv6"])
         self.assertTrue(config["ipv6"])
-        self.assertIn("IP-CIDR6,::/0,REJECT,no-resolve", config["rules"])
+        self.assertNotIn("IP-CIDR6,::/0,REJECT,no-resolve", config["rules"])
         self.assertNotIn("inet4-address", config["tun"])
         manager = MihomoManager()
         with patch.object(manager, "_assigned_ipv4_networks", return_value=[ipaddress.ip_network("172.19.0.0/30")]):

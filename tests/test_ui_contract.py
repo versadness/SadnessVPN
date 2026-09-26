@@ -111,12 +111,24 @@ class UiContractTests(unittest.TestCase):
         # Перетаскивание не должно повторно переключать VPN щелчком.
         self.assertIn("stopImmediatePropagation", self.javascript)
 
-    def test_telegram_proxy_card_lives_on_the_zapret_page(self):
-        zapret_page = self.html.split('id="page-zapret"', 1)[1]
-        for element_id in ("tgProxy", "tgpPort", "tgpSecret", "tgpBtn", "tgpOpen", "tgpError", "tgpSummary"):
-            self.assertIn(f'id="{element_id}"', zapret_page, element_id)
+    def test_telegram_proxy_has_its_own_section_below_zapret(self):
+        nav = self.html.split('<nav class="sidebar"', 1)[1].split("</nav>", 1)[0]
+        self.assertLess(nav.index('data-page="zapret"'), nav.index('data-page="telegram"'))
+        zapret_page = self.html.split('id="page-zapret"', 1)[1].split('id="page-telegram"', 1)[0]
+        self.assertNotIn('id="tgProxy"', zapret_page)
+        telegram_page = self.html.split('id="page-telegram"', 1)[1]
+        for element_id in ("tgProxy", "tgpPort", "tgpSecret", "tgpBtn", "tgpOpen", "tgpError",
+                           "tgpSummary", "tgpHeadState"):
+            self.assertIn(f'id="{element_id}"', telegram_page, element_id)
         self.assertIn("case 'tgproxy_status'", self.javascript)
         self.assertIn("/api/tgproxy/start", self.javascript)
+
+    def test_wireguard_configs_can_be_imported_as_files(self):
+        wg_page = self.html.split('id="page-wg"', 1)[1]
+        self.assertIn('id="wgFile"', wg_page)
+        self.assertIn('accept=".conf,.txt" multiple', wg_page)
+        self.assertIn("wgAddFiles(event.dataTransfer.files)", wg_page)
+        self.assertIn("async function wgAddFiles(files)", self.javascript)
 
     def test_every_static_inline_handler_has_a_defined_function(self):
         handlers = set(re.findall(

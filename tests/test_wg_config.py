@@ -110,6 +110,39 @@ class WireGuardRoutingConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_wg_tun_config({**self.server, "is_awg": True})
 
+    def routed_config(self):
+        from engine.app_routes import apply_routes
+        other = {"protocol": "vless", "host": "198.51.100.40", "port": 443,
+                 "uuid": "11111111-1111-4111-8111-111111111111", "type": "tcp",
+                 "security": "tls", "sni": "example.com", "remark": "other"}
+        routes = [
+            {"match": "DOMAIN-SUFFIX,bank.example", "tag": "DIRECT", "server": None},
+            {"match": "DOMAIN-SUFFIX,video.example", "tag": "app-other", "server": other},
+            {"exe": "game.exe", "tag": "DIRECT", "server": None},
+        ]
+        return apply_routes(build_wg_tun_config(self.server), routes)
+
+    def test_routing_rules_apply_to_plain_wireguard(self):
+        # Раньше WG отказывался подключаться, пока правила не удалены целиком.
+        config = self.routed_config()
+        self.assertEqual([p["name"] for p in config["proxies"]], ["proxy", "app-other"])
+        self.assertEqual(config["proxies"][0]["type"], "wireguard")
+        rules = config["rules"]
+        self.assertLess(rules.index("DOMAIN-SUFFIX,bank.example,DIRECT"), rules.index("MATCH,proxy"))
+        self.assertIn("DOMAIN-SUFFIX,video.example,app-other", rules)
+        self.assertIn("PROCESS-NAME,game.exe,DIRECT", rules)
+
+    @unittest.skipUnless(os.path.isfile(MIHOMO), "bin/mihomo.exe отсутствует")
+    def test_bundled_mihomo_accepts_wireguard_with_rules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "wg.yaml")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(self.routed_config(), handle)
+            result = subprocess.run([MIHOMO, "-d", directory, "-f", path, "-t"],
+                                    capture_output=True, text=True, encoding="utf-8",
+                                    errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout[-500:])
+
     @unittest.skipUnless(os.path.isfile(MIHOMO), "bin/mihomo.exe отсутствует")
     def test_bundled_mihomo_accepts_config(self):
         with tempfile.TemporaryDirectory() as directory:

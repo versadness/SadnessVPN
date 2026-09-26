@@ -66,6 +66,26 @@ class LocalApiBoundaryTests(unittest.TestCase):
                 self.assertFalse(response.get_json()["ok"])
                 self.assertEqual(ports(), original)
 
+    def test_wireguard_file_name_becomes_the_server_name(self):
+        conf = ("[Interface]\nPrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+                "Address = 10.0.0.2/32\n[Peer]\n"
+                "PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=\n"
+                "Endpoint = 198.51.100.30:51820\nAllowedIPs = 0.0.0.0/0\n")
+        groups = json.loads(json.dumps(profile_state.wg_groups))
+        settings = dict(server._app_settings)
+        try:
+            with mock.patch.object(profile_state, "save_wireguard_groups"), \
+                    mock.patch.object(server, "_save_settings", return_value=True):
+                response = self.client.post("/api/wg/servers/add", json={"conf": conf, "name": "Мой Нидерланды"},
+                                            base_url="http://127.0.0.1:45678")
+            self.assertTrue(response.get_json()["ok"])
+            manual = next(g for g in profile_state.wg_groups if g["id"] == "manual-wg")
+            self.assertEqual(manual["servers"][-1]["remark"], "Мой Нидерланды")
+        finally:
+            profile_state.wg_groups[:] = groups
+            server._app_settings.clear()
+            server._app_settings.update(settings)
+
     def test_invalid_tunnel_setting_is_rejected_without_mutation(self):
         original = server._app_settings["preferred_ip"]
 

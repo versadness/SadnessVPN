@@ -1523,10 +1523,6 @@ def api_connect():
     proto = data.get("protocol", _app_settings["active_protocol"])
 
     if proto == "wg":
-        if any(r.get("enabled", True) for r in profile_state.apps_config.get("rules", [])):
-            return jsonify(ok=False, error="Пользовательские правила работают только в режиме TUN. Переключите протокол на TUN на главном экране или выключите правила."), 400
-        if any(a.get("enabled") is not False and a.get("destination", "default") != "default" for a in profile_state.apps_config.get("apps", [])):
-            return jsonify(ok=False, error="Индивидуальные серверы работают только в режиме TUN. В режиме WG/AWG верните назначения на основной маршрут."), 400
         server = _get_selected_wg_server()
         if not server:
             return jsonify({"ok": False, "error": "WG сервер не выбран"})
@@ -1534,10 +1530,22 @@ def api_connect():
         routed_exes = _get_routed_exes()
         is_awg = server.get("is_awg", False)
         cfg = None
+        # Обычный WireGuard идёт через Mihomo, поэтому правила и индивидуальные
+        # серверы работают так же, как в TUN. AmneziaWG — системная служба на
+        # весь компьютер: правила к ней не применить, но и мешать подключению
+        # они не должны — пользователь об этом предупреждается.
+        has_custom_routes = any(r.get("enabled", True) for r in profile_state.apps_config.get("rules", [])) or any(
+            a.get("enabled") is not False and a.get("destination", "default") != "default"
+            for a in profile_state.apps_config.get("apps", []))
         if not is_awg:
+            from engine.app_routes import apply_routes, assignments
+            from engine.routing_rules import resolve_rules
+            _repair_saved_routes("подготовка подключения")
             try:
                 _ensure_local_proxy_ports()
-                cfg = build_wg_tun_config(
+                explicit_routes = resolve_rules(profile_state.apps_config.get("rules", []), profile_state.groups) + \
+                    assignments(profile_state.apps_config.get("apps", []), profile_state.groups)
+                cfg = apply_routes(build_wg_tun_config(
                     server,
                     socks_port   = _app_settings["socks"],
                     http_port    = _app_settings["http"],
@@ -1545,7 +1553,7 @@ def api_connect():
                     routing_mode = mode,
                     routed_apps  = routed_exes,
                     **_tunnel_kwargs(),
-                )
+                ), explicit_routes)
             except ValueError as exc:
                 _log("Не удалось подготовить подключение: " + str(exc), "err")
                 return jsonify(ok=False, error=str(exc)), 422
@@ -1566,6 +1574,10 @@ def api_connect():
                         "в этом режиме недоступны.",
                         "info",
                     )
+                    if has_custom_routes:
+                        _log("Правила маршрутизации не применяются к AmneziaWG: весь трафик "
+                             "идёт через туннель AWG. Они снова заработают в TUN и обычном WireGuard.",
+                             "warn")
 
             if not _connection.run_if_current(attempt, announce):
                 return
@@ -1576,6 +1588,8 @@ def api_connect():
                 _finish_vpn_attempt(attempt, cfg, server.get("remark", ""))
 
         threading.Thread(target=do_connect_wg, daemon=True).start()
+        if is_awg and has_custom_routes:
+            return jsonify(ok=True, warning="Правила маршрутизации не применяются к AmneziaWG — весь трафик пойдёт через AWG")
         return jsonify({"ok": True})
 
     else:  # vless / ss / trojan / hysteria2

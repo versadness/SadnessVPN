@@ -20,7 +20,7 @@
   });
   const intro=document.createElement('div');intro.className='route-intro glass';
   const title=document.createElement('strong');title.textContent='Каждому приложению — свой маршрут';
-  const note=document.createElement('p');note.textContent='Выберите режим, затем задайте отдельные правила для приложений, доменов и адресов. Разные серверы работают одновременно в режиме TUN. Меняйте назначения при отключённом VPN.';
+  const note=document.createElement('p');note.textContent='Выберите режим, затем задайте отдельные правила для приложений, доменов и адресов. Разные серверы работают одновременно в режиме TUN и в обычном WireGuard; к AmneziaWG правила не применяются. Меняйте назначения при отключённом VPN.';
   intro.append(title,note);apps.prepend(intro);
   page.append(nav,apps);appsTab.click();
   const original=renderRules;

@@ -70,10 +70,17 @@ def api_wg_add_server():
     conf = data.get("conf", "").strip()
     if not conf:
         return jsonify({"ok": False, "error": "Пустой конфиг"})
+    # Имя файла .conf (без расширения) — понятное название сервера при импорте файлом.
+    name = data.get("name")
+    name = name.strip()[:160] if isinstance(name, str) else ""
     try:
         servers = parse_wg_conf(conf)
         if not servers:
             return jsonify({"ok": False, "error": "Не удалось распарсить конфиг WireGuard"})
+        if name:
+            for index, s in enumerate(servers):
+                label = name if len(servers) == 1 else f"{name} #{index + 1}"
+                s["remark"] = ("[AWG] " if s.get("is_awg") else "") + label
         mg = _ensure_wg_manual_group()
         added = 0
         is_awg_warn = False
