@@ -75,6 +75,25 @@ class SessionLogFileTests(unittest.TestCase):
         self.assertLess(len(text), 2000)
 
 
+class EngineLogSinkTests(unittest.TestCase):
+    def test_new_session_sink_keeps_tun_detection_and_health(self):
+        # Регрессия 3.2.1: замена log_cb целиком теряла отметку готовности TUN.
+        from engine.mihomo import MihomoManager
+        received = []
+        engine = MihomoManager(log_callback=lambda message, tag: None)
+        engine.set_log_sink(lambda message, tag: received.append(message))
+        engine.log_cb('level=info msg="[TUN] Tun adapter listening at: SadnessMihomo"', "log")
+        self.assertTrue(engine._tun_ready.is_set())
+        self.assertEqual(len(received), 1)
+
+    def test_server_switches_engines_through_the_sink(self):
+        with mock.patch.object(server.vpn_engine, "set_log_sink") as sink, \
+                mock.patch.object(server, "session_log", SessionLog(tempfile.mkdtemp())), \
+                mock.patch.object(server, "_broadcast"):
+            server._begin_connection_session({})
+        sink.assert_called_once()
+
+
 class FakeEngine:
     """Ядро без процесса: пишет в журнал так же, как MihomoManager."""
     name = "Mihomo"

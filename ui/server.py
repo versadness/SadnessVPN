@@ -1657,8 +1657,13 @@ def _begin_connection_session(data):
         generation = session_log.start(reason)
         _broadcast({"type": "session_log_reset", "session": generation})
     logger = _session_logger(generation)
-    vpn_engine.log_cb = logger
-    awg_engine.log_cb = logger
+    for engine in (vpn_engine, awg_engine):
+        # set_log_sink сохраняет служебную обёртку движка (готовность TUN,
+        # здоровье соединения); у AmneziaWG её нет — там приёмник меняется прямо.
+        if hasattr(engine, "set_log_sink"):
+            engine.set_log_sink(logger)
+        else:
+            engine.log_cb = logger
     return generation
 
 

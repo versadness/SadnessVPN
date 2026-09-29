@@ -71,8 +71,15 @@ class MihomoManager:
         self._api_port = 9090
         self._tun_ready = threading.Event()
         self.health = DialHealth()
-        callback = log_callback or (lambda message, tag: None)
+        self.set_log_sink(log_callback or (lambda message, tag: None))
 
+    def set_log_sink(self, callback):
+        """Сменить приёмник журнала (например, на журнал новой сессии).
+
+        Обёртка обязательна: по строкам ядра отмечается готовность TUN и
+        считается здоровье соединения. Замена log_cb напрямую её теряла, и
+        подключение падало с «запуск TUN-адаптера не подтверждён».
+        """
         def log(message, tag):
             if "Tun adapter listening at:" in message:
                 self._tun_ready.set()
