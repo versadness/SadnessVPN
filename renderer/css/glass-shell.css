@@ -104,14 +104,17 @@ html.shell-glass #customWallpaper.active::after {
   display: none;
 }
 
-/* Свой фон — тёмная размытая подложка под матовым стеклом, как у
-   рабочего стола под акрилом Windows. Картинка всегда слегка размыта и
-   затемнена, «Прозрачность окна» задаёт, насколько она проступает, а
-   «Размытие» и «Акрил» размывают её сильнее. Лёгкое увеличение прячет
-   светлую кайму, которую blur даёт по краям. */
+/* Свой фон — полупрозрачная чёткая подложка под матовым стеклом панелей.
+   Размывать всю картинку можно только явно — режимами «Размытие» и
+   «Акрил»; лёгкое увеличение там прячет светлую кайму от blur по краям. */
 html.shell-glass.has-wallpaper #customWallpaper.active {
-  filter: blur(8px) saturate(1.1);
-  transform: scale(1.04);
+  /* Окно остаётся прозрачным: картинка — полупрозрачный слой поверх
+     рабочего стола, и чем ниже «Прозрачность окна», тем сильнее сквозь
+     неё проступает то, что за окном. */
+  opacity: calc(.2 + var(--win-alpha) * .7);
+  /* Картинка остаётся чёткой: матовыми делают её только панели. */
+  filter: none;
+  transform: none;
 }
 
 html.shell-glass.glass-blur #customWallpaper.active {
@@ -126,6 +129,7 @@ html.shell-glass.glass-acrylic #customWallpaper.active {
 
 /* «Без стекла»: картинка чёткая, поверх только затемнение для читаемости. */
 html.shell-glass.shell-opaque.has-wallpaper #customWallpaper.active {
+  opacity: 1;
   filter: none;
   transform: none;
 }
@@ -134,12 +138,12 @@ html.shell-glass.shell-opaque.has-wallpaper body::before {
   background: rgba(var(--deep-rgb), calc(.25 + var(--veil) * .6));
 }
 
-/* Тонировка поверх картинки: даже при 0% картинка приглушена, чтобы
-   интерфейс читался; 100% почти скрывает её. */
+/* Лёгкая тонировка поверх картинки: окно остаётся прозрачным, читаемость
+   дают матовые панели. */
 html.shell-glass.has-wallpaper:not(.shell-opaque) body::before {
   background:
     linear-gradient(180deg, rgba(var(--deep-rgb), var(--veil)), rgba(var(--deep-rgb), var(--veil))),
-    rgba(var(--deep-rgb), calc(.45 + var(--win-alpha) * .5));
+    rgba(var(--deep-rgb), calc(.12 + var(--win-alpha) * .3));
 }
 
 /* Матовое стекло: панели размывают то, что под ними. Рабочий стол за окном
