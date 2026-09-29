@@ -3,7 +3,8 @@ let ws=null, wsRetry=0, wsTimer=null, autoConnectAttempted=false,manualConnect=f
 let sessionStart=null, sessionTimerInt=null, sessionBaseSec=0;
 let modalReturnFocus=null;
 if(new URLSearchParams(location.search).has('desktop'))document.documentElement.classList.add('custom-frame');
-const logBuffer=[`[${new Date().toTimeString().slice(0,8)}] [OK] Sadness VPN запущен`];
+// Записи текущей сессии подключения (полный журнал — /api/diagnostics).
+const logBuffer=[];
 // sessionStart — абсолютный момент начала сессии, а не точка последней
 // синхронизации. Прежняя схема складывала серверную базу с локальным
 // отсчётом, и при двух источниках событий статистики секунды удваивались.
@@ -35,7 +36,10 @@ function handle(d){ switch(d.type){
   case 'status': ST.status=d.state;if(d.core)ST.core=d.core;if(d.state!=='on')ST.appRoutes=[];ST.connected=d.state==='on'||d.state==='error';if(d.server)ST.server=d.server;if(d.state==='off'){applyTraffic._t=null;applyTraffic._d=0;applyTraffic._u=0;}applyStatus();break;
   case 'operation_error': toast(d.message||d.error||'Ошибка операции','err');break;
   case 'routing_repaired': toast(d.message||'Маршруты переключены на основной VPN');break;
-  case 'log': addLog(d.msg,d.tag);break;
+  // Буфер окна повторяет журнал сессии: очищается вместе с ним и не
+  // принимает системные записи.
+  case 'log': if(d.session!==false)addLog(d.msg,d.tag);break;
+  case 'session_log_reset': logBuffer.length=0;break;
   case 'groups_updated': ST.groups=d.groups||[];ST.selGroup=d.selGroup;ST.selIndex=d.selIndex;renderServers();applyStatus();break;
   case 'wg_groups_updated': if(d.activeProtocol)ST.proto=d.activeProtocol;ST.wgGroups=d.wgGroups||[];ST.selWgGroup=d.selWgGroup;ST.selWgIndex=d.selWgIndex;renderWg();applyStatus();break;
   // appRoutes/ruleRoutes приходят только когда изменились — отсутствие полей
@@ -58,7 +62,7 @@ function handle(d){ switch(d.type){
 } }
 function applyStatus(){ const btn=document.getElementById('connectBtn'),arc=document.getElementById('powerArc'),title=document.getElementById('statusTitle'),desc=document.getElementById('statusDesc'),lbl=document.getElementById('powerLbl'),dot=document.getElementById('tbDot'),tbSt=document.getElementById('tbState');btn.classList.remove('on','connecting');arc?.classList.remove('spin');title.classList.remove('on');dot.classList.remove('on');tbSt.classList.remove('on');btn.disabled=!ST.backendOnline||ST.status==='stopping';let connectionText='Не подключено';if(!ST.backendOnline){title.textContent='Статус неизвестен';desc.textContent='Нет связи с приложением · проверка состояния';lbl.textContent='Нет связи';connectionText='Нет связи с приложением';stopSessionTimer();}else if(ST.status==='error'){title.textContent='Ошибка туннеля';desc.textContent='Служба может быть активна · повторите отключение';lbl.textContent='Ошибка туннеля · нажмите, чтобы отключить';connectionText='Остановка не подтверждена';}else if(ST.status==='stopping'){btn.classList.add('connecting');arc?.classList.add('spin');title.textContent='Отключение…';desc.textContent='Ожидаем остановки туннеля';lbl.textContent='Отключение…';connectionText='Отключение…';}else if(ST.status==='connecting'){btn.classList.add('connecting');arc?.classList.add('spin');title.textContent='Подключение…';desc.textContent='Поднимаем туннель';lbl.textContent='Подключение… нажмите, чтобы отменить';connectionText='Подключение…';}else if(ST.status==='on'||ST.connected){btn.classList.add('on');title.classList.add('on');dot.classList.add('on');tbSt.classList.add('on');title.textContent='Туннель включён';desc.textContent='Интерфейс активен · доступность сети проверяется отдельно';lbl.textContent='Подключено · нажмите, чтобы отключить';connectionText=ST.server?('Подключено · '+stripFlagEmoji(ST.server)):'Подключено';if(sessionStart===null)startSessionTimer(0);}else{title.textContent='Не защищено';desc.textContent='Проведите ползунок или нажмите на него';lbl.textContent='Проведите или нажмите, чтобы подключить';document.getElementById('stDown').textContent='0.0';document.getElementById('stUp').textContent='0.0';stopSessionTimer();}btn.setAttribute('aria-label',lbl.textContent);tbSt.textContent=connectionText;document.querySelectorAll('[data-connection-state]').forEach(el=>{el.textContent=connectionText;el.classList.toggle('on',ST.connected&&ST.backendOnline);});const srv=selectedServer();const srvName=srv?(stripFlagEmoji(srv.remark)||'Без имени'):'Не выбран';document.getElementById('hcServer').textContent=srvName;const hcFlag=document.getElementById('hcServerFlag');if(hcFlag)hcFlag.innerHTML=srv?flagImg(ccFor(srv.remark)):'';document.getElementById('hcMode').textContent=({all:'Весь ПК',whitelist:'Только выбранные',blacklist:'Кроме выбранных'})[ST.appsConfig.mode]||'Весь ПК';document.getElementById('tgTun').classList.toggle('on',ST.proto!=='wg');document.getElementById('tgWg').classList.toggle('on',ST.proto==='wg');const pb=document.getElementById('protoBadge'),pr=(srv&&srv.protocol)?srv.protocol:ST.proto;pb.className='proto-badge '+(pr==='wg'?'wg':(srv&&srv.is_awg?'awg':'vless'));pb.textContent=(srv?.is_awg?'AWG':(pr||'vless')).toUpperCase();renderModeCards();syncCapabilities();renderRules();if(typeof renderSubscriptions==='function')renderSubscriptions();updateRouteDetails();renderHomeDash();}
 function selectedServer(){ if(ST.proto==='wg'){ const g=ST.wgGroups.find(g=>g.id===ST.selWgGroup); return g&&g.servers[ST.selWgIndex]||null; } const g=ST.groups.find(g=>g.id===ST.selGroup); return g&&g.servers[ST.selIndex]||null; }
-async function toggleConnect(automatic=false){ if(!automatic)manualConnect=true;if(!ST.backendOnline||ST.status==='stopping')return;if(ST.connected||ST.status==='on'||ST.status==='connecting'){const r=await api('/api/disconnect');if(!r.ok)toast(r.error||'Не удалось отключиться','err');return;}if(!selectedServer()){toast('Сначала выбери сервер','err');go(ST.proto==='wg'?'wg':'servers');return;}const r=await api('/api/connect',{protocol:ST.proto});if(!r.ok)toast(r.error||'Не удалось подключиться','err');else if(r.warning)toast(r.warning);}
+async function toggleConnect(automatic=false){ if(!automatic)manualConnect=true;if(!ST.backendOnline||ST.status==='stopping')return;if(ST.connected||ST.status==='on'||ST.status==='connecting'){const r=await api('/api/disconnect');if(!r.ok)toast(r.error||'Не удалось отключиться','err');return;}if(!selectedServer()){toast('Сначала выбери сервер','err');go(ST.proto==='wg'?'wg':'servers');return;}const r=await api('/api/connect',{protocol:ST.proto,auto:automatic===true});if(!r.ok)toast(r.error||'Не удалось подключиться','err');else if(r.warning)toast(r.warning);}
 async function setProto(p){if(ST.connected||ST.status==='connecting'||ST.status==='stopping'){toast('Сначала отключите активный туннель','err');return;}const r=await api('/api/protocol',{protocol:p});if(!r.ok){toast(r.error||'Не удалось сменить протокол','err');return;}ST.proto=p;applyStatus();}
 // Пресеты Smart DNS: подменяют ответы для разблокировки сервисов.
 // Кнопка включает Comss — Xbox требует регистрации IP и у пользователей
@@ -246,7 +250,14 @@ async function resetAppearance(kind){const result=await api(`/api/appearance/${k
 async function copyLogs(){
   const result=await apiGet('/api/diagnostics');
   if(!result.ok){toast(result.error||'Журнал недоступен','err');return;}
-  try{await navigator.clipboard.writeText(result.text);toast('Скопирована сохранённая история · до 4 МБ','ok');}
+  if(result.empty){toast('Подключений ещё не было — журнал пуст');return;}
+  try{await navigator.clipboard.writeText(result.text);toast('Скопирован журнал последнего подключения','ok');}
+  catch(_){toast('Нет доступа к буферу обмена','err');}
+}
+async function copySystemLogs(){
+  const result=await apiGet('/api/diagnostics/system');
+  if(!result.ok){toast(result.error||'Журнал недоступен','err');return;}
+  try{await navigator.clipboard.writeText(result.text);toast('Скопирован системный журнал · до 4 МБ','ok');}
   catch(_){toast('Нет доступа к буферу обмена','err');}
 }
 function renderZapret(){

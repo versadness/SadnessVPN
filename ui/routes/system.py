@@ -9,17 +9,28 @@ from engine.stats import tracker as stats_tracker
 bp = Blueprint("system", __name__)
 
 # Заполняется из ui/server.py при регистрации блюпринта.
-deps = SimpleNamespace(broadcast=None)
+deps = SimpleNamespace(broadcast=None, session_log=None)
 
 
-def init(broadcast):
+def init(broadcast, session_log=None):
     deps.broadcast = broadcast
+    deps.session_log = session_log
 
 
 @bp.route("/api/diagnostics", methods=["GET"])
 def api_diagnostics():
+    """Журнал последней сессии подключения — то, что копирует пользователь."""
+    text = deps.session_log.read() if deps.session_log else ""
+    return jsonify({"ok": True, "text": text, "empty": not text,
+                    "active": bool(deps.session_log and deps.session_log.open),
+                    "scope": "Последняя сессия подключения"})
+
+
+@bp.route("/api/diagnostics/system", methods=["GET"])
+def api_diagnostics_system():
+    """Системный журнал: запуск, сбои, подписки, Zapret. Для поддержки."""
     return jsonify({"ok": True, "text": export_journal(),
-                    "scope": "Сохранённая история, до 4 МБ"})
+                    "scope": "Системный журнал приложения, до 4 МБ"})
 
 
 @bp.route("/api/stats", methods=["GET"])

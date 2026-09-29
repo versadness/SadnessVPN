@@ -399,8 +399,10 @@ class MihomoManager:
                 self.running = False
                 return False
 
+            # Поток запоминает журнал своей сессии: запоздавшие строки
+            # остановленного процесса не попадают в журнал следующей.
             threading.Thread(
-                target=self._read_output, args=(process, stop_requested), daemon=True
+                target=self._read_output, args=(process, stop_requested, self.log_cb), daemon=True
             ).start()
             self.log_cb(f"Mihomo запущен (PID {process.pid})", "ok")
 
@@ -467,13 +469,14 @@ class MihomoManager:
 
     # -- Output reader --------------------------------------------------------
 
-    def _read_output(self, process, stop_requested):
+    def _read_output(self, process, stop_requested, log=None):
+        log = log or self.log_cb
         try:
             for line in process.stdout:
                 line = line.rstrip()
                 if not line:
                     continue
-                self.log_cb(line, core_log_tag(line))
+                log(line, core_log_tag(line))
         except Exception:
             pass
 
@@ -486,8 +489,8 @@ class MihomoManager:
         self._cleanup(process)
 
         if unexpected:
-            self.log_cb(f"Mihomo неожиданно завершился (код {return_code})", "err")
+            log(f"Mihomo неожиданно завершился (код {return_code})", "err")
             try:
                 self.exit_cb(return_code)
             except Exception as exc:
-                self.log_cb(f"Ошибка обработки остановки Mihomo: {exc}", "err")
+                log(f"Ошибка обработки остановки Mihomo: {exc}", "err")

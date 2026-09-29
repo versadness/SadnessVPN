@@ -17,7 +17,8 @@ class DiagnosticsTests(unittest.TestCase):
         response = server.app.test_client().post("/api/window/minimize", base_url="http://127.0.0.1:45678")
         self.assertEqual(response.status_code, 404)
 
-    def test_export_reads_backend_history(self):
+    def test_system_export_reads_backend_history(self):
+        # Системный журнал (запуск, сбои) остаётся доступным отдельно от журнала сессии.
         with mock.patch.object(system_routes, "export_journal", return_value="startup error before UI"):
-            response = server.app.test_client().get("/api/diagnostics", base_url="http://127.0.0.1:45678")
+            response = server.app.test_client().get("/api/diagnostics/system", base_url="http://127.0.0.1:45678")
         self.assertEqual(response.get_json()["text"], "startup error before UI")

@@ -54,7 +54,8 @@ from engine.reconnect import Reconnector
 from engine.json_store import atomic_write_json
 from engine.task_state import BackgroundTaskCoordinator
 
-from engine.diagnostics import journal, export_journal
+from engine.diagnostics import journal, export_journal, directory as diagnostics_directory
+from engine.session_log import SessionLog
 from engine.app_meta import APP_VERSION
 # Настройки живут в ui/app_state.py. Имена сохранены прежними: словарь
 # _app_settings — тот же объект, что и app_state.app_settings.
@@ -488,9 +489,9 @@ def _update_one_subscription(target, url, name, is_new, wireguard):
     """
     groups, save, broadcast = _subscription_scope(wireguard)
     label = target.get("name") or name or "подписка"
-    _log(f"Загрузка подписки «{label}»…", "info")
+    _system_log(f"Загрузка подписки «{label}»…", "info")
     if url.lower().startswith("http://"):
-        _log(f"Подписка «{label}» загружается без шифрования (http://): её содержимое и "
+        _system_log(f"Подписка «{label}» загружается без шифрования (http://): её содержимое и "
              "ID устройства видны в сети. Попросите у провайдера ссылку https://.", "warn")
     error = ""
     metadata = {}
@@ -553,18 +554,18 @@ def _update_one_subscription(target, url, name, is_new, wireguard):
     outcome = {"id": target.get("id"), "name": target.get("name") or label,
                "wireguard": wireguard, "accepted": 0, "error": ""}
     if error:
-        _log(f"«{label}»: {error}", "err")
+        _system_log(f"«{label}»: {error}", "err")
         return {**outcome, "result": "error", "error": error}
     if not_modified:
-        _log(f"Подписка «{label}» не изменилась", "ok")
+        _system_log(f"Подписка «{label}» не изменилась", "ok")
         return {**outcome, "result": "unchanged", "accepted": len(target.get("servers") or [])}
     rejected = metadata.get("rejected") or []
     summary = f"Подписка «{target.get('name') or label}» обновлена: принято {len(servers)}"
     if metadata.get("received"):
         summary += f" из {metadata['received']}"
-    _log(summary, "ok")
+    _system_log(summary, "ok")
     for item in rejected[:10]:
-        _log(f"«{item.get('name')}» не импортирован: {item.get('reason')}", "warn")
+        _system_log(f"«{item.get('name')}» не импортирован: {item.get('reason')}", "warn")
     # Провайдер мог убрать сервер, на который ссылался маршрут.
     _repair_saved_routes("обновление подписки")
     return {**outcome, "result": "updated", "accepted": len(servers)}
@@ -597,7 +598,7 @@ def _run_subscription_jobs(jobs, auto=False):
                     outcome = _update_one_subscription(*job)
                 except Exception as exc:
                     reason = str(exc) if isinstance(exc, ValueError) else "ошибка сохранения данных"
-                    _log("Не удалось применить обновление подписки: " + reason, "err")
+                    _system_log("Не удалось применить обновление подписки: " + reason, "err")
                     outcome = {"id": target.get("id"), "name": target.get("name") or job[2] or "Подписка",
                                "wireguard": job[4], "result": "error", "accepted": 0, "error": reason}
                 results.append(outcome)
@@ -663,12 +664,12 @@ def _autoupdate_subscriptions_on_start(delay=3.0):
     if not has_subscriptions:
         return
     time.sleep(delay)
-    _log("Автообновление подписок при запуске", "info")
+    _system_log("Автообновление подписок при запуске", "info")
     with app.app_context():
         result = _start_subscription_refresh_all(auto=True)
     response = result[0] if isinstance(result, tuple) else result
     if not (response.get_json() or {}).get("ok"):
-        _log("Автообновление подписок пропущено: " + str((response.get_json() or {}).get("error")), "warn")
+        _system_log("Автообновление подписок пропущено: " + str((response.get_json() or {}).get("error")), "warn")
 
 
 def _get_selected_server():
@@ -777,11 +778,49 @@ from engine.core_logs import ErrorNotifications
 _error_notifications = ErrorNotifications()
 
 
-def _log(msg, tag="log"):
-    journal.log({"err": 40, "warn": 30}.get(tag, 20), str(msg))
-    _broadcast({"type": "log", "msg": msg, "tag": tag})
+# Журнал последней сессии подключения — отдельно от системного журнала
+# (diagnostics/application.log). Жизненный цикл описан в engine/session_log.py.
+session_log = SessionLog(diagnostics_directory)
+_connect_request_lock = threading.Lock()
+
+
+def _emit(msg, tag, session):
+    _broadcast({"type": "log", "msg": msg, "tag": tag, "session": session})
     if tag == "err" and _error_notifications.should_notify(msg):
         _broadcast({"type": "operation_error", "message": msg})
+
+
+def _journal(msg, tag):
+    journal.log({"err": 40, "warn": 30}.get(tag, 20), str(msg))
+
+
+def _log(msg, tag="log"):
+    """Запись приложения: во время сессии подключения — в её журнал,
+    вне сессии — в системный журнал."""
+    in_session = session_log.write(msg, tag)
+    if not in_session:
+        _journal(msg, tag)
+    _emit(msg, tag, in_session)
+
+
+def _system_log(msg, tag="log"):
+    """Событие приложения, не относящееся к подключению (подписки, Zapret,
+    Telegram-прокси): только системный журнал, даже во время сессии."""
+    _journal(msg, tag)
+    _emit(msg, tag, False)
+
+
+def _session_logger(generation):
+    """Запись от имени конкретной сессии. Движки запоминают её при старте,
+    поэтому запоздавшая строка прошлой сессии не попадает в новую."""
+    def log(msg, tag="log"):
+        if session_log.write(msg, tag, generation):
+            _emit(msg, tag, True)
+        else:
+            # Сессия уже закрыта или сменилась: запись остаётся только в
+            # системном журнале и в интерфейс текущей сессии не попадает.
+            _journal(f"[прошлая сессия] {msg}", tag)
+    return log
 
 
 def _broadcast_groups():
@@ -921,15 +960,21 @@ def _get_routed_exes() -> list:
 
 
 def _handle_vpn_exit(_return_code):
+    generation = session_log.generation
     previous = _connection.cancel(_reset_connection_state)
     if previous != "off":
         _broadcast({"type": "status", "state": "off"})
-    if previous == "on" and not _stopping:
+    if previous == "on" and not _stopping and _app_settings.get("reconnect") is True:
+        # Переподключение продолжает ту же сессию журнала.
         _reconnector.start()
+    else:
+        session_log.close(generation)
 
 
 def _reconnect_selected():
-    with app.test_request_context('/api/connect', method='POST', json={'protocol': _app_settings["active_protocol"]}):
+    # reconnect: внутреннее переподключение не начинает новую сессию журнала.
+    with app.test_request_context('/api/connect', method='POST',
+                                  json={'protocol': _app_settings["active_protocol"], 'reconnect': True}):
         result = api_connect()
         if isinstance(result, tuple): result = result[0]
         return result.get_json().get('ok') is True
@@ -1019,9 +1064,9 @@ def _ensure_clash_port() -> int:
     return _clash_port
 
 
-zapret_service = ZapretService(log_callback=_log, broadcast=_broadcast)
+zapret_service = ZapretService(log_callback=_system_log, broadcast=_broadcast)
 zapret_engine = zapret_service.engine
-tg_proxy_engine = TgProxyManager(log_callback=_log,
+tg_proxy_engine = TgProxyManager(log_callback=_system_log,
                                  exit_callback=lambda error: _tg_proxy_routes.handle_exit(error))
 
 
@@ -1088,7 +1133,7 @@ def _activate_vpn_attempt(
     return _connection.complete(attempt, activate)
 
 
-def _finish_vpn_attempt(attempt: int, config: dict, server_name: str):
+def _finish_vpn_attempt(attempt: int, config: dict, server_name: str, session=None):
     started = _start_vpn_for_attempt(attempt, config)
     ready = started and _wait_clash_ready(
         cancelled=lambda: not _connection.is_current(attempt),
@@ -1104,10 +1149,12 @@ def _finish_vpn_attempt(attempt: int, config: dict, server_name: str):
     if _connection.fail(attempt):
         if started:
             _log(f"{vpn_engine.name} не поднял собственный Clash API за 8с — смотри логи выше", "err")
+        _log("Подключение не установлено", "err")
+        session_log.close(session)
         _broadcast({"type": "status", "state": "off"})
 
 
-def _finish_awg_attempt(attempt: int, server: dict, server_name: str):
+def _finish_awg_attempt(attempt: int, server: dict, server_name: str, session=None):
     global _vpn_error
     try:
         with _vpn_engine_lock:
@@ -1133,6 +1180,7 @@ def _finish_awg_attempt(attempt: int, server: dict, server_name: str):
         awg_engine.stop()
     if _connection.fail(attempt):
         _log("AmneziaWG не установил защищённое соединение", "err")
+        session_log.close(session)
         _broadcast({"type": "status", "state": "off"})
 
 
@@ -1567,17 +1615,68 @@ def api_protocol():
 
 @app.route("/api/connect", methods=["POST"])
 def api_connect():
+    """Новая попытка подключения.
+
+    Нажатие «Подключить» и автоподключение начинают новую сессию журнала;
+    внутреннее переподключение ядра (reconnect) продолжает текущую. Повторный
+    запрос во время подключения отклоняется до очистки журнала.
+    """
     if _stopping:
         return jsonify(ok=False, error="Дождитесь завершения отключения"), 409
     if _connection.state != "off":
         return jsonify(ok=False, error="Подключение уже активно или выполняется"), 409
     data = request.get_json(silent=True) or {}
+    if not _connect_request_lock.acquire(blocking=False):
+        return jsonify(ok=False, error="Подключение уже выполняется"), 409
+    try:
+        # Повторная проверка под замком: два почти одновременных нажатия не
+        # должны очистить журнал дважды.
+        if _stopping or _connection.state != "off":
+            return jsonify(ok=False, error="Подключение уже активно или выполняется"), 409
+        generation = _begin_connection_session(data)
+        try:
+            return _connect_attempt(data, generation)
+        except Exception as exc:
+            # Внутренний сбой подготовки: причина остаётся в журнале сессии,
+            # а сама сессия закрывается, чтобы в неё не попадали посторонние записи.
+            _log(f"Внутренняя ошибка подготовки подключения: {exc}", "err")
+            session_log.close(generation)
+            raise
+    finally:
+        _connect_request_lock.release()
+
+
+def _begin_connection_session(data):
+    """Начать (или продолжить при переподключении) сессию журнала до первой её записи."""
+    if data.get("reconnect") is True and session_log.open:
+        generation = session_log.generation
+    else:
+        reason = ("автоподключение" if data.get("auto") is True
+                  else "автоматическое переподключение" if data.get("reconnect") is True
+                  else "подключение вручную")
+        generation = session_log.start(reason)
+        _broadcast({"type": "session_log_reset", "session": generation})
+    logger = _session_logger(generation)
+    vpn_engine.log_cb = logger
+    awg_engine.log_cb = logger
+    return generation
+
+
+def _fail_before_attempt(generation, message, status=None):
+    """Попытка не началась: причина остаётся в журнале до следующего подключения."""
+    _log(message, "err")
+    session_log.close(generation)
+    response = jsonify(ok=False, error=message)
+    return (response, status) if status else response
+
+
+def _connect_attempt(data, generation):
     proto = data.get("protocol", _app_settings["active_protocol"])
 
     if proto == "wg":
         server = _get_selected_wg_server()
         if not server:
-            return jsonify({"ok": False, "error": "WG сервер не выбран"})
+            return _fail_before_attempt(generation, "WG сервер не выбран")
         mode        = profile_state.apps_config.get("mode", "all")
         routed_exes = _get_routed_exes()
         is_awg = server.get("is_awg", False)
@@ -1608,6 +1707,7 @@ def api_connect():
                 ), explicit_routes)
             except ValueError as exc:
                 _log("Не удалось подготовить подключение: " + str(exc), "err")
+                session_log.close(generation)
                 return jsonify(ok=False, error=str(exc)), 422
         attempt = _connection.begin()
         if attempt is None:
@@ -1635,9 +1735,9 @@ def api_connect():
                 return
             _protect_vpn_from_zapret()
             if is_awg:
-                _finish_awg_attempt(attempt, server, server.get("remark", ""))
+                _finish_awg_attempt(attempt, server, server.get("remark", ""), session=generation)
             else:
-                _finish_vpn_attempt(attempt, cfg, server.get("remark", ""))
+                _finish_vpn_attempt(attempt, cfg, server.get("remark", ""), session=generation)
 
         threading.Thread(target=do_connect_wg, daemon=True).start()
         if is_awg and has_custom_routes:
@@ -1647,7 +1747,7 @@ def api_connect():
     else:  # vless / ss / trojan / hysteria2
         server = _get_selected_server()
         if not server:
-            return jsonify({"ok": False, "error": "Сервер не выбран"})
+            return _fail_before_attempt(generation, "Сервер не выбран")
         # Последняя защита перед сборкой: подписка могла потерять сервер уже
         # после того, как маршрут был сохранён. Чиним и продолжаем — повторно
         # жать «Подключить» пользователь не должен.
@@ -1675,6 +1775,7 @@ def api_connect():
             # Отказ пользовательской конфигурации, а не сбой сервиса: раньше
             # он уходил безымянным HTTP 500 и не попадал в журнал вовсе.
             _log("Не удалось подготовить подключение: " + str(exc), "err")
+            session_log.close(generation)
             return jsonify(ok=False, error=str(exc)), 422
         proto_label = server.get("protocol", "vless").upper()
         attempt = _connection.begin()
@@ -1704,7 +1805,7 @@ def api_connect():
             if not _connection.run_if_current(attempt, announce):
                 return
             _protect_vpn_from_zapret()
-            _finish_vpn_attempt(attempt, cfg, server.get("remark", ""))
+            _finish_vpn_attempt(attempt, cfg, server.get("remark", ""), session=generation)
 
         threading.Thread(target=do_connect_vless, daemon=True).start()
         return jsonify({"ok": True})
@@ -1717,6 +1818,7 @@ def api_disconnect():
     if not _disconnect_lock.acquire(blocking=False):
         return jsonify(ok=True)
     _stopping = True
+    generation = session_log.generation
     awg_engine.request_stop()
     _connection.cancel()
     _broadcast({"type": "status", "state": "stopping"})
@@ -1730,6 +1832,9 @@ def api_disconnect():
             _log(str(exc), "err")
             _broadcast({"type": "status", "state": "error" if awg_engine.running else "off"})
         finally:
+            # Отключение записано — сессия завершена; журнал остаётся для
+            # просмотра и копирования до следующего подключения.
+            session_log.close(generation)
             _stopping = False
             _disconnect_lock.release()
     threading.Thread(target=finish, daemon=True).start()
@@ -1792,14 +1897,14 @@ from ui.routes import wireguard as _wireguard_routes  # noqa: E402
 from ui.routes import zapret as _zapret_routes  # noqa: E402
 from ui.routes import tg_proxy as _tg_proxy_routes  # noqa: E402
 
-_system_routes.init(broadcast=_broadcast)
+_system_routes.init(broadcast=_broadcast, session_log=session_log)
 app.register_blueprint(_system_routes.bp)
 
-_zapret_routes.init(service=zapret_service, broadcast=_broadcast, log=_log,
+_zapret_routes.init(service=zapret_service, broadcast=_broadcast, log=_system_log,
                     vpn_servers=_vpn_endpoints, vpn_mode=_active_vpn_mode)
 app.register_blueprint(_zapret_routes.bp)
 
-_tg_proxy_routes.init(manager=tg_proxy_engine, broadcast=_broadcast, log=_log,
+_tg_proxy_routes.init(manager=tg_proxy_engine, broadcast=_broadcast, log=_system_log,
                       reserved_ports=lambda: {
                           _app_settings["socks"]: "SOCKS5-прокси Sadness VPN",
                           _app_settings["http"]: "HTTP-прокси Sadness VPN",

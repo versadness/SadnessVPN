@@ -39,8 +39,8 @@ class ShellPermissionTests(unittest.TestCase):
 
     def test_ui_still_copies_through_the_clipboard_api(self):
         ui = UI_JS.read_text(encoding="utf-8")
-        # HWID, журнал и ссылка Telegram-прокси.
-        self.assertEqual(ui.count("navigator.clipboard.writeText"), 3)
+        # HWID, журнал сессии, системный журнал и ссылка Telegram-прокси.
+        self.assertEqual(ui.count("navigator.clipboard.writeText"), 4)
         self.assertIn("Нет доступа к буферу обмена", ui)
 
 

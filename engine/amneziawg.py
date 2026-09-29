@@ -272,7 +272,8 @@ class AmneziaWGManager:
 
             self.running = True
             self.log_cb("AmneziaWG handshake подтверждён", "ok")
-            threading.Thread(target=self._monitor_service, daemon=True).start()
+            # Монитор запоминает журнал своей сессии (см. MihomoManager._read_output).
+            threading.Thread(target=self._monitor_service, args=(self.log_cb,), daemon=True).start()
             return True
 
     def get_transfer(self) -> tuple[int, int]:
@@ -354,7 +355,8 @@ class AmneziaWGManager:
             except OSError as exc:
                 self.log_cb(f"Не удалось удалить временный AWG-конфиг: {exc}", "warn")
 
-    def _monitor_service(self):
+    def _monitor_service(self, log=None):
+        log = log or self.log_cb
         stop_event = self._stop_requested
         while not stop_event.wait(2.0):
             state = self._service_state()
@@ -367,9 +369,9 @@ class AmneziaWGManager:
                         return
                     self.running = False
                     self._remove_config()
-                self.log_cb("Служба AmneziaWG неожиданно остановилась", "err")
+                log("Служба AmneziaWG неожиданно остановилась", "err")
                 try:
                     self.exit_cb(1)
                 except Exception as exc:
-                    self.log_cb(f"Ошибка обработки остановки AmneziaWG: {exc}", "err")
+                    log(f"Ошибка обработки остановки AmneziaWG: {exc}", "err")
                 return
