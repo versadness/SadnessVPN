@@ -112,8 +112,10 @@ def api_appearance_upload(kind):
             pass
         return jsonify({"ok": False, "error": str(exc)})
     url = f"/api/appearance/{kind}?v={int(time.time() * 1000)}"
-    deps.broadcast({"type": "appearance_updated", "kind": kind, "url": url})
-    return jsonify({"ok": True, "url": url})
+    # Имя сохранённого файла отдаётся явно: интерфейс не должен выводить его
+    # из адреса картинки.
+    deps.broadcast({"type": "appearance_updated", "kind": kind, "url": url, "file": filename})
+    return jsonify({"ok": True, "url": url, "file": filename})
 
 
 @bp.route("/api/appearance/<kind>/reset", methods=["POST"])
@@ -134,5 +136,5 @@ def api_appearance_reset(kind):
             os.remove(path)
         except OSError:
             pass
-    deps.broadcast({"type": "appearance_updated", "kind": kind, "url": ""})
+    deps.broadcast({"type": "appearance_updated", "kind": kind, "url": "", "file": ""})
     return jsonify({"ok": True})

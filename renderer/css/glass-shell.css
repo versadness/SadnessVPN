@@ -71,9 +71,34 @@ html.shell-glass body::before {
 }
 
 html.shell-glass #aurora,
-html.shell-glass #vignette,
-html.shell-glass #customWallpaper {
+html.shell-glass #vignette {
   display: none !important;
+}
+
+/* Пользовательский фон: под всем интерфейсом, поверх тонировки окна.
+   Раньше слой был скрыт здесь целиком, и загруженная картинка не
+   показывалась в приложении вообще. Без выбранного фона слоя нет, и окно
+   остаётся стеклянным. */
+html.shell-glass #customWallpaper {
+  display: none;
+}
+
+html.shell-glass #customWallpaper.active {
+  display: block;
+  z-index: -1;
+  opacity: 1;
+  transform: none;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+html.shell-glass.is-maximized #customWallpaper.active {
+  border-radius: 0;
+}
+
+/* Затемнение ради читаемости текста; сама картинка остаётся хорошо видна. */
+html.shell-glass #customWallpaper.active::after {
+  background: linear-gradient(180deg, rgba(var(--deep-rgb), .35), rgba(var(--deep-rgb), .5));
 }
 
 html.shell-glass .shell {

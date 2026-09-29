@@ -20,7 +20,7 @@ class SubscriptionAutoupdateTests(unittest.TestCase):
 
     def run_on_start(self):
         with mock.patch.object(server, "_start_subscription_refresh_all",
-                               side_effect=lambda: jsonify(ok=True, queued=1)) as refresh, \
+                               side_effect=lambda **_: jsonify(ok=True, queued=1)) as refresh, \
                 mock.patch.object(server, "_log"):
             server._autoupdate_subscriptions_on_start(delay=0)
         return refresh

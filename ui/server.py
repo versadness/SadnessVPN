@@ -481,7 +481,11 @@ def _subscription_scope(wireguard):
 
 
 def _update_one_subscription(target, url, name, is_new, wireguard):
-    """Загрузить и атомарно применить одну подписку. Вызывается под _subscription_lock."""
+    """Загрузить и атомарно применить одну подписку. Вызывается под _subscription_lock.
+
+    Возвращает итог для интерфейса: result — updated / unchanged / error,
+    accepted — число принятых серверов, error — понятная причина без ссылок.
+    """
     groups, save, broadcast = _subscription_scope(wireguard)
     label = target.get("name") or name or "подписка"
     _log(f"Загрузка подписки «{label}»…", "info")
@@ -515,15 +519,17 @@ def _update_one_subscription(target, url, name, is_new, wireguard):
         if not_modified:
             # 304 — провайдер подтвердил, что список не изменился: это успех,
             # а не пустая подписка.
-            target.setdefault("subscription", {}).update(updated_at=now, checked_at=now, error="")
+            target.setdefault("subscription", {}).update(updated_at=now, checked_at=now, error="",
+                                                         last_result="unchanged")
         elif error:
             # Последняя рабочая подписка остаётся: меняются только время
             # попытки и причина. updated_at — время последнего успеха.
             target.setdefault("subscription", {}).update({k: v for k, v in metadata.items() if k != "updated_at"})
-            target["subscription"].update(error=error, checked_at=now)
+            target["subscription"].update(error=error, checked_at=now, last_result="error")
         else:
             _replace_group_servers(target, servers, wireguard=wireguard)
-            target["subscription"] = {**metadata, "updated_at": now, "checked_at": now, "error": ""}
+            target["subscription"] = {**metadata, "updated_at": now, "checked_at": now, "error": "",
+                                      "last_result": "updated"}
         if is_new:
             if not name and metadata.get("provider_name"):
                 target["name"] = metadata["provider_name"]
@@ -544,12 +550,14 @@ def _update_one_subscription(target, url, name, is_new, wireguard):
         _save_settings(_app_settings)
         raise
     broadcast()
+    outcome = {"id": target.get("id"), "name": target.get("name") or label,
+               "wireguard": wireguard, "accepted": 0, "error": ""}
     if error:
         _log(f"«{label}»: {error}", "err")
-        return False
+        return {**outcome, "result": "error", "error": error}
     if not_modified:
         _log(f"Подписка «{label}» не изменилась", "ok")
-        return True
+        return {**outcome, "result": "unchanged", "accepted": len(target.get("servers") or [])}
     rejected = metadata.get("rejected") or []
     summary = f"Подписка «{target.get('name') or label}» обновлена: принято {len(servers)}"
     if metadata.get("received"):
@@ -559,29 +567,51 @@ def _update_one_subscription(target, url, name, is_new, wireguard):
         _log(f"«{item.get('name')}» не импортирован: {item.get('reason')}", "warn")
     # Провайдер мог убрать сервер, на который ссылался маршрут.
     _repair_saved_routes("обновление подписки")
-    return True
+    return {**outcome, "result": "updated", "accepted": len(servers)}
 
 
-def _run_subscription_jobs(jobs):
+def _run_subscription_jobs(jobs, auto=False):
     """Выполнить обновления строго по очереди в одном фоновом потоке.
 
     Раньше «Обновить подписки» запускал запросы параллельно, бэкенд принимал
     только первый, а остальные получали 409 — обновлялась лишь первая группа.
+
+    Интерфейс получает ход очереди (subscription_progress), итог каждой
+    подписки (subscription_result) и общий итог (subscriptions_done) — уже
+    после сохранения. Старт задачи — это не успех: сообщение об успехе
+    показывается только по итогу.
     """
     if not _subscription_lock.acquire(blocking=False):
         return jsonify(ok=False, error="Подписка уже обновляется"), 409
 
     def work():
+        results = []
         try:
             _broadcast({"type": "subscription_busy", "busy": True})
-            for job in jobs:
+            for position, job in enumerate(jobs, 1):
+                target = job[0]
+                _broadcast({"type": "subscription_progress", "id": target.get("id"),
+                            "name": target.get("name") or job[2] or "Подписка",
+                            "position": position, "total": len(jobs)})
                 try:
-                    _update_one_subscription(*job)
+                    outcome = _update_one_subscription(*job)
                 except Exception as exc:
-                    _log("Не удалось применить обновление подписки: " + (str(exc) if isinstance(exc, ValueError) else "ошибка сохранения данных"), "err")
+                    reason = str(exc) if isinstance(exc, ValueError) else "ошибка сохранения данных"
+                    _log("Не удалось применить обновление подписки: " + reason, "err")
+                    outcome = {"id": target.get("id"), "name": target.get("name") or job[2] or "Подписка",
+                               "wireguard": job[4], "result": "error", "accepted": 0, "error": reason}
+                results.append(outcome)
+                _broadcast({"type": "subscription_result", **outcome})
         finally:
             _subscription_lock.release()
             _broadcast({"type": "subscription_busy", "busy": False})
+            _broadcast({
+                "type": "subscriptions_done", "auto": auto, "total": len(jobs),
+                "updated": sum(r["result"] == "updated" for r in results),
+                "unchanged": sum(r["result"] == "unchanged" for r in results),
+                "failed": len(jobs) - sum(r["result"] in ("updated", "unchanged") for r in results),
+                "results": results,
+            })
 
     try:
         threading.Thread(target=work, daemon=True).start()
@@ -609,7 +639,7 @@ def _start_subscription_update(data, refresh=False, wireguard=False):
     return _run_subscription_jobs([(target, url, name, is_new, wireguard)])
 
 
-def _start_subscription_refresh_all():
+def _start_subscription_refresh_all(auto=False):
     """Все подписки (VLESS и WireGuard) одной очередью."""
     jobs = [(g, g["url"], "", False, wireguard)
             for wireguard in (False, True)
@@ -617,7 +647,7 @@ def _start_subscription_refresh_all():
             if str(g.get("url") or "").startswith(("https://", "http://"))]
     if not jobs:
         return jsonify(ok=False, error="Нет подписок для обновления"), 400
-    return _run_subscription_jobs(jobs)
+    return _run_subscription_jobs(jobs, auto=auto)
 
 def _autoupdate_subscriptions_on_start(delay=3.0):
     """Обновить все подписки при запуске приложения, если это не выключено.
@@ -635,7 +665,7 @@ def _autoupdate_subscriptions_on_start(delay=3.0):
     time.sleep(delay)
     _log("Автообновление подписок при запуске", "info")
     with app.app_context():
-        result = _start_subscription_refresh_all()
+        result = _start_subscription_refresh_all(auto=True)
     response = result[0] if isinstance(result, tuple) else result
     if not (response.get_json() or {}).get("ok"):
         _log("Автообновление подписок пропущено: " + str((response.get_json() or {}).get("error")), "warn")

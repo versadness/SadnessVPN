@@ -16,6 +16,10 @@
 .subscription-heading p { color:#b1a5c9; font-size:11px; margin:5px 0 0; overflow-wrap:anywhere; }
 .subscription-status { padding:6px 9px; border-radius:9px; font-size:10px; color:#cfc0ff; background:#a894fa18; }
 .subscription-status.warn { color:#ffd49f; background:#edaa6115; }
+.subscription-status.ok { color:#9fe3c2; background:#5cd6a015; }
+.subscription-status.busy { color:#e3d8ff; background:#a894fa2e; animation:subscription-busy 1.2s ease-in-out infinite; }
+@keyframes subscription-busy { 50% { opacity:.55; } }
+@media (prefers-reduced-motion: reduce) { .subscription-status.busy { animation:none; } }
 .subscription-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:20px 0; border-bottom:1px solid #d4bcff15; }
 .subscription-facts div { display:flex; flex-direction:column; gap:8px; min-width:0; }
 .subscription-facts span,.subscription-usage > span { font-size:11px; color:#b1a5c9; }

@@ -78,6 +78,80 @@ class RefreshAllTests(unittest.TestCase):
         self.assertEqual(rw["subscription"]["error"], "")
         self.assertGreater(rw["subscription"]["updated_at"], 100)
 
+    def run_queue(self, fake_fetch, path="/api/groups/refresh-all", body=None):
+        events = []
+        with mock.patch.object(server, "fetch_subscription", side_effect=fake_fetch), \
+                mock.patch.object(profile_state, "save_proxy_groups",
+                                  side_effect=lambda: events.append({"type": "saved"})), \
+                mock.patch.object(server, "_save_settings", return_value=True), \
+                mock.patch.object(server, "_repair_saved_routes"), \
+                mock.patch.object(server, "_broadcast_groups"), \
+                mock.patch.object(server, "_broadcast", side_effect=events.append), \
+                mock.patch.object(server, "_log"):
+            response = self.client.post(path, json=body or {}, base_url="http://127.0.0.1:45678")
+            self.assertTrue(response.get_json()["ok"])
+            self._wait_idle()
+            deadline = time.time() + 2
+            while not any(e["type"] == "subscriptions_done" for e in events) and time.time() < deadline:
+                time.sleep(0.02)
+        return events
+
+    def test_queue_reports_progress_each_result_and_a_summary(self):
+        from engine.subscriptions import SubscriptionNotModified
+        profile_state.groups.append(
+            {"id": "same", "name": "Без изменений", "url": "https://same.example/sub/c",
+             "servers": [node("Latvia", "198.51.100.4")], "subscription": {"updated_at": 100, "error": ""}})
+
+        def fake_fetch(url, hwid=""):
+            if "down" in url:
+                error = SubscriptionError("Сервер подписки не ответил за 25 секунд.")
+                error.metadata = {}
+                raise error
+            if "same" in url:
+                error = SubscriptionNotModified()
+                error.metadata = {}
+                raise error
+            return SubscriptionServers([node("Germany", "198.51.100.2"), node("Finland", "198.51.100.3")],
+                                       {"received": 2, "accepted": 2, "rejected": []})
+
+        events = self.run_queue(fake_fetch)
+        kinds = [e["type"] for e in events]
+        progress = [e for e in events if e["type"] == "subscription_progress"]
+        self.assertEqual([(p["position"], p["total"]) for p in progress], [(1, 3), (2, 3), (3, 3)])
+        results = {e["id"]: e for e in events if e["type"] == "subscription_result"}
+        self.assertEqual(results["down"]["result"], "error")
+        self.assertIn("25 секунд", results["down"]["error"])
+        self.assertEqual((results["rw"]["result"], results["rw"]["accepted"]), ("updated", 2))
+        self.assertEqual(results["same"]["result"], "unchanged")
+        done = events[-1]
+        self.assertEqual(done["type"], "subscriptions_done")
+        self.assertEqual((done["total"], done["updated"], done["unchanged"], done["failed"]), (3, 1, 1, 1))
+        self.assertFalse(done["auto"])
+        # Итог — только после того, как результат сохранён.
+        self.assertLess(max(i for i, k in enumerate(kinds) if k == "saved"), kinds.index("subscriptions_done"))
+        # Итог последней попытки хранится в профиле и переживает перезапуск.
+        by_id = {g["id"]: g["subscription"] for g in profile_state.groups}
+        self.assertEqual((by_id["down"]["last_result"], by_id["rw"]["last_result"], by_id["same"]["last_result"]),
+                         ("error", "updated", "unchanged"))
+        # Ссылки подписок не попадают в события интерфейса.
+        self.assertNotIn("example/sub", repr(events))
+
+    def test_single_refresh_is_reported_as_one_result(self):
+        events = self.run_queue(
+            lambda url, hwid="": SubscriptionServers([node("Germany", "198.51.100.2")],
+                                                     {"received": 1, "accepted": 1, "rejected": []}),
+            path="/api/groups/refresh", body={"id": "rw"})
+        done = events[-1]
+        self.assertEqual((done["type"], done["total"], done["updated"], done["failed"]),
+                         ("subscriptions_done", 1, 1, 0))
+        self.assertEqual(done["results"][0]["name"], "Remnawave")
+
+    def test_startup_refresh_is_marked_as_automatic(self):
+        with mock.patch.object(server, "_run_subscription_jobs", return_value=("ok", 200)) as run:
+            with server.app.app_context():
+                server._start_subscription_refresh_all(auto=True)
+        self.assertTrue(run.call_args.kwargs["auto"])
+
 
 class StableIdentityTests(unittest.TestCase):
     def setUp(self):

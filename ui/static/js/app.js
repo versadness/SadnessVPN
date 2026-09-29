@@ -29,7 +29,9 @@ function setBackendOnline(online){ ST.backendOnline=online; if(!online)applyStat
 function connectWS(){ if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return; clearTimeout(wsTimer); const scheme=location.protocol==='https:'?'wss':'ws'; ws=new WebSocket(`${scheme}://${location.host}/ws`); ws.onopen=()=>{wsRetry=0;setBackendOnline(false);}; ws.onmessage=ev=>{try{handle(JSON.parse(ev.data));}catch(e){addLog('Некорректное сообщение интерфейса: '+e,'warn');}}; ws.onerror=()=>ws.close(); ws.onclose=()=>{setBackendOnline(false);const delay=Math.min(15000,1000*Math.pow(1.7,wsRetry++));wsTimer=setTimeout(connectWS,delay);}; }
 function handle(d){ switch(d.type){
   case 'state': ST.subscriptionBusy=!!d.subscriptionBusy;ST.backendOnline=true;ST.connected=!!d.connected;ST.status=d.status||'off';ST.server=d.server||'';ST.proto=d.activeProtocol||'vless';ST.groups=d.groups||[];ST.selGroup=d.selGroup;ST.selIndex=d.selIndex;ST.wgGroups=d.wgGroups||[];ST.selWgGroup=d.selWgGroup;ST.selWgIndex=d.selWgIndex;ST.appsConfig=d.appsConfig||{mode:'all',apps:[]};ST.settings=d.appSettings||{};ST.tunnel=d.tunnelSettings||{};ST.core=d.core||'';ST.appRoutes=[];ST.stars=Object.fromEntries((ST.settings.favorite_servers||[]).map(id=>[id,true]));ST.hwid=d.hwid||'';ST.tunnelPing={label:d.ping||'—',color:d.pingColor||'dim'};ST.zapStrategies=d.zapretStrategies||[];ST.zapRunning=!!d.zapretRunning;ST.zapState=d.zapretState||(ST.zapRunning?'on':'off');ST.zapActive=d.zapretStrategy;ST.zapSel=ST.zapSel||d.zapretSelected||d.zapretStrategy;ST.zapGameFilter=d.zapretGameFilter||null;ST.zapGameFilterSummary=d.zapretGameFilterSummary||null;ST.zapCoverage=d.zapretCoverage||null;ST.tgProxy=d.tgProxy||null;renderTgProxy(true);document.getElementById('tbVer').textContent='v'+(d.appVersion||'…');document.getElementById('aboutVer').textContent='v'+(d.appVersion||'…');document.getElementById('engineVer').textContent=d.coreVersions||('Mihomo '+(d.engineVersion||'…'));applyStatus();renderServers();renderWg();renderRules();renderModeCards();renderZapret();renderGameFilter();syncSettings();applyAppearance();if(d.stats)applyStats(d.stats);maybeAutoConnect();break;
-  case 'subscription_busy': ST.subscriptionBusy=!!d.busy;renderSubscriptions();break;
+  case 'subscription_busy': ST.subscriptionBusy=!!d.busy;if(!d.busy)ST.subProgress=null;renderSubscriptions();break;
+  case 'subscription_progress': ST.subProgress={id:d.id,name:d.name,position:d.position,total:d.total};renderSubscriptions();break;
+  case 'subscriptions_done': ST.subProgress=null;renderSubscriptions();notifySubscriptionsDone(d);break;
   case 'status': ST.status=d.state;if(d.core)ST.core=d.core;if(d.state!=='on')ST.appRoutes=[];ST.connected=d.state==='on'||d.state==='error';if(d.server)ST.server=d.server;if(d.state==='off'){applyTraffic._t=null;applyTraffic._d=0;applyTraffic._u=0;}applyStatus();break;
   case 'operation_error': toast(d.message||d.error||'Ошибка операции','err');break;
   case 'routing_repaired': toast(d.message||'Маршруты переключены на основной VPN');break;
@@ -48,7 +50,7 @@ function handle(d){ switch(d.type){
   case 'apps_config': ST.appsConfig=d.config;renderRules();renderModeCards();updateRouteDetails();applyStatus();break;
   case 'settings_updated': Object.assign(ST.tunnel,d.settings);syncSettings();renderServers();renderWg();renderRules();break;
   case 'app_settings_updated': Object.assign(ST.settings,d.settings);ST.stars=Object.fromEntries((ST.settings.favorite_servers||[]).map(id=>[id,true]));syncSettings();renderServers();break;
-  case 'appearance_updated': ST.settings[d.kind==='avatar'?'avatar_file':'wallpaper_file']=d.url?d.url.split('?')[0].split('/').pop():'';applyAppearance(d.kind,d.url);break;
+  case 'appearance_updated': ST.settings[d.kind==='avatar'?'avatar_file':'wallpaper_file']=d.file||'';applyAppearance(d.kind,d.url);break;
   case 'socks5_creds': ST.tunnel.socks5_user=d.user;ST.tunnel.socks5_pass=d.pass;document.getElementById('s5user').value=d.user;document.getElementById('s5pass').value=d.pass;break;
   case 'zapret_game_filter': ST.zapGameFilter=d.game_filter||null;renderGameFilter();break;
   case 'tgproxy_status': ST.tgProxy=d;renderTgProxy();break;
@@ -103,7 +105,24 @@ async function probeServer(gid,idx,button){
 async function delServer(gid,idx){ if(!confirm('Удалить выбранный сервер?'))return;const r=await api('/api/servers/delete',{group_id:gid,index:idx});if(!r.ok)toast(r.error||'Ошибка удаления','err');else toast('Сервер удалён','ok'); }
 async function addServer(){ const el=document.getElementById('addLink'); const link=el.value.trim(); if(!link){toast('Вставь ссылку','err');return;} if(link.startsWith('http')){ const r=await api('/api/servers/import',{url:link}); if(r.ok){el.value='';toast('Подписка добавляется…','ok');}else toast(r.error||'Ошибка','err'); return; } const r=await api('/api/servers/add',{link}); if(r.ok){el.value='';toast('Сервер добавлен','ok');}else toast(r.error||'Ошибка','err'); }
 async function pingAll(){ const btn=document.getElementById('pingBtn');btn.classList.add('scanning');const r=await api('/api/ping/all');if(!r.ok){btn.classList.remove('scanning');toast(r.error||'Не удалось запустить проверку','err');} }
-async function refreshSubs(){ const total=ST.groups.filter(g=>g.url).length+ST.wgGroups.filter(g=>g.url).length;if(!total){toast('Нет подписок для обновления');return;}/* Одна очередь на бэкенде: параллельные запросы получали 409, и обновлялась только первая подписка. */const r=await api('/api/groups/refresh-all',{});toast(r.ok?`Обновляются подписки по очереди: ${r.queued||total}`:(r.error||'Обновление не запущено'),r.ok?'ok':'err'); }
+async function refreshSubs(){ const total=ST.groups.filter(g=>g.url).length+ST.wgGroups.filter(g=>g.url).length;if(!total){toast('Нет подписок для обновления');return;}/* Одна очередь на бэкенде: параллельные запросы получали 409, и обновлялась только первая подписка. */const r=await api('/api/groups/refresh-all',{});if(r.ok)toast(`Обновляю подписки: ${r.queued||total}…`);else toast(r.error||'Обновление не запущено','err'); }
+// Итог приходит после сохранения результата. Одно уведомление на всю очередь,
+// в том числе на автообновление при запуске.
+function notifySubscriptionsDone(d){
+  const results=d.results||[];if(!d.total)return;
+  if(d.total===1&&results[0]){
+    const r=results[0],name=`«${r.name||'Подписка'}»`;
+    if(r.result==='updated')toast(`Подписка ${name} обновлена · серверов: ${r.accepted}`,'ok');
+    else if(r.result==='unchanged')toast(`Подписка ${name} без изменений`,'ok');
+    else toast(`Подписка ${name} не обновлена: ${r.error||'ошибка'}`,'err');
+    return;
+  }
+  const parts=[];
+  if(d.updated)parts.push(`обновлено ${d.updated}`);
+  if(d.unchanged)parts.push(`без изменений ${d.unchanged}`);
+  if(d.failed)parts.push(`с ошибкой ${d.failed}`);
+  toast((d.auto?'Подписки при запуске: ':'Подписки: ')+(parts.join(' · ')||'нет результата'),d.failed?'err':'ok');
+}
 function renderWg(){ const grid=document.getElementById('wgGrid');let rows=[];ST.wgGroups.forEach(g=>(g.servers||[]).forEach((s,i)=>rows.push({g:g.id,i,s,key:serverKey(s,g.id,i)})));if(ST.srvSort==='name')rows.sort((a,b)=>(a.s.remark||'').localeCompare(b.s.remark||'','ru'));if(ST.srvSort==='ping')rows.sort((a,b)=>(parseInt(ST.wgPings[a.key]?.label)||999999)-(parseInt(ST.wgPings[b.key]?.label)||999999));document.getElementById('wgEmpty').classList.toggle('hidden',rows.length>0);grid.innerHTML=renderServerGroups(ST.wgGroups,rows,'wg',ST.srvSort,renderWgServerRow,false); }
 function renderWgServerRow(r){const sel=r.g===ST.selWgGroup&&r.i===ST.selWgIndex,p=ST.wgPings[r.key],nm=cleanName(r.s.remark)||'WG сервер';return `<div class="srv-row glass ${sel?'sel':''}" role="button" tabindex="0" data-action="select-wg" data-gid="${esc(r.g)}" data-index="${r.i}"><span class="flag-code" aria-hidden="true">${flagImg(ccFor(r.s.remark||''))}</span><div class="srv-meta"><div class="srv-name">${esc(nm)}</div><div class="srv-proto">${r.s.is_awg?'AmneziaWG · нативный':'WireGuard'}</div></div><div class="srv-actions">${r.s.is_awg?'<span class="awg-tag">AWG</span>':''}<span class="ping ${p?p.color:'dim'}" data-ping-id="${esc(r.key)}">${p?p.label:'—'}</span><button class="mini-btn del" aria-label="Удалить WG сервер" data-action="delete-wg" data-gid="${esc(r.g)}" data-index="${r.i}"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></div>`;}
 async function selectWg(gid,idx){ if(ST.connected||ST.status==='connecting'||ST.status==='stopping'){toast('Сначала отключите VPN','err');return;} const previous=[ST.selWgGroup,ST.selWgIndex,ST.proto];ST.selWgGroup=gid;ST.selWgIndex=idx;ST.proto='wg';renderWg();applyStatus();const r=await api('/api/wg/servers/select',{group_id:gid,index:idx});if(!r.ok){[ST.selWgGroup,ST.selWgIndex,ST.proto]=previous;renderWg();applyStatus();toast(r.error||'Не удалось выбрать WG сервер','err');} }
@@ -220,7 +239,7 @@ function applyAppearance(kind,url){
 
 async function uploadAppearance(kind,input){
   const file=input.files&&input.files[0];if(!file)return;const form=new FormData();form.append('file',file);
-  try{const response=await fetch(`/api/appearance/${kind}`,{method:'POST',body:form});const result=await response.json();if(!result.ok)throw new Error(result.error||'Не удалось загрузить изображение');ST.settings[kind==='avatar'?'avatar_file':'wallpaper_file']=kind+(file.type.includes('png')?'.png':file.type.includes('webp')?'.webp':'.jpg');applyAppearance(kind,result.url);toast(kind==='avatar'?'Аватар обновлён':'Фон приложения обновлён','ok');}catch(error){toast(error.message,'err');}finally{input.value='';}
+  try{const response=await fetch(`/api/appearance/${kind}`,{method:'POST',body:form});const result=await response.json();if(!result.ok)throw new Error(result.error||'Не удалось загрузить изображение');ST.settings[kind==='avatar'?'avatar_file':'wallpaper_file']=result.file||'';applyAppearance(kind,result.url);toast(kind==='avatar'?'Аватар обновлён':'Фон приложения обновлён','ok');}catch(error){toast(error.message,'err');}finally{input.value='';}
 }
 async function resetAppearance(kind){const result=await api(`/api/appearance/${kind}/reset`);if(!result.ok){toast(result.error||'Не удалось сбросить оформление','err');return;}ST.settings[kind==='avatar'?'avatar_file':'wallpaper_file']='';applyAppearance(kind,'');toast(kind==='avatar'?'Аватар сброшен':'Фон сброшен','ok');}
 

@@ -30,16 +30,24 @@ function renderSubscriptions() {
   const groups = subscriptionGroups(), busy = !!ST.subscriptionBusy || subscriptionRequestPending;
   const disabled = busy || !ST.backendOnline || ST.status !== 'off';
   document.getElementById('subscriptionCount').textContent = `Подписок: ${groups.length}`;
-  document.getElementById('subscriptionNotice').textContent = busy ? 'Загружаем подписку… Уже сохранённые серверы остаются на месте.' : !ST.backendOnline ? 'Нет связи с приложением.' : ST.status !== 'off' ? 'Чтобы изменить подписки, сначала отключите VPN.' : 'Срок и трафик сообщает провайдер. Если этих данных нет, мы не подставляем выдуманные значения.';
+  const progress = ST.subProgress;
+  document.getElementById('subscriptionNotice').textContent = progress ? `Обновляется «${progress.name}»${progress.total > 1 ? ` (${progress.position} из ${progress.total})` : ''}… Уже сохранённые серверы остаются на месте.` : busy ? 'Загружаем подписку… Уже сохранённые серверы остаются на месте.' : !ST.backendOnline ? 'Нет связи с приложением.' : ST.status !== 'off' ? 'Чтобы изменить подписки, сначала отключите VPN.' : 'Срок и трафик сообщает провайдер. Если этих данных нет, мы не подставляем выдуманные значения.';
   document.querySelectorAll('#subscriptionImport input, #subscriptionImport select, #subscriptionImport button').forEach(el => el.disabled = disabled);
   list.innerHTML = groups.map(g => {
     const m = g.subscription || {}, expired = m.expire > 0 && m.expire * 1000 <= Date.now();
     const knownUsage = Number.isFinite(m.download) && Number.isFinite(m.upload);
     const used = knownUsage ? m.download + m.upload : 0;
     const percent = knownUsage && m.total > 0 ? Math.min(100, Math.max(0, used / m.total * 100)) : null;
-    const state = m.error ? 'Ошибка обновления' : expired ? 'Срок истёк' : m.updated_at ? 'Обновлена' : 'Нужно обновить';
+    // Состояние карточки: идёт обновление, итог последней попытки (сохраняется
+    // в профиле и восстанавливается после перезапуска) или срок подписки.
+    const updating = progress && progress.id === g.id;
+    const when = subscriptionMoment(m.checked_at || m.updated_at);
+    const state = updating ? 'Обновляется…' : m.error ? 'Ошибка обновления' : expired ? 'Срок истёк'
+      : m.last_result === 'unchanged' ? `Без изменений${when ? ' · ' + when : ''}`
+      : m.updated_at ? `Обновлена${when ? ' · ' + when : ''}` : 'Нужно обновить';
+    const tone = updating ? 'busy' : m.error || expired ? 'warn' : m.updated_at ? 'ok' : '';
     return `<article class="subscription-card glass">
-      <div class="subscription-card-head"><span class="subscription-mark" aria-hidden="true">${esc(Array.from(g.name || 'S')[0])}</span><div class="subscription-heading"><h2>${esc(g.name)}</h2><p>${esc(m.provider_name && m.provider_name !== g.name ? m.provider_name : g.kind === 'wg' ? 'WireGuard / AmneziaWG' : 'VPN-подписка')}</p></div><span class="subscription-status ${m.error || expired ? 'warn' : ''}">${state}</span></div>
+      <div class="subscription-card-head"><span class="subscription-mark" aria-hidden="true">${esc(Array.from(g.name || 'S')[0])}</span><div class="subscription-heading"><h2>${esc(g.name)}</h2><p>${esc(m.provider_name && m.provider_name !== g.name ? m.provider_name : g.kind === 'wg' ? 'WireGuard / AmneziaWG' : 'VPN-подписка')}</p></div><span class="subscription-status ${tone}">${esc(state)}</span></div>
       <div class="subscription-facts"><div><span>Срок действия</span><strong>${m.expire > 0 ? 'До ' + subscriptionDate(m.expire) : 'Не указан провайдером'}</strong></div><div><span>Серверов</span><strong>${esc(subscriptionCounts(g, m))}</strong></div><div><span>Последнее успешное обновление</span><strong>${m.updated_at ? subscriptionMoment(m.updated_at) : 'Ещё не обновлялась'}</strong></div><div><span>Последняя попытка</span><strong>${m.checked_at ? subscriptionMoment(m.checked_at) : m.updated_at ? subscriptionMoment(m.updated_at) : '—'}</strong></div></div>
       <div class="subscription-usage"><span>Трафик подписки</span><strong>${knownUsage ? fmtBytes(used) + (m.total > 0 ? ' / ' + fmtBytes(m.total) : ' · лимит не указан') : 'Не указан провайдером'}</strong>${percent !== null ? `<progress max="100" value="${percent}" aria-label="Использованный трафик подписки"></progress>` : ''}</div>
       ${m.error ? `<p class="subscription-error" role="status">${esc(m.error)}${m.updated_at ? ' Используются серверы от ' + esc(subscriptionMoment(m.updated_at)) + '.' : ''}</p>` : ''}
