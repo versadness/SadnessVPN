@@ -98,6 +98,16 @@ class WallpaperVisibilityTests(unittest.TestCase):
         active = re.search(r"html\.shell-glass #customWallpaper\.active\s*\{([^}]*)\}", css).group(1)
         self.assertIn("display: block", active)
         self.assertIn("opacity: 1", active)
+        # Фон лежит под тонировкой окна (body::before, z-index -1), поэтому
+        # прозрачность и затемнение стекла действуют на картинку.
+        self.assertIn("z-index: -2", active)
+        self.assertIn("z-index: -1", re.search(r"html\.shell-glass body::before\s*\{([^}]*)\}", css).group(1))
+        for mode in ("glass-blur", "glass-acrylic"):
+            rule = re.search(rf"html\.shell-glass\.{mode} #customWallpaper\.active\s*\{{([^}}]*)\}}", css).group(1)
+            self.assertIn("filter: blur(", rule)
+        bridge = (ROOT / "renderer" / "js" / "shell-bridge.js").read_text(encoding="utf-8")
+        self.assertIn("root.classList.toggle('glass-blur', appearance.glassMode === 'blur')", bridge)
+        self.assertIn("root.classList.toggle('glass-acrylic', appearance.glassMode === 'acrylic')", bridge)
 
     def test_interface_takes_the_file_name_from_the_server(self):
         javascript = (ROOT / "ui" / "static" / "js" / "app.js").read_text(encoding="utf-8")

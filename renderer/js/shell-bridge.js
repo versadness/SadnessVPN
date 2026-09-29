@@ -54,6 +54,10 @@
     }
 
     root.classList.toggle('shell-opaque', appearance.glassMode === 'none');
+    // Режим стекла нужен и странице: пользовательский фон размывается так же,
+    // как Windows размывает рабочий стол за окном.
+    root.classList.toggle('glass-blur', appearance.glassMode === 'blur');
+    root.classList.toggle('glass-acrylic', appearance.glassMode === 'acrylic');
     syncControls();
   }
 

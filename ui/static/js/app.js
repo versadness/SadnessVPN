@@ -234,7 +234,7 @@ function applyAppearance(kind,url){
   const avatarUrl=kind==='avatar'?url:(ST.settings.avatar_file?`/api/appearance/avatar?v=${Date.now()}`:'');
   const wallpaperUrl=kind==='wallpaper'?url:(ST.settings.wallpaper_file?`/api/appearance/wallpaper?v=${Date.now()}`:'');
   if(kind!=='wallpaper')document.querySelectorAll('#sidebarAvatar,#avatarPreview').forEach(el=>{el.style.backgroundImage=avatarUrl?`url("${avatarUrl}")`:'';el.classList.toggle('has-image',!!avatarUrl);});
-  if(kind!=='avatar'){const layer=document.getElementById('customWallpaper'),preview=document.getElementById('wallpaperPreview');layer.style.backgroundImage=wallpaperUrl?`url("${wallpaperUrl}")`:'';layer.classList.toggle('active',!!wallpaperUrl);preview.style.backgroundImage=wallpaperUrl?`url("${wallpaperUrl}")`:'';preview.classList.toggle('has-image',!!wallpaperUrl);}
+  if(kind!=='avatar'){const layer=document.getElementById('customWallpaper'),preview=document.getElementById('wallpaperPreview');layer.style.backgroundImage=wallpaperUrl?`url("${wallpaperUrl}")`:'';layer.classList.toggle('active',!!wallpaperUrl);document.documentElement.classList.toggle('has-wallpaper',!!wallpaperUrl);preview.style.backgroundImage=wallpaperUrl?`url("${wallpaperUrl}")`:'';preview.classList.toggle('has-image',!!wallpaperUrl);}
 }
 
 async function uploadAppearance(kind,input){

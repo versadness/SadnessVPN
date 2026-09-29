@@ -75,30 +75,51 @@ html.shell-glass #vignette {
   display: none !important;
 }
 
-/* Пользовательский фон: под всем интерфейсом, поверх тонировки окна.
-   Раньше слой был скрыт здесь целиком, и загруженная картинка не
-   показывалась в приложении вообще. Без выбранного фона слоя нет, и окно
-   остаётся стеклянным. */
+/* Пользовательский фон заменяет рабочий стол за стеклом: лежит под слоем
+   тонировки (body::before), поэтому «Прозрачность окна» и «Затемнение»
+   действуют на картинку так же, как на рабочий стол, а «Размытие» и «Акрил»
+   размывают её. Раньше слой был скрыт здесь целиком, и загруженная картинка
+   не показывалась вообще. Без выбранного фона слоя нет, и окно остаётся
+   прозрачным. */
 html.shell-glass #customWallpaper {
   display: none;
 }
 
 html.shell-glass #customWallpaper.active {
   display: block;
-  z-index: -1;
+  z-index: -2;
   opacity: 1;
   transform: none;
   border-radius: 14px;
   overflow: hidden;
+  transition: filter .3s ease, transform .3s ease;
 }
 
 html.shell-glass.is-maximized #customWallpaper.active {
   border-radius: 0;
 }
 
-/* Затемнение ради читаемости текста; сама картинка остаётся хорошо видна. */
+/* Тонировку даёт общий слой окна, собственное затемнение слою не нужно. */
 html.shell-glass #customWallpaper.active::after {
-  background: linear-gradient(180deg, rgba(var(--deep-rgb), .35), rgba(var(--deep-rgb), .5));
+  display: none;
+}
+
+/* Размытие и акрил — как у Windows для рабочего стола. Лёгкое увеличение
+   прячет светлую кайму, которую blur даёт по краям. */
+html.shell-glass.glass-blur #customWallpaper.active {
+  filter: blur(14px);
+  transform: scale(1.05);
+}
+
+html.shell-glass.glass-acrylic #customWallpaper.active {
+  filter: blur(26px) saturate(1.35);
+  transform: scale(1.08);
+}
+
+/* «Без стекла» делает тонировку сплошной; поверх своей картинки остаётся
+   только затемнение ради читаемости, сама картинка видна чётко. */
+html.shell-glass.shell-opaque.has-wallpaper body::before {
+  background: rgba(var(--deep-rgb), var(--veil));
 }
 
 html.shell-glass .shell {
