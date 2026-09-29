@@ -7,35 +7,36 @@
 
 ![Status: Beta](https://img.shields.io/badge/status-BETA-orange)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_10%2F11_x64-0078D4)
-![Release: 3.1.9 Beta](https://img.shields.io/badge/release-3.1.9_Beta-8b5cf6)
+![Release: 3.2.0 Beta](https://img.shields.io/badge/release-3.2.0_Beta-8b5cf6)
 
 VPN-клиент для Windows с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
 
-## Скачать 3.1.9 Beta
+## Скачать 3.2.0 Beta
 
-### [Скачать полный Setup.exe для Windows x64 · около 166 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.1.9-beta/SadnessVPN-3.1.9-Setup-x64.exe)
+### [Скачать полный Setup.exe для Windows x64 · около 166 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.2.0-beta/SadnessVPN-3.2.0-Setup-x64.exe)
 
-[Описание версии 3.1.9](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.9-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
+[Описание версии 3.2.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.2.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
 
-Файл **`SadnessVPN-3.1.9-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется.
+Файл **`SadnessVPN-3.2.0-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется.
 
 Архивы **Source code** на странице релиза — снимки репозитория дистрибутивов, а не установщики клиента.
 
-## Что нового в 3.1.9
+## Что нового в 3.2.0
 
-- **Стекло действует на свой фон**: «Прозрачность окна» и «Затемнение» тонируют картинку, а режимы «Размытие» и «Акрил» размывают её — так же, как рабочий стол за окном.
-- В режиме «Без стекла» картинка видна чётко.
+- **Прозрачное окно со своим фоном**: картинка лежит поверх рабочего стола полупрозрачным чётким слоем, «Прозрачность окна» задаёт её плотность.
+- **Матовое стекло панелей**: карточки, боковая панель и заголовок окна размывают то, что под ними, и остаются читаемыми.
+- «Размытие» и «Акрил» дополнительно размывают картинку, «Без стекла» показывает её плотно.
 
-Подробности перечислены на [странице релиза 3.1.9](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.9-beta).
+Подробности перечислены на [странице релиза 3.2.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.2.0-beta).
 
 ## Изменения предыдущих версий
 
-### 3.1.8
+### 3.1.8–3.1.9
 
-- Пользовательский фон снова виден в приложении.
+- Пользовательский фон снова виден в приложении, настройки стекла действуют на него.
 - Понятные уведомления об обновлении подписок: статус на карточке и итог «Обновить все».
 
-[Подробнее о 3.1.8](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.8-beta)
+[Подробнее о 3.1.9](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.9-beta) · [о 3.1.8](https://github.com/versadness/SadnessVPN/releases/tag/v3.1.8-beta)
 
 ### 3.1.7
 
@@ -137,7 +138,7 @@ VPN-клиент для Windows с подписками, TUN, маршрутиз
 
 1. Используйте Windows 10/11 x64.
 2. Отключите VPN и полностью закройте клиент, включая значок в трее.
-3. Скачайте `SadnessVPN-3.1.9-Setup-x64.exe` только из Assets официального релиза.
+3. Скачайте `SadnessVPN-3.2.0-Setup-x64.exe` только из Assets официального релиза.
 4. Запустите файл и подтвердите системный запрос, если доверяете источнику.
 5. После установки запускайте Sadness VPN через созданный ярлык.
 
@@ -151,15 +152,15 @@ VPN-клиент для Windows с подписками, TUN, маршрутиз
 
 ## Проверка загрузки
 
-- Файл: `SadnessVPN-3.1.9-Setup-x64.exe`
-- Версия: **3.1.9.0**
-- Размер: **174 622 231 байт**
-- SHA256: `b4880fc58032a056e81449774a510c5a148ab7c8b603dde8ada8458ee11908f2`
+- Файл: `SadnessVPN-3.2.0-Setup-x64.exe`
+- Версия: **3.2.0.0**
+- Размер: **174 626 327 байт**
+- SHA256: `a9608d47d13baa5c36e0eb9a235b5eafaf55bd6f836f69544bdfcacee801c928`
 
 Проверка в PowerShell:
 
 ```powershell
-Get-FileHash -LiteralPath '.\SadnessVPN-3.1.9-Setup-x64.exe' -Algorithm SHA256
+Get-FileHash -LiteralPath '.\SadnessVPN-3.2.0-Setup-x64.exe' -Algorithm SHA256
 ```
 
 Совпадение SHA256 подтверждает соответствие опубликованному файлу, но не заменяет цифровую подпись. Установщик пока не подписан сертификатом издателя, поэтому SmartScreen может показать предупреждение «Неизвестный издатель».
