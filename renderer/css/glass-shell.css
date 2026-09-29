@@ -104,22 +104,117 @@ html.shell-glass #customWallpaper.active::after {
   display: none;
 }
 
-/* Размытие и акрил — как у Windows для рабочего стола. Лёгкое увеличение
-   прячет светлую кайму, которую blur даёт по краям. */
+/* Свой фон — тёмная размытая подложка под матовым стеклом, как у
+   рабочего стола под акрилом Windows. Картинка всегда слегка размыта и
+   затемнена, «Прозрачность окна» задаёт, насколько она проступает, а
+   «Размытие» и «Акрил» размывают её сильнее. Лёгкое увеличение прячет
+   светлую кайму, которую blur даёт по краям. */
+html.shell-glass.has-wallpaper #customWallpaper.active {
+  filter: blur(8px) saturate(1.1);
+  transform: scale(1.04);
+}
+
 html.shell-glass.glass-blur #customWallpaper.active {
-  filter: blur(14px);
-  transform: scale(1.05);
+  filter: blur(18px) saturate(1.15);
+  transform: scale(1.07);
 }
 
 html.shell-glass.glass-acrylic #customWallpaper.active {
-  filter: blur(26px) saturate(1.35);
-  transform: scale(1.08);
+  filter: blur(30px) saturate(1.35);
+  transform: scale(1.1);
 }
 
-/* «Без стекла» делает тонировку сплошной; поверх своей картинки остаётся
-   только затемнение ради читаемости, сама картинка видна чётко. */
+/* «Без стекла»: картинка чёткая, поверх только затемнение для читаемости. */
+html.shell-glass.shell-opaque.has-wallpaper #customWallpaper.active {
+  filter: none;
+  transform: none;
+}
+
 html.shell-glass.shell-opaque.has-wallpaper body::before {
-  background: rgba(var(--deep-rgb), var(--veil));
+  background: rgba(var(--deep-rgb), calc(.25 + var(--veil) * .6));
+}
+
+/* Тонировка поверх картинки: даже при 0% картинка приглушена, чтобы
+   интерфейс читался; 100% почти скрывает её. */
+html.shell-glass.has-wallpaper:not(.shell-opaque) body::before {
+  background:
+    linear-gradient(180deg, rgba(var(--deep-rgb), var(--veil)), rgba(var(--deep-rgb), var(--veil))),
+    rgba(var(--deep-rgb), calc(.45 + var(--win-alpha) * .5));
+}
+
+/* Матовое стекло: панели размывают то, что под ними. Рабочий стол за окном
+   страница размыть не может, а свой фон — может.
+   !important перебивает общий запрет из ui/static/css/glass.css
+   (* { backdrop-filter: none !important }) — только поверх своего фона. */
+html.shell-glass.has-wallpaper .glass,
+html.shell-glass.has-wallpaper .hc,
+html.shell-glass.has-wallpaper .stat,
+html.shell-glass.has-wallpaper .ip-card,
+html.shell-glass.has-wallpaper .set-row,
+html.shell-glass.has-wallpaper .srv-row,
+html.shell-glass.has-wallpaper .mode-card,
+html.shell-glass.has-wallpaper .zap-card,
+html.shell-glass.has-wallpaper .preset-card,
+html.shell-glass.has-wallpaper .port-card,
+html.shell-glass.has-wallpaper .autostart-state,
+html.shell-glass.has-wallpaper .notice,
+html.shell-glass.has-wallpaper .search,
+html.shell-glass.has-wallpaper .add-box,
+html.shell-glass.has-wallpaper .route-visual,
+html.shell-glass.has-wallpaper .subscription-import,
+html.shell-glass.has-wallpaper .settings-search,
+html.shell-glass.has-wallpaper .titlebar,
+html.shell-glass.has-wallpaper .sidebar,
+html.shell-glass.has-wallpaper .dash-slide {
+  -webkit-backdrop-filter: blur(22px) saturate(1.3) !important;
+  backdrop-filter: blur(22px) saturate(1.3) !important;
+}
+
+/* Тёмное стекло панелей: своя минимальная плотность, чтобы текст читался
+   и при «Плотности панелей» 0%, тонкий блик и светлая кромка. */
+html.shell-glass.has-wallpaper .glass,
+html.shell-glass.has-wallpaper .hc,
+html.shell-glass.has-wallpaper .stat,
+html.shell-glass.has-wallpaper .ip-card,
+html.shell-glass.has-wallpaper .set-row,
+html.shell-glass.has-wallpaper .srv-row,
+html.shell-glass.has-wallpaper .mode-card,
+html.shell-glass.has-wallpaper .zap-card,
+html.shell-glass.has-wallpaper .preset-card,
+html.shell-glass.has-wallpaper .port-card,
+html.shell-glass.has-wallpaper .autostart-state,
+html.shell-glass.has-wallpaper .notice,
+html.shell-glass.has-wallpaper .search,
+html.shell-glass.has-wallpaper .add-box,
+html.shell-glass.has-wallpaper .route-visual,
+html.shell-glass.has-wallpaper .subscription-import,
+html.shell-glass.has-wallpaper .settings-search {
+  background-color: rgba(var(--panel-rgb), max(var(--panel-alpha), .34)) !important;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .012)) !important;
+  border-color: rgba(255, 255, 255, .11) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 8px 24px rgba(0, 0, 0, .18) !important;
+}
+
+html.shell-glass.has-wallpaper .hc:hover,
+html.shell-glass.has-wallpaper .stat:hover,
+html.shell-glass.has-wallpaper .srv-row:hover,
+html.shell-glass.has-wallpaper .set-row:hover,
+html.shell-glass.has-wallpaper .mode-card:hover,
+html.shell-glass.has-wallpaper .ip-card:hover {
+  background-color: rgba(var(--panel-rgb), max(calc(var(--panel-alpha) + .14), .48)) !important;
+}
+
+html.shell-glass.has-wallpaper .titlebar {
+  background: rgba(var(--panel-rgb), max(calc(var(--panel-alpha) * .45), .22)) !important;
+}
+
+html.shell-glass.has-wallpaper .sidebar {
+  background: rgba(var(--panel-rgb), max(calc(var(--panel-alpha) * .75), .3)) !important;
+}
+
+html.shell-glass.has-wallpaper .sidebar:hover,
+html.shell-glass.has-wallpaper .sidebar:focus-within {
+  background: rgba(var(--panel-rgb), max(calc(var(--panel-alpha) + .3), .55)) !important;
 }
 
 html.shell-glass .shell {
