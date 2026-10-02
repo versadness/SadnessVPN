@@ -5,8 +5,8 @@
 
   manual  (select)    — сервер, выбранный пользователем. Переключается через
                         API ядра без перезапуска: TUN, маршруты и DNS остаются.
-  backup  (url-test)  — до BACKUP_LIMIT запасных; ядро само держит в ней сервер
-                        с наименьшей задержкой.
+  backup  (url-test)  — до BACKUP_LIMIT запасных из подписки выбранного сервера;
+                        ядро само держит в ней сервер с наименьшей задержкой.
   proxy   (fallback)  — [manual, backup]: пока выбранный сервер отвечает, трафик
                         идёт через него; перестал — через лучший запасной; ожил —
                         снова через выбранный.
@@ -57,25 +57,25 @@ def _supported(server) -> bool:
 
 
 def pick_backups(selected: dict, groups: list, limit: int = BACKUP_LIMIT) -> list:
-    """Запасные серверы по порядку предпочтения.
+    """Запасные серверы по порядку предпочтения — только из подписки, в
+    которой выбран сервер.
 
-    Сначала та же страна (не меняется геолокация), среди них — другой
-    транспорт: если провайдер режет протокол, другой обычно проходит. Затем
-    та же подписка. Пинг среди отобранных ядро меряет само (группа url-test).
+    Внутри подписки сначала та же страна (не меняется геолокация), среди них —
+    другой транспорт: если провайдер режет протокол, другой обычно проходит.
+    Затем остальные серверы подписки. Пинг среди отобранных ядро меряет само
+    (группа url-test).
     """
-    home_group = next((g["id"] for g in groups if any(s is selected for s in g.get("servers", []))), None)
+    home = next((g for g in groups if any(s is selected for s in g.get("servers", []))), None)
+    if home is None:
+        return []
     home_country = country(selected)
     candidates = []
-    for group in groups:
-        for server in group.get("servers", []):
-            if server is selected or proxy_name(server) == proxy_name(selected):
-                continue
-            same_country = bool(home_country) and country(server) == home_country
-            same_group = group["id"] == home_group
-            if not (same_country or same_group) or not _supported(server):
-                continue
-            rank = (not same_country, not same_group, transport(server) == transport(selected))
-            candidates.append((rank, len(candidates), server))
+    for server in home.get("servers", []):
+        if server is selected or proxy_name(server) == proxy_name(selected) or not _supported(server):
+            continue
+        same_country = bool(home_country) and country(server) == home_country
+        rank = (not same_country, transport(server) == transport(selected))
+        candidates.append((rank, len(candidates), server))
     return [server for _, _, server in sorted(candidates, key=lambda item: (item[0], item[1]))[:limit]]
 
 

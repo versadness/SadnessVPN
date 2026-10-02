@@ -54,13 +54,22 @@ class FailoverConfigTests(unittest.TestCase):
         self.assertEqual(failover.country(self.selected), "DE")
         self.assertEqual(failover.country({"remark": "Без флага"}), "")
 
-    def test_backups_prefer_same_country_and_other_transport(self):
+    def test_backups_come_only_from_the_selected_subscription(self):
         backups = [s["ui_id"] for s in failover.pick_backups(self.selected, self.groups)]
-        # Та же страна и другой транспорт → та же страна, тот же транспорт.
-        # Финляндия из той же подписки — последней; неподдерживаемый kcp — никогда.
-        self.assertEqual(backups, ["de-x", "de-h", "de-c", "fi"])
+        # Только подписка выбранного сервера: та же страна с другим транспортом,
+        # затем остальные серверы подписки. Немецкий сервер другой подписки
+        # (de-c) не берётся, неподдерживаемый kcp — никогда.
+        self.assertEqual(backups, ["de-x", "de-h", "fi"])
+        self.assertNotIn("de-c", backups)
         self.assertNotIn("de-bad", backups)
         self.assertEqual(len(failover.pick_backups(self.selected, self.groups, limit=2)), 2)
+
+    def test_same_transport_in_the_same_country_comes_before_other_countries(self):
+        groups = [{"id": "g", "name": "G", "servers": [
+            node("🇩🇪 A", "198.51.100.10", "a"), node("🇫🇮 B", "198.51.100.11", "b"),
+            node("🇩🇪 C", "198.51.100.12", "c"), node("🇩🇪 D XHTTP", "198.51.100.13", "d", type="xhttp", path="/x")]}]
+        backups = [s["ui_id"] for s in failover.pick_backups(groups[0]["servers"][0], groups)]
+        self.assertEqual(backups, ["d", "c", "b"])
 
     def test_groups_keep_rules_on_proxy_and_include_every_server(self):
         config = build_proxy_config(self.selected)
@@ -75,7 +84,7 @@ class FailoverConfigTests(unittest.TestCase):
         self.assertEqual(groups["proxy"]["type"], "fallback")
         self.assertEqual(groups["proxy"]["proxies"], ["manual", "backup"])
         self.assertEqual(groups["backup"]["type"], "url-test")
-        self.assertEqual(groups["backup"]["proxies"], ["srv-de-x", "srv-de-h", "srv-de-c", "srv-fi"])
+        self.assertEqual(groups["backup"]["proxies"], ["srv-de-x", "srv-de-h", "srv-fi"])
         self.assertIn("MATCH,proxy", config["rules"])
 
     def test_without_failover_proxy_is_just_the_selected_server(self):
