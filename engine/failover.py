@@ -5,7 +5,8 @@
 
   manual  (select)    — сервер, выбранный пользователем. Переключается через
                         API ядра без перезапуска: TUN, маршруты и DNS остаются.
-  backup  (url-test)  — до BACKUP_LIMIT запасных из подписки выбранного сервера;
+  backup  (url-test)  — до BACKUP_LIMIT запасных из подписки выбранного сервера,
+                        на том же транспорте и на других машинах (pick_backups);
                         ядро само держит в ней сервер с наименьшей задержкой.
   proxy   (fallback)  — [manual, backup]: пока выбранный сервер отвечает, трафик
                         идёт через него; перестал — через лучший запасной; ожил —
@@ -17,6 +18,8 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
+import socket
 
 from engine.core_config import _mihomo_proxy, ensure_supported
 
@@ -56,27 +59,62 @@ def _supported(server) -> bool:
         return False
 
 
-def pick_backups(selected: dict, groups: list, limit: int = BACKUP_LIMIT) -> list:
-    """Запасные серверы по порядку предпочтения — только из подписки, в
-    которой выбран сервер.
+def machine(server: dict, resolve=None) -> frozenset:
+    """Адреса машины, на которой работает сервер.
 
-    Внутри подписки сначала та же страна (не меняется геолокация), среди них —
-    другой транспорт: если провайдер режет протокол, другой обычно проходит.
-    Затем остальные серверы подписки. Пинг среди отобранных ядро меряет само
-    (группа url-test).
+    Серверы одной подписки часто стоят на одной машине на разных портах
+    («Finland» и «Finland 2») и падают вместе — такой сервер запасным быть не
+    может. Домен превращается в адреса; если имя не разрешилось, сравнивается
+    само имя.
+    """
+    host = str(server.get("host") or "").strip().lower().strip("[]")
+    try:
+        return frozenset({str(ipaddress.ip_address(host))})
+    except ValueError:
+        pass
+    resolve = resolve or _resolve
+    return frozenset(resolve(host)) or frozenset({host})
+
+
+def _resolve(host: str) -> set:
+    try:
+        return {item[4][0] for item in socket.getaddrinfo(host, None)}
+    except (OSError, UnicodeError):
+        return set()
+
+
+def pick_backups(selected: dict, groups: list, limit: int = BACKUP_LIMIT, resolve=None) -> list:
+    """Запасные серверы по порядку предпочтения.
+
+    Только подписка выбранного сервера и только тот же транспорт (HY2 → HY2,
+    XHTTP → XHTTP). Серверы на той же машине, что и выбранный, не берутся —
+    они откажут вместе с ним; среди запасных — не больше одного на машину,
+    чтобы все они не зависели от одного железа. Сначала та же страна. Пинг
+    среди отобранных ядро меряет само (группа url-test).
     """
     home = next((g for g in groups if any(s is selected for s in g.get("servers", []))), None)
     if home is None:
         return []
     home_country = country(selected)
+    used = set(machine(selected, resolve))
     candidates = []
     for server in home.get("servers", []):
-        if server is selected or proxy_name(server) == proxy_name(selected) or not _supported(server):
+        if server is selected or proxy_name(server) == proxy_name(selected):
+            continue
+        if transport(server) != transport(selected) or not _supported(server):
             continue
         same_country = bool(home_country) and country(server) == home_country
-        rank = (not same_country, transport(server) == transport(selected))
-        candidates.append((rank, len(candidates), server))
-    return [server for _, _, server in sorted(candidates, key=lambda item: (item[0], item[1]))[:limit]]
+        candidates.append((not same_country, len(candidates), server))
+    backups = []
+    for _, _, server in sorted(candidates, key=lambda item: (item[0], item[1])):
+        addresses = machine(server, resolve)
+        if addresses & used:
+            continue
+        used |= addresses
+        backups.append(server)
+        if len(backups) == limit:
+            break
+    return backups
 
 
 def _with_mux(proxy: dict, mux: bool) -> dict:

@@ -54,22 +54,41 @@ class FailoverConfigTests(unittest.TestCase):
         self.assertEqual(failover.country(self.selected), "DE")
         self.assertEqual(failover.country({"remark": "Без флага"}), "")
 
-    def test_backups_come_only_from_the_selected_subscription(self):
+    def test_backups_come_only_from_the_selected_subscription_and_transport(self):
         backups = [s["ui_id"] for s in failover.pick_backups(self.selected, self.groups)]
-        # Только подписка выбранного сервера: та же страна с другим транспортом,
-        # затем остальные серверы подписки. Немецкий сервер другой подписки
-        # (de-c) не берётся, неподдерживаемый kcp — никогда.
-        self.assertEqual(backups, ["de-x", "de-h", "fi"])
-        self.assertNotIn("de-c", backups)
-        self.assertNotIn("de-bad", backups)
-        self.assertEqual(len(failover.pick_backups(self.selected, self.groups, limit=2)), 2)
+        # Выбран TCP из Remnawave: XHTTP и HY2 той же подписки не берутся,
+        # немецкий TCP другой подписки (de-c) — тоже, неподдерживаемый kcp — никогда.
+        self.assertEqual(backups, ["fi"])
 
-    def test_same_transport_in_the_same_country_comes_before_other_countries(self):
+    def test_same_country_first_then_other_countries(self):
         groups = [{"id": "g", "name": "G", "servers": [
             node("🇩🇪 A", "198.51.100.10", "a"), node("🇫🇮 B", "198.51.100.11", "b"),
             node("🇩🇪 C", "198.51.100.12", "c"), node("🇩🇪 D XHTTP", "198.51.100.13", "d", type="xhttp", path="/x")]}]
         backups = [s["ui_id"] for s in failover.pick_backups(groups[0]["servers"][0], groups)]
-        self.assertEqual(backups, ["d", "c", "b"])
+        self.assertEqual(backups, ["c", "b"])
+
+    def test_servers_on_the_same_machine_are_never_backups(self):
+        # «Finland» и «Finland 2» — одна машина на разных портах: падают вместе.
+        hy2 = lambda remark, host, ui_id, port: {**node(remark, host, ui_id), "protocol": "hysteria2",
+                                                  "password": "p", "type": "quic", "port": port}
+        groups = [{"id": "rw", "name": "Remnawave", "servers": [
+            hy2("🇫🇮 Finland · HY2", "198.51.100.20", "fi1", 10445),
+            hy2("🇫🇮 Finland 2 · HY2", "198.51.100.20", "fi2", 443),
+            hy2("🇩🇪 Germany · HY2", "198.51.100.21", "de1", 443),
+            hy2("🇩🇪 Germany 3 · HY2", "198.51.100.21", "de3", 8443),
+            hy2("🇩🇪 Germany 2 · HY2", "198.51.100.22", "de2", 443),
+            hy2("🇳🇱 Netherlands · HY2", "nl.example", "nl", 443),
+        ]}]
+        resolve = lambda host: {"198.51.100.22"} if host == "nl.example" else set()
+        backups = [s["ui_id"] for s in failover.pick_backups(groups[0]["servers"][1], groups, resolve=resolve)]
+        self.assertNotIn("fi1", backups)          # та же машина, что у выбранного
+        self.assertEqual(backups, ["de1", "de2"])  # по одному на машину; nl.example — та же машина, что de2
+
+    def test_unresolvable_domain_is_compared_by_name(self):
+        same = {**node("🇩🇪 A", "vpn.example", "a")}
+        other = {**node("🇩🇪 B", "vpn.example", "b")}
+        groups = [{"id": "g", "name": "G", "servers": [same, other]}]
+        self.assertEqual(failover.pick_backups(same, groups, resolve=lambda host: set()), [])
 
     def test_groups_keep_rules_on_proxy_and_include_every_server(self):
         config = build_proxy_config(self.selected)
@@ -84,7 +103,7 @@ class FailoverConfigTests(unittest.TestCase):
         self.assertEqual(groups["proxy"]["type"], "fallback")
         self.assertEqual(groups["proxy"]["proxies"], ["manual", "backup"])
         self.assertEqual(groups["backup"]["type"], "url-test")
-        self.assertEqual(groups["backup"]["proxies"], ["srv-de-x", "srv-de-h", "srv-fi"])
+        self.assertEqual(groups["backup"]["proxies"], ["srv-fi"])
         self.assertIn("MATCH,proxy", config["rules"])
 
     def test_without_failover_proxy_is_just_the_selected_server(self):
