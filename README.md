@@ -7,29 +7,47 @@
 
 ![Status: Beta](https://img.shields.io/badge/status-BETA-orange)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_10%2F11_x64-0078D4)
-![Release: 3.3.0 Beta](https://img.shields.io/badge/release-3.3.0_Beta-8b5cf6)
+![Linux x86_64](https://img.shields.io/badge/platform-Linux_x86__64-FCC624)
+![Release: 3.4.0 Beta](https://img.shields.io/badge/release-3.4.0_Beta-8b5cf6)
 
-VPN-клиент для Windows с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
+VPN-клиент для Windows и Linux с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
 
-## Скачать 3.3.0 Beta
+## Скачать 3.4.0 Beta
 
-### [Скачать полный Setup.exe для Windows x64 · около 166 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.3.0-beta/SadnessVPN-3.3.0-Setup-x64.exe)
+### [Скачать полный Setup.exe для Windows x64 · около 167 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.0-beta/SadnessVPN-3.4.0-Setup-x64.exe)
 
-[Описание версии 3.3.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.3.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
+### Linux x86_64 (Beta)
 
-Файл **`SadnessVPN-3.3.0-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется.
+| Система | Скачать | Установка |
+|---|---|---|
+| Ubuntu / Debian / Mint | [`.deb` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.0-beta/SadnessVPN-3.4.0-linux-amd64.deb) | `sudo apt install ./SadnessVPN-3.4.0-linux-amd64.deb` |
+| Fedora | [`.rpm` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.0-beta/SadnessVPN-3.4.0-linux-x86_64.rpm) | `sudo dnf install ./SadnessVPN-3.4.0-linux-x86_64.rpm` |
+| Arch / Manjaro | [`.pacman` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.0-beta/SadnessVPN-3.4.0-linux-x64.pacman) | `sudo pacman -U SadnessVPN-3.4.0-linux-x64.pacman` |
+| Bazzite и любой другой | [`AppImage` · 145 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.0-beta/SadnessVPN-3.4.0-linux-x86_64.AppImage) | `chmod +x` и запустить |
+
+[Описание версии 3.4.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
+
+Файл **`SadnessVPN-3.4.0-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется. Пакеты Linux тоже самодостаточны.
 
 Архивы **Source code** на странице релиза — снимки репозитория дистрибутивов, а не установщики клиента.
 
-## Что нового в 3.3.0
+## Что нового в 3.4.0
 
-- **Смена сервера на лету**: пока VPN работает, выберите другой сервер — трафик пойдёт через него без переподключения.
-- **Автоматическая замена сервера**: если сервер перестал отвечать, трафик переходит на запасной из той же подписки и на том же транспорте, а потом возвращается. Серверы на той же машине запасными не становятся.
-- Замену можно выключить в «Настройках».
+- **Linux (Beta):** Ubuntu, Fedora, Arch и Bazzite — AppImage, `.deb`, `.rpm` и pacman. Подписки, TUN, правила, смена сервера на лету и резерв работают как в Windows.
+- **Пароль администратора на Linux — один раз:** пакеты выдают права ядру VPN при установке, AppImage — при первом подключении. Само приложение работает от обычного пользователя.
+- На Linux пока нет Zapret, AmneziaWG и встроенного автообновления.
+- Windows и Linux: неразрешимый адрес запасного сервера больше не срывает подключение.
 
-Подробности перечислены на [странице релиза 3.3.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.3.0-beta).
+Подробности перечислены на [странице релиза 3.4.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.0-beta).
 
 ## Изменения предыдущих версий
+
+### 3.3.0
+
+- **Смена сервера на лету**: пока VPN работает, выберите другой сервер — трафик пойдёт через него без переподключения.
+- **Автоматическая замена сервера**: если сервер перестал отвечать, трафик переходит на запасной из той же подписки и на том же транспорте, а потом возвращается.
+
+[Подробнее о 3.3.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.3.0-beta)
 
 ### 3.2.1
 
@@ -144,14 +162,17 @@ VPN-клиент для Windows с подписками, TUN, маршрутиз
 - TUN и локальные SOCKS5/HTTP-порты.
 - Маршрутизация по приложениям, доменам, GeoSite, GeoIP и IP-CIDR.
 - Одновременное назначение разных серверов разным приложениям.
-- AI-DNS, Zapret, статистика, журнал и встроенная проверка обновлений.
+- Windows 10/11 x64 и Linux x86_64 (Ubuntu, Fedora, Arch, Bazzite).
+- AI-DNS, Zapret (Windows), статистика, журнал и встроенная проверка обновлений.
 - Стеклянный интерфейс Electron, прозрачность и выбор акцентного цвета.
 
 ## Установка и обновление
 
+### Windows
+
 1. Используйте Windows 10/11 x64.
 2. Отключите VPN и полностью закройте клиент, включая значок в трее.
-3. Скачайте `SadnessVPN-3.3.0-Setup-x64.exe` только из Assets официального релиза.
+3. Скачайте `SadnessVPN-3.4.0-Setup-x64.exe` только из Assets официального релиза.
 4. Запустите файл и подтвердите системный запрос, если доверяете источнику.
 5. После установки запускайте Sadness VPN через созданный ярлык.
 
@@ -161,20 +182,33 @@ VPN-клиент для Windows с подписками, TUN, маршрутиз
 %LOCALAPPDATA%\SadnessVPN\data
 ```
 
+### Linux
+
+1. Скачайте пакет для своей системы из таблицы выше и установите его командой из таблицы. Пароль спросит пакетный менеджер — это и есть единственный раз: дальше VPN включается без пароля.
+2. С AppImage: сделайте файл исполняемым (`chmod +x`) и запустите. При первом подключении система один раз спросит пароль администратора, чтобы выдать права ядру VPN.
+3. Новую версию ставьте так же — свежим пакетом или AppImage; встроенное автообновление на Linux пока не работает.
+
+Профиль пользователя: `~/.local/share/SadnessVPN`. На Linux пока недоступны Zapret и AmneziaWG.
+
 Подписки, правила и настройки не входят в публичный установщик.
 
 ## Проверка загрузки
 
-- Файл: `SadnessVPN-3.3.0-Setup-x64.exe`
-- Версия: **3.3.0.0**
-- Размер: **174 646 807 байт**
-- SHA256: `f4fef83bffb708c209a8f04150a2b4515365ba185149332a0e70502b2e3800d7`
+| Файл | Размер, байт | SHA256 |
+|---|---|---|
+| `SadnessVPN-3.4.0-Setup-x64.exe` (версия **3.4.0.0**) | 174 659 095 | `666481224bd4231bd7a90728e74fe9986ccdd34cd8723e730a4e1d722717240b` |
+| `SadnessVPN-3.4.0-linux-x86_64.AppImage` | 152 190 850 | `0128fda44e1747c3d6c6f53621a19d31a68bb871540df22ac375a7d2d5b6990b` |
+| `SadnessVPN-3.4.0-linux-amd64.deb` | 108 121 410 | `db6c2e146a872650ff0e2b1e70e30b0e62a99cba2a521735718e5420eb86f11b` |
+| `SadnessVPN-3.4.0-linux-x86_64.rpm` | 107 984 165 | `9351b98deebd4b1da32bcb5dcdad3ce3adf1c8217dfcf1195f2fd45f282c66dc` |
+| `SadnessVPN-3.4.0-linux-x64.pacman` | 108 146 748 | `ef006d9ba39bd31ee24cb58a28783bdd96b191a1d292f1e0d18c17c4a46fd1fa` |
 
 Проверка в PowerShell:
 
 ```powershell
-Get-FileHash -LiteralPath '.\SadnessVPN-3.3.0-Setup-x64.exe' -Algorithm SHA256
+Get-FileHash -LiteralPath '.\SadnessVPN-3.4.0-Setup-x64.exe' -Algorithm SHA256
 ```
+
+На Linux: `sha256sum <файл>`.
 
 Совпадение SHA256 подтверждает соответствие опубликованному файлу, но не заменяет цифровую подпись. Установщик пока не подписан сертификатом издателя, поэтому SmartScreen может показать предупреждение «Неизвестный издатель».
 
@@ -182,13 +216,15 @@ Get-FileHash -LiteralPath '.\SadnessVPN-3.3.0-Setup-x64.exe' -Algorithm SHA256
 
 [Создать Issue](https://github.com/versadness/SadnessVPN/issues/new)
 
-Укажите версию Windows, версию Sadness VPN, шаги воспроизведения, ожидаемый результат и приложите скриншот. При проблемах подключения укажите протокол и транспорт сервера.
+Укажите версию Windows или дистрибутив Linux, версию Sadness VPN, шаги воспроизведения, ожидаемый результат и приложите скриншот. При проблемах подключения укажите протокол и транспорт сервера.
 
 Журналы:
 
 ```text
 %LOCALAPPDATA%\SadnessVPN\data\diagnostics
 ```
+
+На Linux: `~/.local/share/SadnessVPN/data/diagnostics`.
 
 **Issues публичные. Не публикуйте ссылки подписок, UUID, приватные ключи, пароли, HWID и полные конфиги.** Перед отправкой журнала удалите личные данные и адреса серверов.
 
