@@ -41,6 +41,7 @@ REMOVED_SETTING_KEYS = ("core",)
 USER_APP_SETTING_KEYS = {
     "startup", "autoconn", "silent", "lan", "mintray", "reconnect",
     "animations", "favorite_servers", "onboarding_complete", "sub_autoupdate",
+    "auto_failover",
     "avatar_file", "wallpaper_file",
 }
 
@@ -49,6 +50,8 @@ DEFAULT_SETTINGS = {
     "autoconn":         False,
     # Обновлять подписки при каждом запуске приложения.
     "sub_autoupdate":   True,
+    # Автоматическая замена сервера при отказе (резерв в Mihomo).
+    "auto_failover":    True,
     "reconnect":        False,
     "silent":           False,
     "lan":              False,
@@ -134,7 +137,7 @@ def load_settings() -> dict:
         settings = {**DEFAULT_SETTINGS, **loaded}
         for key in (
             "startup", "autoconn", "silent", "lan", "mintray", "animations", "reconnect",
-            "onboarding_complete", "kill_switch", "sub_autoupdate",
+            "onboarding_complete", "kill_switch", "sub_autoupdate", "auto_failover",
             "block_udp", "socks5_auth", "mux", "fakedns",
         ):
             if not isinstance(settings.get(key), bool):
@@ -333,7 +336,7 @@ def normalize_tunnel_setting(key, value):
 def normalize_app_setting(key, value):
     if key in {
         "startup", "autoconn", "silent", "lan", "mintray", "animations", "reconnect",
-        "onboarding_complete", "sub_autoupdate",
+        "onboarding_complete", "sub_autoupdate", "auto_failover",
     }:
         if not isinstance(value, bool):
             raise ValueError("Значение настройки должно быть true или false")

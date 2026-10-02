@@ -101,6 +101,8 @@ def api_add_server():
 
 @bp.route("/api/servers/select", methods=["POST"])
 def api_select():
+    """Выбрать сервер. Пока VPN работает через Mihomo — смена на лету, без
+    переподключения: ядро переключает группу manual (engine/failover.py)."""
     data = request.get_json(silent=True) or {}
     gid  = data.get("group_id")
     idx  = data.get("index")
@@ -108,6 +110,13 @@ def api_select():
         if g["id"] == gid:
             srvs = g.get("servers", [])
             if idx is not None and 0 <= idx < len(srvs):
+                state = _live_switch_state()
+                if state not in ("off", "live"):
+                    return jsonify(ok=False, error=state), 409
+                if state == "live":
+                    ok, error = _switch_live_server(srvs[idx])
+                    if not ok:
+                        return jsonify(ok=False, error=error), 409
                 previous_settings = copy.deepcopy(_app_settings)
                 _app_settings["selected_group"] = gid
                 _app_settings["selected_index"] = idx
@@ -116,7 +125,7 @@ def api_select():
                     _app_settings.clear()
                     _app_settings.update(previous_settings)
                     return jsonify(ok=False, error="Не удалось сохранить выбранный сервер"), 500
-                return jsonify({"ok": True})
+                return jsonify({"ok": True, "live": state == "live"})
     return jsonify({"ok": False, "error": "Неверный индекс"})
 
 

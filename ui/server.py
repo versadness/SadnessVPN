@@ -16,6 +16,7 @@ import os
 import secrets
 import sys
 import uuid as _uuid_mod
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +46,7 @@ from engine.stats import tracker as stats_tracker
 from engine.apps import load_apps, save_apps, get_running_processes, POPULAR_APPS
 from engine.hwid import generate_hwid
 from engine import autostart
+from engine import failover
 from ui import profile_state
 from ui.zapret_service import ZapretService
 from engine.tg_proxy import TgProxyManager
@@ -335,7 +337,10 @@ def _validate_mutation():
     if "enabled" in data and type(data["enabled"]) is not bool:
         return jsonify(ok=False, error="enabled должен быть true или false"), 400
     changing_network = request.path in {"/api/settings", "/api/protocol", "/api/socks5/regenerate"} or request.path.startswith(("/api/servers/", "/api/groups/", "/api/wg/servers/", "/api/wg/groups/")) or request.path in {"/api/apps/mode", "/api/apps/add", "/api/apps/remove", "/api/apps/toggle"}
-    if changing_network and (_stopping or _connection.state != "off"):
+    # Выбор сервера во время работы VPN — смена на лету; маршрут сам проверяет
+    # состояние подключения (ui/routes/servers.py, _live_switch_state).
+    live_switch = request.path == "/api/servers/select"
+    if changing_network and not live_switch and (_stopping or _connection.state != "off"):
         return jsonify(ok=False, error="Сначала отключите VPN; изменения применяются перед подключением"), 409
     if (changing_network or request.path == "/api/hwid/regenerate") and _subscription_lock.locked():
         return jsonify(ok=False, error="Дождитесь завершения обновления подписки"), 409
@@ -1187,6 +1192,8 @@ def _finish_awg_attempt(attempt: int, server: dict, server_name: str, session=No
 def _reset_connection_state():
     global _ping_value, _ping_color, _conn_server, _vpn_error
     _vpn_error = False
+    _live_servers.clear()
+    _route_state.update(name=None, backup=False, failover=False)
     _stop_ping_monitor()
     _stop_traffic_monitor()
     stats_tracker.stop()
@@ -1273,6 +1280,119 @@ def ws_handler(ws):
         if ws in _ws_clients:
             _ws_clients.remove(ws)
 
+# ── Смена сервера на лету и резерв (engine/failover.py) ──────────────
+# Серверы, которые есть в работающем ядре: {имя в ядре: сервер}. Пусто, пока
+# VPN не подключён или работает не через Mihomo (AmneziaWG, WireGuard).
+_live_servers: dict = {}
+# Через какой сервер сейчас реально идёт трафик: (имя в ядре, резерв ли).
+_route_state = {"name": None, "backup": False, "failover": False}
+
+
+def _clash(method, path, body=None, timeout=6.0):
+    """Запрос к API работающего ядра. (код, JSON или None)."""
+    import http.client
+    conn = http.client.HTTPConnection("127.0.0.1", _clash_port, timeout=timeout)
+    try:
+        payload = json.dumps(body).encode() if body is not None else None
+        conn.request(method, path, body=payload,
+                     headers={"Content-Type": "application/json"} if payload else {})
+        response = conn.getresponse()
+        raw = response.read(65536)
+        try:
+            return response.status, json.loads(raw) if raw else None
+        except ValueError:
+            return response.status, None
+    finally:
+        conn.close()
+
+
+def _recheck_route():
+    """Немедленная проверка группы: ядро переводит трафик на живой сервер."""
+    query = urllib.parse.urlencode({"url": "https://www.gstatic.com/generate_204", "timeout": 5000})
+    try:
+        _clash("GET", f"/group/{failover.MAIN_GROUP}/delay?{query}", timeout=8.0)
+    except OSError:
+        pass
+
+
+def _current_route():
+    """(имя в ядре, резерв ли) — сервер, через который сейчас идёт трафик."""
+    _, main = _clash("GET", f"/proxies/{failover.MAIN_GROUP}")
+    _, manual = _clash("GET", f"/proxies/{failover.MANUAL_GROUP}")
+    if not main or not manual:
+        return None
+    if main.get("now") == failover.BACKUP_GROUP:
+        _, backup = _clash("GET", f"/proxies/{failover.BACKUP_GROUP}")
+        return ((backup or {}).get("now"), True)
+    return (manual.get("now"), False)
+
+
+def _route_label(name):
+    server = _live_servers.get(name) or {}
+    return stripped_remark(server.get("remark", "")) or "сервер"
+
+
+def _publish_route(route):
+    """Сообщить о смене фактического сервера: журнал сессии и интерфейс."""
+    name, backup = route
+    previous = _route_state["name"]
+    _route_state.update(name=name, backup=backup)
+    if previous is None and not backup:
+        return
+    selected = _get_selected_server()
+    selected_label = stripped_remark((selected or {}).get("remark", "")) or "выбранный"
+    if backup:
+        message = f"Сервер «{selected_label}» не отвечает — трафик переведён на запасной «{_route_label(name)}»"
+        _log(message, "warn")
+    else:
+        message = f"Трафик снова идёт через выбранный сервер «{_route_label(name)}»"
+        _log(message, "ok")
+    _broadcast({"type": "active_server", "name": _route_label(name), "backup": backup,
+                "selected": selected_label, "message": message})
+
+
+def _switch_live_server(server):
+    """Сменить сервер без переподключения. (ok, ошибка)."""
+    name = failover.proxy_name(server)
+    if name not in _live_servers:
+        return False, ("Этот сервер появился после подключения или не поддерживается ядром — "
+                       "переподключитесь, чтобы выбрать его")
+    try:
+        status, _ = _clash("PUT", f"/proxies/{failover.MANUAL_GROUP}", {"name": name})
+        if status not in (200, 204):
+            return False, f"Ядро не переключило сервер (код {status})"
+        # Старые соединения шли через прежний сервер — закрываем, чтобы
+        # трафик сразу пошёл через новый. Приложения переподключаются сами.
+        _clash("DELETE", "/connections")
+    except OSError as exc:
+        return False, f"Ядро не отвечает: {exc}"
+    global _conn_server
+    _conn_server = server.get("remark", "")
+    _route_state.update(name=name, backup=False)
+    vpn_engine.health.reset()
+    _log(f"Сервер переключён без переподключения: «{stripped_remark(server.get('remark', ''))}»", "ok")
+    threading.Thread(target=_recheck_route, daemon=True).start()
+    _broadcast({"type": "status", "state": "on", "server": _conn_server, "core": vpn_engine.name})
+    return True, None
+
+
+def _live_switch_state():
+    """Можно ли сейчас менять сервер: 'off' — VPN выключен (обычный выбор),
+    'live' — работает через Mihomo (смена на лету), иначе — текст отказа."""
+    state = "stopping" if _stopping else _connection.state
+    if state == "off":
+        return "off"
+    if state != "on":
+        return "Дождитесь завершения подключения или отключения"
+    if _app_settings["active_protocol"] == "wg" or not _live_servers:
+        return "Сейчас подключён WireGuard: сменить сервер на лету можно только в режиме TUN"
+    return "live"
+
+
+def stripped_remark(text):
+    return " ".join(str(text or "").split())
+
+
 # ── Ping loop ──────────────────────────────────────
 def _ping_loop(attempt, stop_event):
     while not stop_event.is_set():
@@ -1290,6 +1410,15 @@ def _ping_loop(attempt, stop_event):
             color = "red"
 
         health = None if _app_settings["active_protocol"] == "wg" else vpn_engine.health.check()
+        route = None
+        if _live_servers:
+            if health and health.get("blocked") and _route_state.get("failover"):
+                # Не ждать интервала проверки ядра: перевести трафик сразу.
+                _recheck_route()
+            try:
+                route = _current_route()
+            except OSError:
+                route = None
 
         def publish():
             global _ping_value, _ping_color
@@ -1297,13 +1426,21 @@ def _ping_loop(attempt, stop_event):
             _ping_color = color
             _broadcast({"type": "ping", "value": value, "color": color})
             if health and health.get("blocked"):
-                message = blocked_message(_conn_server or "выбранный", health, _alternative_servers())
-                _log(message, "err")
-                _broadcast({"type": "connection_health", "state": "blocked", "message": message})
-                _broadcast({"type": "operation_error", "message": message})
+                if _route_state.get("failover"):
+                    # Резерв подхватит трафик; отдельное уведомление придёт
+                    # при фактическом переключении.
+                    _log(blocked_message(_conn_server or "выбранный", health)
+                         + " Включён резерв: трафик переводится на запасной сервер.", "warn")
+                else:
+                    message = blocked_message(_conn_server or "выбранный", health, _alternative_servers())
+                    _log(message, "err")
+                    _broadcast({"type": "connection_health", "state": "blocked", "message": message})
+                    _broadcast({"type": "operation_error", "message": message})
             elif health and health.get("recovered"):
                 _log("Сервер снова принимает соединения", "ok")
                 _broadcast({"type": "connection_health", "state": "ok"})
+            if route and route[0] and (route[0], route[1]) != (_route_state["name"], _route_state["backup"]):
+                _publish_route(route)
 
         if stop_event.is_set() or not _connection.run_if_connected(
             attempt,
@@ -1776,6 +1913,15 @@ def _connect_attempt(data, generation):
                 routed_apps  = routed_exes,
                 **_tunnel_kwargs(),
             )
+            # Все серверы подписок попадают в ядро: сервер меняется на лету,
+            # а при отказе выбранного трафик уходит на запасной (engine/failover.py).
+            live = failover.apply_server_groups(
+                cfg, server, profile_state.groups,
+                failover=_app_settings.get("auto_failover", True) is True,
+                mux=_app_settings.get("mux") is True,
+            )
+            backups = next((g["proxies"] for g in cfg["proxy-groups"]
+                            if g["name"] == failover.BACKUP_GROUP), [])
         except ValueError as exc:
             # Отказ пользовательской конфигурации, а не сбой сервиса: раньше
             # он уходил безымянным HTTP 500 и не попадал в журнал вовсе.
@@ -1795,6 +1941,14 @@ def _connect_attempt(data, generation):
                 routes_note = " (индивидуальные маршруты)" if explicit_routes else ""
                 _log(f"Ядро: Mihomo {MIHOMO_VERSION}{routes_note} | транспорт: {server.get('type', 'tcp')} | Reality: {'да' if server.get('security') == 'reality' else 'нет'}", "info")
                 _log(f"Режим: TUN | маршрутизация: {mode} ({len(routed_exes)} приложений)", "info")
+                _live_servers.clear()
+                _live_servers.update(live)
+                _route_state.update(name=None, backup=False, failover=bool(backups))
+                if backups:
+                    names = ", ".join(f"«{stripped_remark(live[name].get('remark', ''))}»" for name in backups)
+                    _log(f"Резерв включён: при отказе сервера трафик перейдёт на запасной — {names}", "info")
+                else:
+                    _log("Резерв выключен или запасных серверов нет", "info")
                 if not zapret_service.running and zapret_engine._foreign_winws_running():
                     # Исключения адресов VPN-серверов пишутся только в списки
                     # собственного winws; сторонний экземпляр (служба zapret)
@@ -1930,7 +2084,9 @@ _servers_routes.init(_log=_Late("_log"), _broadcast_groups=_Late("_broadcast_gro
                      _start_subscription_update=_Late("_start_subscription_update"),
                      _start_subscription_refresh_all=_Late("_start_subscription_refresh_all"),
                      _repair_saved_routes=_Late("_repair_saved_routes"),
-                     _save_settings=_Late("_save_settings"))
+                     _save_settings=_Late("_save_settings"),
+                     _live_switch_state=_Late("_live_switch_state"),
+                     _switch_live_server=_Late("_switch_live_server"))
 app.register_blueprint(_servers_routes.bp)
 
 _wireguard_routes.init(_log=_Late("_log"), _broadcast=_Late("_broadcast"),
