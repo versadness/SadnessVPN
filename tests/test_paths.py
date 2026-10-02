@@ -8,6 +8,7 @@ from engine.paths import _frozen_data_dir, _migrate_legacy_data, data_dir
 
 
 class FrozenDataPathTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "путь Windows")
     def test_frozen_data_uses_local_appdata(self):
         path = _frozen_data_dir({"LOCALAPPDATA": r"C:\Users\Test\AppData\Local"})
 
@@ -15,6 +16,17 @@ class FrozenDataPathTests(unittest.TestCase):
             path,
             r"C:\Users\Test\AppData\Local\SadnessVPN\data",
         )
+
+    def test_linux_data_follows_xdg(self):
+        self.assertEqual(
+            _frozen_data_dir({"XDG_DATA_HOME": "/home/test/.data"}, windows=False),
+            os.path.join("/home/test/.data", "SadnessVPN", "data"),
+        )
+        with mock.patch("engine.paths.os.path.expanduser", return_value="/home/test"):
+            self.assertEqual(
+                _frozen_data_dir({}, windows=False),
+                os.path.join("/home/test", ".local", "share", "SadnessVPN", "data"),
+            )
 
     def test_data_dir_migrates_frozen_legacy_data(self):
         with tempfile.TemporaryDirectory() as root:
@@ -28,7 +40,8 @@ class FrozenDataPathTests(unittest.TestCase):
             with (
                 mock.patch("engine.paths.sys.frozen", True, create=True),
                 mock.patch("engine.paths.sys._MEIPASS", str(meipass), create=True),
-                mock.patch.dict(os.environ, {"LOCALAPPDATA": str(local_appdata)}),
+                mock.patch.dict(os.environ, {"LOCALAPPDATA": str(local_appdata),
+                                             "XDG_DATA_HOME": str(local_appdata)}),
             ):
                 result = Path(data_dir())
 

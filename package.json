@@ -1,16 +1,18 @@
 {
   "name": "sadness-vpn",
   "productName": "Sadness VPN",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Sadness Private Network — desktop client",
   "main": "electron/main.js",
   "author": "Sadness",
+  "homepage": "https://github.com/versadness/SadnessVPN",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "pack:runtime": "electron-builder --win --x64 --dir"
+    "pack:runtime": "electron-builder --win --x64 --dir",
+    "pack:linux": "electron-builder --linux --x64"
   },
   "dependencies": {
     "koffi": "^2.9.0"
@@ -52,6 +54,77 @@
         "from": "app.ico",
         "to": "app.ico"
       }
-    ]
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "pacman",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "app.png",
+      "category": "Network",
+      "executableName": "sadness-vpn",
+      "artifactName": "SadnessVPN-${version}-linux-${arch}.${ext}",
+      "synopsis": "Sadness Private Network — VPN-клиент",
+      "description": "VPN-клиент с подписками, TUN, маршрутизацией приложений и резервными серверами",
+      "maintainer": "Sadness <versadness@users.noreply.github.com>",
+      "desktop": {
+        "Name": "Sadness VPN",
+        "Comment": "Sadness Private Network",
+        "StartupWMClass": "Sadness VPN"
+      },
+      "extraResources": [
+        {
+          "from": "dist/linux-runtime/SadnessVPN",
+          "to": "runtime"
+        },
+        {
+          "from": "app.png",
+          "to": "app.png"
+        }
+      ]
+    },
+    "deb": {
+      "afterInstall": "installer/linux/after-install.sh",
+      "depends": [
+        "libcap2-bin"
+      ]
+    },
+    "rpm": {
+      "afterInstall": "installer/linux/after-install.sh",
+      "depends": [
+        "libcap"
+      ]
+    },
+    "pacman": {
+      "afterInstall": "installer/linux/after-install.sh",
+      "depends": [
+        "libcap"
+      ]
+    },
+    "appImage": {
+      "artifactName": "SadnessVPN-${version}-linux-${arch}.AppImage"
+    }
   }
 }

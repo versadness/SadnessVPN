@@ -30,15 +30,27 @@ let stopping = false;
  */
 function backendCommand() {
   if (app.isPackaged) {
+    if (process.platform !== 'win32') {
+      // Linux (AppImage, deb, rpm, pacman): пакет Python лежит в resources/runtime.
+      const executable = path.join(process.resourcesPath, 'runtime', 'SadnessVPN');
+      return { executable, args: ['--headless'], cwd: path.dirname(executable) };
+    }
     // process.resourcesPath = INSTALLDIR/electron/resources
     const executable = path.resolve(process.resourcesPath, '..', '..', 'runtime', 'SadnessVPN.exe');
     return { executable, args: ['--headless'], cwd: path.dirname(executable) };
   }
-  const candidates = [
-    path.join(PROJECT_ROOT, 'venv311', 'Scripts', 'pythonw.exe'),
-    path.join(PROJECT_ROOT, 'venv311', 'Scripts', 'python.exe'),
-  ];
-  const executable = candidates.find((candidate) => fs.existsSync(candidate)) || 'python';
+  const candidates = process.platform === 'win32'
+    ? [
+      path.join(PROJECT_ROOT, 'venv311', 'Scripts', 'pythonw.exe'),
+      path.join(PROJECT_ROOT, 'venv311', 'Scripts', 'python.exe'),
+    ]
+    : [
+      process.env.SADNESS_PYTHON || '',
+      path.join(PROJECT_ROOT, 'venv', 'bin', 'python'),
+      path.join(PROJECT_ROOT, '..', 'venv', 'bin', 'python'),
+    ].filter(Boolean);
+  const executable = candidates.find((candidate) => fs.existsSync(candidate))
+    || (process.platform === 'win32' ? 'python' : 'python3');
   return {
     executable,
     args: [path.join(PROJECT_ROOT, 'backend_main.py')],
@@ -106,16 +118,24 @@ async function start(onLog) {
   }
 
   const command = backendCommand();
-  if (command.executable !== 'python' && !fs.existsSync(command.executable)) {
+  if (!['python', 'python3'].includes(command.executable) && !fs.existsSync(command.executable)) {
     return { ok: false, error: `Не найден бэкенд: ${command.executable}` };
   }
 
+  // Путь к самому приложению — для автозапуска на Linux (engine/autostart_linux.py).
+  // У AppImage это файл .AppImage, а не временная точка монтирования.
+  const appExec = process.platform === 'win32' ? '' : (process.env.APPIMAGE || process.execPath);
   try {
     child = spawn(command.executable, command.args, {
       cwd: command.cwd,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
+      env: {
+        ...process.env,
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+        ...(app.isPackaged && appExec ? { SADNESS_APP_EXEC: appExec } : {}),
+      },
     });
   } catch (error) {
     return { ok: false, error: `Не удалось запустить backend (${command.executable}): ${error.message}` };

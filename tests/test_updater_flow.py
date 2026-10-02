@@ -10,6 +10,9 @@ from unittest.mock import Mock,patch
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding,PublicFormat
 from engine.update_manifest import canonical
+import os
+if os.name != "nt":
+    raise unittest.SkipTest("updater MSI работает только в Windows")
 from installer import updater_main as updater
 
 

@@ -121,7 +121,7 @@ def probe(server, url: str = DEFAULT_URL) -> dict:
 
     executable = bin_path("mihomo.exe" if os.name == "nt" else "mihomo")
     if not os.path.exists(executable):
-        return result(CONFIG_REJECTED, "mihomo.exe не найден в папке bin/")
+        return result(CONFIG_REJECTED, "Ядро Mihomo не найдено в папке bin/")
 
     try:
         config = _config(server, _free_port())

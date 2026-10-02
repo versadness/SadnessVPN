@@ -9,26 +9,36 @@ from engine.paths import data_dir
 
 
 def register(app, idle):
+    from engine.platform_info import LINUX_UPDATES_MESSAGE, is_windows
     manager=UpdateManager(data_dir())
+    supported=is_windows()
+
+    def unsupported():
+        # Встроенное обновление ставит MSI; на Linux новая версия — AppImage или пакет.
+        return jsonify(ok=False,unsupported=True,error=LINUX_UPDATES_MESSAGE),409
 
     @app.get('/api/updates/state')
     def update_state():
         from ui import window_control
-        return jsonify(**manager.snapshot(),ui_ready=window_control.ui_ready())
+        return jsonify(**manager.snapshot(),ui_ready=window_control.ui_ready(),supported=supported)
 
     @app.post('/api/updates/check')
     def update_check():
+        if not supported:return unsupported()
         data=request.get_json(silent=True) or {}
         return jsonify(ok=True,**manager.check(automatic=data.get('automatic') is True,channel=data.get('channel')))
 
     @app.post('/api/updates/download')
-    def update_download():return jsonify(ok=True,**manager.download())
+    def update_download():
+        if not supported:return unsupported()
+        return jsonify(ok=True,**manager.download())
 
     @app.post('/api/updates/cancel')
     def update_cancel():manager.cancel.set();return jsonify(ok=True)
 
     @app.post('/api/updates/install')
     def update_install():
+        if not supported:return unsupported()
         if not idle():return jsonify(ok=False,error='Отключите VPN и Zapret перед установкой'),409
         if manager.snapshot()['status']!='ready':return jsonify(ok=False,error='Пакет не готов'),400
         if not getattr(sys,'frozen',False):return jsonify(ok=False,error='Установка доступна в установленной версии'),400

@@ -30,6 +30,9 @@ def api_zapret_strategies():
 
 @bp.route("/api/zapret/start", methods=["POST"])
 def api_zapret_start():
+    from engine.platform_info import LINUX_ZAPRET_MESSAGE, is_windows
+    if not is_windows():
+        return jsonify({"ok": False, "error": LINUX_ZAPRET_MESSAGE}), 409
     service = deps.service
     data = request.get_json(silent=True) or {}
     strategy_id = service.canonical_strategy_id(data.get("strategy_id", "flowseal_general"))

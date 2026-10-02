@@ -135,9 +135,17 @@ function applyGlass(win, options = {}) {
   const mode = options.mode || 'clear';
   const result = { mode, backend: 'alpha', supported: true, build: BUILD, win11: IS_WIN11 };
 
-  if (process.platform !== 'win32' || win.isDestroyed()) {
+  if (win.isDestroyed()) {
     result.supported = false;
-    result.reason = 'Прозрачность окна доступна только в Windows';
+    return result;
+  }
+  if (process.platform !== 'win32') {
+    // Linux: прозрачность окна даёт композитор (KDE, GNOME); тонировку и
+    // матовые панели рисует CSS. Системного размытия за окном нет.
+    result.backend = mode === 'none' ? 'opaque' : 'alpha';
+    if (mode === 'blur' || mode === 'acrylic') {
+      result.reason = 'Размытие того, что за окном, доступно только в Windows; окно остаётся прозрачным';
+    }
     return result;
   }
 

@@ -1,3 +1,4 @@
+import os
 import hashlib
 from pathlib import Path
 import tempfile
@@ -24,6 +25,7 @@ class MsiSourceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):stage_minor_msi(source,root,package)
 
 
+@unittest.skipUnless(os.name == "nt", "MSI собирается только в Windows")
 class StaleElectronRemovalTests(unittest.TestCase):
     """3.0.6 выкинул из пакета Electron 62 МБ, которых msiexec сам не удалит."""
 

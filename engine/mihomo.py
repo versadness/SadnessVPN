@@ -261,7 +261,7 @@ class MihomoManager:
         """
         executable = self._core_path()
         if not os.path.exists(executable):
-            return False, "mihomo.exe не найден в папке bin/"
+            return False, "Ядро Mihomo не найдено в папке bin/"
         messages = []
         original = self.log_cb
         self.log_cb = lambda message, tag: messages.append(message)
@@ -285,9 +285,13 @@ class MihomoManager:
 
         Иначе первый же DNS-запрос уходит в только что созданный туннель,
         который ещё не знает адрес собственного сервера, — классическая петля.
+
+        Обязателен только выбранный сервер (первый в списке). С 3.3.0 в
+        конфигурации все серверы подписок (смена на лету и резерв), и
+        неразрешимый домен любого из них не должен срывать подключение.
         """
         hosts = config.setdefault("hosts", {})
-        for proxy in config.get("proxies", []):
+        for position, proxy in enumerate(config.get("proxies", [])):
             hostname = proxy.get("server")
             if not hostname:
                 continue
@@ -304,6 +308,10 @@ class MihomoManager:
                 )
                 hosts[hostname] = list(dict.fromkeys(item[4][0] for item in addresses))
             except OSError:
+                if position:
+                    self.log_cb(f"Адрес запасного сервера «{proxy.get('name')}» не определён — "
+                                "он будет недоступен для смены и резерва", "warn")
+                    continue
                 self.log_cb(
                     "Mihomo: не удалось определить адрес VPN-сервера до запуска TUN. "
                     "Проверьте DNS и доступность сети.",
@@ -326,9 +334,7 @@ class MihomoManager:
         executable = self._core_path()
         if not os.path.exists(executable):
             self.log_cb(
-                "mihomo.exe не найден!\n"
-                "Скачай: https://github.com/MetaCubeX/mihomo/releases\n"
-                "Файл: mihomo.exe в папку bin/",
+                "Ядро Mihomo не найдено в папке bin/ — переустановите приложение.",
                 "err",
             )
             return False
@@ -338,14 +344,24 @@ class MihomoManager:
 
         has_tun = self._has_tun(config)
         if has_tun:
-            wintun = bin_path("wintun.dll")
-            if not os.path.exists(wintun):
-                self.log_cb(
-                    "wintun.dll не найден!\n"
-                    "Скачай: https://wintun.net -> wintun.dll в папку bin/",
-                    "err",
-                )
-                return False
+            if os.name == "nt":
+                wintun = bin_path("wintun.dll")
+                if not os.path.exists(wintun):
+                    self.log_cb(
+                        "wintun.dll не найден!\n"
+                        "Скачай: https://wintun.net -> wintun.dll в папку bin/",
+                        "err",
+                    )
+                    return False
+            else:
+                # Linux: TUN поднимает ядро с правами CAP_NET_ADMIN. Пароль
+                # администратора спрашивается один раз (engine/linux_core.py).
+                from engine import linux_core
+                try:
+                    executable = linux_core.ready_core(executable, self.log_cb)
+                except linux_core.CoreSetupError as exc:
+                    self.log_cb(str(exc), "err")
+                    return False
             if not self._prepare_tun_addresses(config):
                 return False
 
@@ -385,7 +401,8 @@ class MihomoManager:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                cwd=os.path.dirname(executable),  # wintun.dll должен быть рядом
+                # Windows: wintun.dll должен быть рядом с ядром.
+                cwd=os.path.dirname(executable) if os.name == "nt" else self._runtime_dir(),
                 creationflags=subprocess.CREATE_NO_WINDOW
                     if platform.system() == "Windows" else 0,
             )
@@ -398,7 +415,7 @@ class MihomoManager:
             time.sleep(0.8)
             if process.poll() is not None:
                 out = process.stdout.read()
-                self.log_cb("mihomo.exe упал сразу после запуска!", "err")
+                self.log_cb("Ядро Mihomo завершилось сразу после запуска!", "err")
                 for line in (out or "").splitlines():
                     if line.strip():
                         self.log_cb(f"  {line}", "err")

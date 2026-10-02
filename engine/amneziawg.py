@@ -216,7 +216,8 @@ class AmneziaWGManager:
             manager = self._manager_path()
             awg = self._awg_path()
             if platform.system() != "Windows":
-                self.log_cb("AmneziaWG поддерживается только в Windows", "err")
+                from engine.platform_info import LINUX_AWG_MESSAGE
+                self.log_cb(LINUX_AWG_MESSAGE, "err")
                 return False
             missing = [path for path in (manager, awg) if not os.path.isfile(path)]
             if missing:

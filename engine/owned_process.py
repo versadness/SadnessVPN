@@ -23,7 +23,9 @@ def _record_path(name: str) -> str:
 
 
 def _same_path(first: str, second: str) -> bool:
-    return os.path.normcase(os.path.abspath(first)) == os.path.normcase(os.path.abspath(second))
+    # realpath: на Linux процесс сообщает настоящий путь, а записан мог быть
+    # путь через символическую ссылку (например, python из venv).
+    return os.path.normcase(os.path.realpath(first)) == os.path.normcase(os.path.realpath(second))
 
 
 def remember(name: str, pid: int) -> None:
@@ -44,8 +46,13 @@ def forget(name: str) -> None:
         pass
 
 
-def reap(name: str, expected_exe: str) -> bool:
-    """Остановить процесс, оставшийся от прошлого запуска. True — был остановлен."""
+def reap(name: str, expected_exe) -> bool:
+    """Остановить процесс, оставшийся от прошлого запуска. True — был остановлен.
+
+    expected_exe — путь или несколько путей: на Linux ядро запускается либо из
+    пакета, либо из копии с правами в /usr/local/libexec.
+    """
+    expected = [expected_exe] if isinstance(expected_exe, str) else list(expected_exe)
     path = _record_path(name)
     try:
         with open(path, encoding="utf-8") as handle:
@@ -59,7 +66,7 @@ def reap(name: str, expected_exe: str) -> bool:
         process = psutil.Process(pid)
         matches = (abs(process.create_time() - created) < 1.0
                    and _same_path(process.exe(), exe)
-                   and _same_path(exe, expected_exe))
+                   and any(_same_path(exe, item) for item in expected))
         if not matches:
             return False
         process.terminate()

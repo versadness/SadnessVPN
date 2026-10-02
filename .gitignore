@@ -45,3 +45,6 @@ desktop.ini
 # Electron
 node_modules/
 dist-electron/
+
+# Linux-сборка: ядро Mihomo и geo-базы для Linux (скачиваются отдельно)
+bin-linux/

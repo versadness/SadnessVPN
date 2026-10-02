@@ -15,8 +15,11 @@ def initialize():
     global _stream, _path
     if _stream is not None:
         return _path
-    candidates = [os.path.join(os.environ.get("LOCALAPPDATA", tempfile.gettempdir()),
-                               "SadnessVPN", "data", "diagnostics"),
+    if os.name == "nt":
+        root = os.environ.get("LOCALAPPDATA", tempfile.gettempdir())
+    else:
+        root = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    candidates = [os.path.join(root, "SadnessVPN", "data", "diagnostics"),
                   os.path.join(tempfile.gettempdir(), "SadnessVPN-diagnostics")]
     for directory in candidates:
         try:

@@ -7,7 +7,7 @@ import platform
 
 APP_NAME = "Sadness VPN"
 APP_SLUG = "SadnessVPN"
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.4.0"
 
 
 def windows_version() -> str:

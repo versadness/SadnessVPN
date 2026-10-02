@@ -48,9 +48,20 @@ def _base_dir() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _bin_dir() -> str:
+    base = _base_dir()
+    # Исходники держат двоичные файлы Linux отдельно (bin-linux/: mihomo для
+    # Linux, geo-базы). В собранном пакете они уже лежат в bin/.
+    if os.name != "nt" and not getattr(sys, "frozen", False):
+        linux = os.path.join(base, "bin-linux")
+        if os.path.isdir(linux):
+            return linux
+    return os.path.join(base, "bin")
+
+
 def bin_path(filename: str) -> str:
     """Возвращает полный путь к файлу в папке bin/."""
-    return os.path.join(_base_dir(), "bin", filename)
+    return os.path.join(_bin_dir(), filename)
 
 
 def _development_data_dir() -> str:
@@ -62,12 +73,25 @@ def _development_data_dir() -> str:
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 
-def _frozen_data_dir(environ=None) -> str:
+def app_root_dir(environ=None, windows=None) -> str:
+    """Корень данных приложения в профиле пользователя.
+
+    Windows — %LOCALAPPDATA%\\SadnessVPN; Linux — $XDG_DATA_HOME/SadnessVPN
+    (по умолчанию ~/.local/share/SadnessVPN).
+    """
     env = os.environ if environ is None else environ
-    local_appdata = env.get("LOCALAPPDATA")
-    if not local_appdata:
-        local_appdata = os.path.join(os.path.expanduser("~"), "AppData", "Local")
-    return os.path.join(local_appdata, _APP_DATA_DIRNAME, "data")
+    windows = (os.name == "nt") if windows is None else windows
+    if windows:
+        local_appdata = env.get("LOCALAPPDATA")
+        if not local_appdata:
+            local_appdata = os.path.join(os.path.expanduser("~"), "AppData", "Local")
+        return os.path.join(local_appdata, _APP_DATA_DIRNAME)
+    xdg = env.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(xdg, _APP_DATA_DIRNAME)
+
+
+def _frozen_data_dir(environ=None, windows=None) -> str:
+    return os.path.join(app_root_dir(environ, windows), "data")
 
 
 def _legacy_data_dirs() -> list:

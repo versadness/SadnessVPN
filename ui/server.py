@@ -47,6 +47,7 @@ from engine.apps import load_apps, save_apps, get_running_processes, POPULAR_APP
 from engine.hwid import generate_hwid
 from engine import autostart
 from engine import failover
+from engine import platform_info
 from ui import profile_state
 from ui.zapret_service import ZapretService
 from engine.tg_proxy import TgProxyManager
@@ -1085,7 +1086,12 @@ def _recover_after_crash():
     if not vpn_engine._port_free(45678):
         return
     from engine import owned_process
-    for name, executable, label in (("mihomo", vpn_engine._core_path(), "Mihomo"),
+    mihomo_paths = (vpn_engine._core_path(),)
+    if os.name != "nt":
+        # На Linux ядро работает из пакета или из копии с правами (engine/linux_core.py).
+        from engine.linux_core import INSTALLED_CORE
+        mihomo_paths += (INSTALLED_CORE,)
+    for name, executable, label in (("mihomo", mihomo_paths, "Mihomo"),
                                     ("winws", zapret_engine._winws_path(), "winws")):
         if owned_process.reap(name, executable):
             _log(f"{label} остался от прошлого запуска после сбоя и остановлен", "warn")
@@ -1269,6 +1275,7 @@ def ws_handler(ws):
         "zapretSelected"  : _app_settings.get("zapret_strategy"),
         "tgProxy"         : _tg_proxy_routes.status(),
         "appVersion"       : APP_VERSION,
+        "platform"         : platform_info.features(),
         "engineVersion"    : MIHOMO_VERSION,
     }))
     try:

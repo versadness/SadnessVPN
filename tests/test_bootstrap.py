@@ -1,3 +1,4 @@
+import os
 import io
 from pathlib import Path
 import tempfile
@@ -27,6 +28,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(order, ["logs", "import"])
         self.assertIsInstance(report.call_args.args[0], ImportError)
 
+    @unittest.skipUnless(os.name == "nt", "окно ошибки Windows")
     def test_error_dialog_has_cause_and_actual_path(self):
         stream = io.StringIO()
         with patch.object(diag, "initialize", return_value=r"C:\logs\startup-python.log"), patch.object(diag, "_stream", stream), patch.object(diag.ctypes.windll.user32, "MessageBoxW", return_value=7) as box:
@@ -35,6 +37,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn(r"C:\logs\startup-python.log", box.call_args.args[1])
         self.assertIn("renderer failed", box.call_args.args[1])
 
+    @unittest.skipUnless(os.name == "nt", "событие лаунчера Windows")
     def test_foreign_event_names_are_not_opened(self):
         with patch.object(diag.sys, "argv", ["app", "--startup-event=Global\\OtherApp"]), patch.object(diag.ctypes, "WinDLL") as dll:
             diag.notify_ready()

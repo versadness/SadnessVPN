@@ -1,3 +1,4 @@
+import os
 """HTTP-контракт игрового фильтра: 400 на ввод, 409 на живой Zapret, 500 на запись."""
 import unittest
 from unittest import mock
@@ -77,6 +78,7 @@ class GameFilterApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(app_state.app_settings["zapret_game_filter"]["mode"], "off")
 
+    @unittest.skipUnless(os.name == "nt", "Zapret только в Windows")
     def test_starting_zapret_passes_the_stored_filter_to_the_engine(self):
         app_state.app_settings["zapret_game_filter"] = {"mode": "udp", "udp_start": 3074,
                                                         "udp_end": 3079, "ipset": "list"}

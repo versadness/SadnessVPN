@@ -136,3 +136,10 @@ def ensure_current() -> bool:
         return False
     enable()
     return True
+
+
+if sys.platform != "win32":
+    # Linux: автозапуск через ~/.config/autostart (engine/autostart_linux.py).
+    from engine.autostart_linux import (  # noqa: E402,F811
+        disable, enable, enabled, ensure_current, target_path,
+    )

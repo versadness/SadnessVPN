@@ -15,6 +15,11 @@ let tray = null;
  */
 function findIcon() {
   const candidates = [
+    // Linux не читает ICO: там значок трея — PNG.
+    ...(process.platform === 'win32' ? [] : [
+      path.join(resourceRoot(), 'app.png'),
+      path.join(__dirname, '..', '..', 'app.png'),
+    ]),
     path.join(resourceRoot(), 'app.ico'),
     path.join(__dirname, '..', '..', 'app.ico'),
     // Установленная раскладка: рядом с Electron лежит пакет Python.

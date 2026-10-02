@@ -1,3 +1,4 @@
+import os
 import base64
 import copy
 import hashlib
@@ -123,6 +124,7 @@ class UpdateTests(unittest.TestCase):
             manager._check()
         self.assertEqual(manager.snapshot()['status'],'unconfigured')
 
+    @unittest.skipUnless(os.name == "nt", "реестр Windows")
     def test_failure_limit_persists_without_counting_client_restarts(self):
         from installer.updater_main import record_result
         with tempfile.TemporaryDirectory() as d, patch.dict('os.environ', {'ProgramData': d}):
@@ -143,6 +145,7 @@ class UpdateTests(unittest.TestCase):
             self.assertFalse(manager.snapshot()['suppress_notice'])
             self.assertEqual(manager.snapshot()['last_update']['failure_count'], 0)
 
+    @unittest.skipUnless(os.name == "nt", "реестр Windows")
     def test_failed_new_version_starts_its_own_counter(self):
         from installer.updater_main import record_result
         with tempfile.TemporaryDirectory() as d:

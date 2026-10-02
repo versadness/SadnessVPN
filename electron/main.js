@@ -15,7 +15,7 @@ const windowState = require('./lib/window-state');
 const tray = require('./lib/tray');
 const { applyGlass, IS_WIN11, BUILD } = require('./lib/glass');
 const startup = require('./lib/startup-event');
-const { PROJECT_ROOT, resourceRoot } = require('./lib/paths');
+const { PROJECT_ROOT, resourceRoot, iconPath } = require('./lib/paths');
 
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 
@@ -34,6 +34,14 @@ if (process.platform === 'win32' && !IS_WIN11) {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 }
 app.setAppUserModelId('SadnessVPN.App');
+// AppImage: в Ubuntu 23.10+ запрещены непривилегированные user namespaces, и
+// песочница Chromium не даёт приложению запуститься. Окно показывает только
+// локальную страницу бэкенда (keepLocal ниже не пускает чужие адреса), поэтому
+// для AppImage песочница рендерера отключается. Пакеты deb/rpm ставят
+// chrome-sandbox с нужными правами и этого не требуют.
+if (process.platform === 'linux' && process.env.APPIMAGE) {
+  app.commandLine.appendSwitch('no-sandbox');
+}
 
 function readRendererAsset(relative) {
   try {
@@ -70,7 +78,7 @@ function createWindow({ hidden = false } = {}) {
     backgroundColor: '#00000000',
     hasShadow: false,
     titleBarStyle: 'hidden',
-    icon: path.join(resourceRoot(), 'app.ico'),
+    icon: iconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

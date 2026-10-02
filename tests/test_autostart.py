@@ -39,6 +39,7 @@ class AutostartCommandTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     autostart._command()
 
+    @unittest.skipUnless(os.name == "nt", "планировщик задач Windows")
     def test_legacy_task_pointing_at_backend_is_recreated(self):
         with mock.patch.object(autostart, "_command", return_value=(r"C:\App\SadnessVPN.exe", ["--autostart"])), \
                 mock.patch.object(autostart, "_read_task",
