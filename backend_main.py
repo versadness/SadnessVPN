@@ -12,6 +12,11 @@ import sys
 import threading
 import time
 
+# До любых HTTPS-запросов: на Fedora, Bazzite и Arch встроенный OpenSSL
+# иначе не находит корневые сертификаты (engine/linux_tls.py).
+from engine import linux_tls
+linux_tls.configure()
+
 from flask import jsonify
 
 from engine import autostart

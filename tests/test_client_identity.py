@@ -7,6 +7,7 @@ from engine.subscriptions import SubscriptionError
 
 
 class ClientIdentityTests(unittest.TestCase):
+    @mock.patch.object(app_meta.sys, "platform", "win32")
     @mock.patch.object(app_meta.platform, "machine", return_value="AMD64")
     @mock.patch.object(app_meta.platform, "version", return_value="10.0.26200")
     def test_subscription_user_agent_identifies_the_real_client(self, _version, _machine):
@@ -19,6 +20,22 @@ class ClientIdentityTests(unittest.TestCase):
         )
         self.assertNotIn("Clash", user_agent)
 
+    @mock.patch.object(app_meta.sys, "platform", "linux")
+    @mock.patch.object(app_meta.platform, "machine", return_value="x86_64")
+    @mock.patch.object(app_meta.platform, "release", return_value="6.11.4-301.fc41.x86_64")
+    def test_linux_client_reports_linux_not_windows(self, _release, _machine):
+        headers = app_meta.subscription_headers()
+
+        self.assertEqual(
+            headers["User-Agent"],
+            f"SadnessVPN/v{app_meta.APP_VERSION} platform/linux "
+            "platform-version/6.11.4-301.fc41.x86_64 arch/amd64",
+        )
+        self.assertEqual(headers["X-Platform"], "linux")
+        self.assertEqual(headers["X-Device-OS"], "Linux")
+        self.assertEqual(headers["X-Ver-OS"], "6.11.4-301.fc41.x86_64")
+
+    @mock.patch.object(app_meta.sys, "platform", "win32")
     def test_subscription_headers_include_hwid_and_client_metadata(self):
         headers = app_meta.subscription_headers("device-id")
 

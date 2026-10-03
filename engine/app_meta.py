@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import platform
+import sys
 
 
 APP_NAME = "Sadness VPN"
 APP_SLUG = "SadnessVPN"
-APP_VERSION = "3.4.0"
+APP_VERSION = "3.4.1"
 
 
 def windows_version() -> str:
@@ -32,25 +33,37 @@ def architecture() -> str:
     }.get(machine, machine or "unknown")
 
 
+def _os_name() -> str:
+    return "windows" if sys.platform == "win32" else "linux"
+
+
+def os_version() -> str:
+    """Версия ОС для панелей подписок: сборка Windows или версия ядра Linux."""
+    if _os_name() == "windows":
+        return windows_version()
+    return platform.release().strip() or "unknown"
+
+
 def subscription_user_agent() -> str:
     """Identify the real client; do not force a provider's Clash response template."""
     return (
         f"{APP_SLUG}/v{APP_VERSION} "
-        f"platform/windows platform-version/{windows_version()} "
+        f"platform/{_os_name()} platform-version/{os_version()} "
         f"arch/{architecture()}"
     )
 
 
 def subscription_headers(hwid: str = "") -> dict[str, str]:
+    name = _os_name()
     headers = {
         "User-Agent": subscription_user_agent(),
         "Accept": "*/*",
         "X-Client-Name": APP_NAME,
         "X-Client-Version": APP_VERSION,
-        "X-Platform": "windows",
-        "X-Platform-Version": windows_version(),
-        "X-Device-OS": "Windows",
-        "X-Ver-OS": windows_version(),
+        "X-Platform": name,
+        "X-Platform-Version": os_version(),
+        "X-Device-OS": name.capitalize(),
+        "X-Ver-OS": os_version(),
         "X-Device-Model": "PC",
     }
     if hwid:
