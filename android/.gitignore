@@ -12,3 +12,5 @@ app/src/main/jniLibs/
 *.jks
 *.keystore
 signing.properties
+# Наборы правил скачиваются tools/fetch_rules.sh.
+app/src/main/assets/rules/

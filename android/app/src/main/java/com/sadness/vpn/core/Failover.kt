@@ -98,7 +98,7 @@ object Failover {
      */
     @Suppress("UNCHECKED_CAST")
     fun applyServerGroups(config: MutableMap<String, Any?>, selected: Server, groups: List<Group>,
-                          failover: Boolean = true, mux: Boolean = false,
+                          failover: Boolean = true, mux: Boolean = false, autoBest: Boolean = false,
                           resolve: (String) -> Set<String> = ::defaultResolve): LinkedHashMap<String, Server> {
         val proxies = config["proxies"] as MutableList<Any?>
         val main = proxies.first { (it as Map<String, Any?>)["name"] == MAIN_GROUP } as MutableMap<String, Any?>
@@ -116,6 +116,18 @@ object Failover {
             }
         }
         val manual = listOf(mainName) + live.keys.filter { it != mainName }
+        if (autoBest) {
+            // «Лучший сервер»: ядро само держит самый быстрый сервер подписки и
+            // уходит с упавшего — отдельный резерв не нужен.
+            val home = groups.firstOrNull { g -> g.servers.any { it === selected } }?.servers.orEmpty()
+            val candidates = home.map { proxyName(it) }.filter { it in live }.ifEmpty { listOf(mainName) }
+            config["proxy-groups"] = mutableListOf<Any?>(
+                linkedMapOf("name" to MANUAL_GROUP, "type" to "url-test", "proxies" to candidates,
+                    "url" to HEALTH_URL, "interval" to 120, "tolerance" to 50, "timeout" to 5000, "lazy" to false),
+                linkedMapOf("name" to MAIN_GROUP, "type" to "select", "proxies" to listOf(MANUAL_GROUP)),
+            )
+            return live
+        }
         val groupsConfig = mutableListOf<Any?>(linkedMapOf("name" to MANUAL_GROUP, "type" to "select", "proxies" to manual))
         val backups = if (failover) pickBackups(selected, groups, resolve = resolve).map { proxyName(it) } else emptyList()
         if (backups.isNotEmpty()) {

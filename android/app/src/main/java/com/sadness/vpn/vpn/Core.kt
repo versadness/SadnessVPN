@@ -17,6 +17,9 @@ class Core private constructor(
     /** Есть ли у выбранного сервера запасные (группа backup в ядре). */
     val hasBackup: Boolean,
     private val log: File,
+    /** Внутренний вход для проверки соединения (только при туннеле). */
+    val check: MihomoConfig.CheckProxy? = null,
+    val autoBest: Boolean = false,
 ) {
     fun alive() = CoreLauncher.alive(pid)
 
@@ -33,14 +36,28 @@ class Core private constructor(
          * Запустить ядро. tunFd < 0 — режим проверки серверов без туннеля.
          * Бросает IllegalStateException с понятной причиной.
          */
+        fun newCheckProxy() = MihomoConfig.CheckProxy(freePort(), "check",
+            ByteArray(16).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) })
+
+        /** Наборы правил из assets → rules/ рядом с конфигом ядра (если изменились). */
+        private fun copyRules(context: Context, dir: File) {
+            val target = File(dir, "rules").apply { mkdirs() }
+            for (name in MihomoConfig.RULE_FILES) {
+                val bytes = runCatching { context.assets.open("rules/$name.mrs").use { it.readBytes() } }.getOrNull() ?: continue
+                val file = File(target, "$name.mrs")
+                if (!file.isFile || file.length() != bytes.size.toLong()) file.writeBytes(bytes)
+            }
+        }
+
         fun start(context: Context, selected: Server, groups: List<Failover.Group>, settings: MihomoConfig.Settings,
-                  failover: Boolean, tunFd: Int, tag: String): Core {
+                  failover: Boolean, tunFd: Int, tag: String, autoBest: Boolean = false): Core {
             val dir = File(context.filesDir, "core-$tag").apply { mkdirs() }
+            copyRules(context, dir)
             val log = File(context.cacheDir, "core-$tag.log")
             val port = freePort()
             val secret = ByteArray(24).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
             val config = MihomoConfig.assemble(MihomoConfig.proxy(selected), settings, "127.0.0.1:$port", secret, tunFd)
-            val live = Failover.applyServerGroups(config, selected, groups, failover = failover, mux = settings.mux)
+            val live = Failover.applyServerGroups(config, selected, groups, failover = failover, mux = settings.mux, autoBest = autoBest)
             val configFile = File(dir, "config.json")
             configFile.writeText(Json.encode(config))
             configFile.setReadable(false, false); configFile.setReadable(true, true)
@@ -57,7 +74,7 @@ class Core private constructor(
                 }
                 if (api.ready()) {
                     val backup = (config["proxy-groups"] as? List<*>).orEmpty().any { (it as? Map<*, *>)?.get("name") == Failover.BACKUP_GROUP }
-                    return Core(pid, api, live, backup, log)
+                    return Core(pid, api, live, backup || autoBest, log, settings.checkProxy?.takeIf { tunFd >= 0 }, autoBest)
                 }
                 Thread.sleep(100)
             }

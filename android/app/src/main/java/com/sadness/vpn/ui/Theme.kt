@@ -1,46 +1,59 @@
 package com.sadness.vpn.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-/** Палитра десктопной версии (ui/static/css/redesign.css). */
+/**
+ * Палитра десктопной версии (ui/static/css/redesign.css) и её светлый вариант.
+ * Цвета читаются из состояния Compose — смена темы перерисовывает интерфейс сразу.
+ */
 object Palette {
-    val Bg = Color(0xFF080A0F)
-    val Surface = Color(0xFF181C26)
-    val Surface2 = Color(0xFF1F2430)
-    val Field = Color(0xFF151922)
-    val Border = Color(0x14FFFFFF)
-    val Text = Color(0xFFF5F6FA)
-    val Text2 = Color(0xFFAEB4C3)
-    val Text3 = Color(0xFF9199AD)
-    val Accent = Color(0xFF45D6A1)
-    val AccentSoft = Color(0x1A45D6A1)
-    val Warn = Color(0xFFF2BD62)
-    val Danger = Color(0xFFFF6F7D)
-    val Purple = Color(0xFF8B7CFF)
-    val Track = Color(0xFF2A3040)
+    /** "dark" | "light" | "system". */
+    var mode by mutableStateOf("dark")
+    /** Тёмная ли сейчас системная тема (обновляет SadnessTheme). */
+    var systemDark by mutableStateOf(true)
+    val dark: Boolean get() = mode == "dark" || (mode == "system" && systemDark)
+
+    fun apply(theme: String) { mode = theme }
+
+    private fun pick(dark: Long, light: Long) = Color(if (this.dark) dark else light)
+
+    val Bg get() = pick(0xFF080A0F, 0xFFF4F6F9)
+    val Surface get() = pick(0xFF181C26, 0xFFFFFFFF)
+    val Surface2 get() = pick(0xFF1F2430, 0xFFEEF1F5)
+    val Field get() = pick(0xFF151922, 0xFFE9ECF1)
+    val Border get() = pick(0x14FFFFFF, 0x1F0B1220)
+    val Text get() = pick(0xFFF5F6FA, 0xFF141821)
+    val Text2 get() = pick(0xFFAEB4C3, 0xFF454D5E)
+    val Text3 get() = pick(0xFF9199AD, 0xFF687083)
+    val Accent get() = pick(0xFF45D6A1, 0xFF13976D)
+    val AccentSoft get() = pick(0x1A45D6A1, 0x1F13976D)
+    val Warn get() = pick(0xFFF2BD62, 0xFFB67608)
+    val Danger get() = pick(0xFFFF6F7D, 0xFFD32F45)
+    val Purple get() = pick(0xFF8B7CFF, 0xFF6B5CE6)
+    val Track get() = pick(0xFF2A3040, 0xFFD3D8E1)
 }
 
 @Composable
 fun SadnessTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = Palette.Accent,
-            onPrimary = Palette.Bg,
-            secondary = Palette.Purple,
-            background = Palette.Bg,
-            onBackground = Palette.Text,
-            surface = Palette.Surface,
-            onSurface = Palette.Text,
-            surfaceVariant = Palette.Surface2,
-            onSurfaceVariant = Palette.Text2,
-            outline = Palette.Border,
-            error = Palette.Danger,
-        ),
-        content = content,
+    Palette.systemDark = isSystemInDarkTheme()
+    val scheme = if (Palette.dark) darkColorScheme(
+        primary = Palette.Accent, onPrimary = Palette.Bg, secondary = Palette.Purple,
+        background = Palette.Bg, onBackground = Palette.Text, surface = Palette.Surface, onSurface = Palette.Text,
+        surfaceVariant = Palette.Surface2, onSurfaceVariant = Palette.Text2, outline = Palette.Border, error = Palette.Danger,
+    ) else lightColorScheme(
+        primary = Palette.Accent, onPrimary = Color.White, secondary = Palette.Purple,
+        background = Palette.Bg, onBackground = Palette.Text, surface = Palette.Surface, onSurface = Palette.Text,
+        surfaceVariant = Palette.Surface2, onSurfaceVariant = Palette.Text2, outline = Palette.Border, error = Palette.Danger,
     )
+    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 fun pingColor(ms: Int?): Color = when {
@@ -52,12 +65,12 @@ fun pingColor(ms: Int?): Color = when {
 
 fun formatBytes(bytes: Long): String {
     fun trim(value: Double, digits: Int) = "%.${digits}f".format(java.util.Locale.ROOT, value)
-        .let { if ('.' in it) it.trimEnd('0').trimEnd('.') else it }.replace('.', ',')
+        .let { if ('.' in it) it.trimEnd('0').trimEnd('.') else it }.replace('.', if (L.lang == "en") '.' else ',')
     return when {
-        bytes < 1024 -> "$bytes Б"
-        bytes < 1024L * 1024 -> trim(bytes / 1024.0, 0) + " КБ"
-        bytes < 1024L * 1024 * 1024 -> trim(bytes / 1024.0 / 1024, 1) + " МБ"
-        else -> trim(bytes / 1024.0 / 1024 / 1024, 2) + " ГБ"
+        bytes < 1024 -> "$bytes " + L.t("Б")
+        bytes < 1024L * 1024 -> trim(bytes / 1024.0, 0) + " " + L.t("КБ")
+        bytes < 1024L * 1024 * 1024 -> trim(bytes / 1024.0 / 1024, 1) + " " + L.t("МБ")
+        else -> trim(bytes / 1024.0 / 1024 / 1024, 2) + " " + L.t("ГБ")
     }
 }
 

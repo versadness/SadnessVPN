@@ -27,7 +27,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,26 +45,41 @@ import com.sadness.vpn.vpn.ConnState
 @Composable
 fun ServersScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier, onOpenSubscriptions: () -> Unit) {
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
+    var favoritesOnly by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val s = ui.data.settings
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Серверы", fontSize = 22.sp, fontWeight = FontWeight.Medium, color = Palette.Text)
-                Text(if (ui.data.settings.pingMode == "tcp") "Проверка: TCP (быстрая)" else "Проверка: HTTP через сервер",
+                Text(L.t("Серверы"), fontSize = 22.sp, fontWeight = FontWeight.Medium, color = Palette.Text)
+                Text(if (s.pingMode == "tcp") L.t("Проверка: TCP (быстрая)") else L.t("Проверка: HTTP через сервер"),
                     color = Palette.Text3, fontSize = 12.sp)
             }
             if (ui.pinging) {
                 CircularProgressIndicator(Modifier.size(20.dp), color = Palette.Accent, strokeWidth = 2.dp)
                 Spacer(Modifier.width(14.dp))
             } else {
-                IconButton(onClick = model::pingAll) { Icon(Icons.Outlined.Bolt, "Проверить все серверы", tint = Palette.Text2) }
+                IconButton(onClick = model::pingAll) { Icon(Icons.Outlined.Bolt, L.t("Проверить все серверы"), tint = Palette.Text2) }
+            }
+        }
+        if (ui.data.groups.isNotEmpty()) {
+            CardBox {
+                ToggleRow(L.t("Подключаться к лучшему"), L.t("Самый быстрый сервер выбранной подписки; при сбое — следующий"), s.autoBest) { v ->
+                    model.updateSettings { it.copy(autoBest = v) }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(L.t("По пингу"), s.sortMode == "ping") { model.updateSettingsQuiet { it.copy(sortMode = "ping") } }
+                Chip(L.t("По порядку"), s.sortMode == "order") { model.updateSettingsQuiet { it.copy(sortMode = "order") } }
+                Chip("★ " + L.t("Избранные"), favoritesOnly) { favoritesOnly = !favoritesOnly }
+                Chip(L.t("Скрыть нерабочие"), s.hideDead) { model.updateSettingsQuiet { it.copy(hideDead = !it.hideDead) } }
             }
         }
         if (ui.data.groups.isEmpty()) {
             Panel(Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Серверов пока нет", color = Palette.Text, fontWeight = FontWeight.Medium)
-                    Text("Серверы появятся, когда вы добавите подписку.", color = Palette.Text2, fontSize = 13.sp)
-                    TextButton(onClick = onOpenSubscriptions) { Text("Перейти к подпискам", color = Palette.Accent) }
+                    Text(L.t("Серверов пока нет"), color = Palette.Text, fontWeight = FontWeight.Medium)
+                    Text(L.t("Серверы появятся, когда вы добавите подписку."), color = Palette.Text2, fontSize = 13.sp)
+                    TextButton(onClick = onOpenSubscriptions) { Text(L.t("Перейти к подпискам"), color = Palette.Accent) }
                 }
             }
         }
@@ -74,11 +91,16 @@ fun ServersScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifi
                         onToggle = { expanded[group.id] = !open }, onRefresh = { model.refresh(group.id) })
                 }
                 if (open) {
-                    items(group.servers, key = { "s-" + group.id + it["ui_id"] }) { server ->
+                    var list = group.servers
+                    if (favoritesOnly) list = list.filter { it["ui_id"].toString() in s.favorites }
+                    if (s.hideDead) list = list.filter { (ui.pings[it["ui_id"].toString()] ?: 0) >= 0 }
+                    if (s.sortMode == "ping") list = list.sortedBy { ui.pings[it["ui_id"].toString()]?.takeIf { p -> p >= 0 } ?: Int.MAX_VALUE }
+                    items(list, key = { "s-" + group.id + it["ui_id"] }) { server ->
                         val id = server["ui_id"].toString()
                         val selected = group.id == ui.data.selectedGroup && id == ui.data.selectedServer
-                        val active = vpn.onBackup && server["remark"] == vpn.routeRemark
-                        ServerRow(server, selected, active, ui.pings[id]) { model.select(group.id, id) }
+                        val active = (vpn.onBackup || s.autoBest) && vpn.status == com.sadness.vpn.vpn.Status.ON && server["remark"] == vpn.routeRemark
+                        ServerRow(server, selected, active, ui.pings[id], favorite = id in s.favorites,
+                            onFavorite = { model.toggleFavorite(id) }) { model.select(group.id, id) }
                     }
                 }
             }
@@ -92,18 +114,18 @@ private fun GroupHeader(group: Group, busy: Boolean, open: Boolean, onToggle: ()
     Panel(Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(group.name.ifEmpty { "Подписка" }, color = Palette.Text, fontWeight = FontWeight.Medium, maxLines = 1)
-                Text("${group.servers.size} серв.", color = Palette.Text3, fontSize = 12.sp)
+                Text(group.name.ifEmpty { L.t("Подписка") }, color = Palette.Text, fontWeight = FontWeight.Medium, maxLines = 1)
+                Text("${group.servers.size} " + L.t("серв."), color = Palette.Text3, fontSize = 12.sp)
             }
             if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = Palette.Accent, strokeWidth = 2.dp)
-            else IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, "Обновить", tint = Palette.Text3) }
+            else if (group.url.isNotEmpty()) IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, L.t("Обновить"), tint = Palette.Text3) }
             Icon(if (open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, tint = Palette.Text3)
         }
     }
 }
 
 @Composable
-private fun ServerRow(server: Server, selected: Boolean, active: Boolean, ping: Int?, onClick: () -> Unit) {
+private fun ServerRow(server: Server, selected: Boolean, active: Boolean, ping: Int?, favorite: Boolean, onFavorite: () -> Unit, onClick: () -> Unit) {
     val remark = server["remark"].toString()
     val shape = RoundedCornerShape(12.dp)
     Row(
@@ -117,9 +139,15 @@ private fun ServerRow(server: Server, selected: Boolean, active: Boolean, ping: 
         Column(Modifier.weight(1f)) {
             Text(cleanRemark(remark), color = Palette.Text, maxLines = 1)
             val protocol = server["protocol"]?.toString().orEmpty().ifEmpty { "vless" }
-            val label = if (protocol == "hysteria2") "HY2" else protocol.uppercase() + " · " + Failover.transport(server).uppercase()
-            Text(label + if (active) " · сейчас через него" else "", color = if (active) Palette.Warn else Palette.Text3, fontSize = 11.sp)
+            val label = when {
+                protocol == "hysteria2" -> "HY2"
+                protocol == "wireguard" -> if (server["awg"] != null) "AmneziaWG" else "WireGuard"
+                else -> protocol.uppercase() + " · " + Failover.transport(server).uppercase()
+            }
+            Text(label + if (active) " · " + L.t("сейчас через него") else "", color = if (active) Palette.Warn else Palette.Text3, fontSize = 11.sp)
         }
+        Text(if (favorite) "★" else "☆", color = if (favorite) Palette.Warn else Palette.Text3, fontSize = 18.sp,
+            modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onFavorite).padding(horizontal = 8.dp, vertical = 2.dp))
         Text(when { ping == null -> ""; ping < 0 -> "—"; else -> "$ping" }, color = pingColor(ping), fontSize = 14.sp)
     }
 }

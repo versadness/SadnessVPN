@@ -16,13 +16,13 @@ class ConfigTest {
 
     @Test fun socksIsOffByDefault() {
         val c = config(MihomoConfig.Settings())
-        assertFalse("socks-port" in c)
+        assertFalse("mixed-port" in c)
         assertFalse("authentication" in c)
     }
 
     @Test fun socksAlwaysRequiresPasswordEvenFromLocalhost() {
         val c = config(MihomoConfig.Settings(socks = MihomoConfig.Socks(7897, "svpn", "pw", lan = false)))
-        assertEquals(7897, c["socks-port"])
+        assertEquals(7897, c["mixed-port"])
         assertEquals("127.0.0.1", c["bind-address"])
         assertEquals(false, c["allow-lan"])
         assertEquals(listOf("svpn:pw"), c["authentication"])
@@ -37,7 +37,7 @@ class ConfigTest {
 
     @Test fun probeCoreNeverOpensSocks() {
         val c = config(MihomoConfig.Settings(socks = MihomoConfig.Socks(7897, "svpn", "pw", lan = false)), tunFd = -1)
-        assertFalse("socks-port" in c)
+        assertFalse("mixed-port" in c)
     }
 
     @Suppress("UNCHECKED_CAST")

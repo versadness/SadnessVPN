@@ -38,7 +38,7 @@ class SvpnVpnService : VpnService() {
                 if (VpnController.state.value.status == Status.OFF) {
                     stopping = false
                     VpnController.update { ConnState(status = Status.CONNECTING) }
-                    startForegroundCompat(notification(getString(R.string.notif_connecting), ""))
+                    startForegroundCompat(notification(com.sadness.vpn.ui.L.t("Подключение…"), ""))
                     Thread { connect() }.apply { name = "svpn-connect" }.start()
                 }
             }
@@ -49,6 +49,8 @@ class SvpnVpnService : VpnService() {
     private fun connect() {
         val store = Store(this)
         val state = store.load()
+        // Служба может стартовать без интерфейса (постоянный VPN после перезагрузки).
+        com.sadness.vpn.ui.L.lang = state.settings.language
         val selection = state.selected()
         if (selection == null) {
             shutdown("Сначала выберите сервер.")
@@ -91,8 +93,8 @@ class SvpnVpnService : VpnService() {
                 val current = store.load()
                 val selected = current.selected()?.second ?: server
                 val s = current.settings
-                Core.start(this, selected, current.failoverGroups(), coreSettings(s),
-                    failover = s.failover, tunFd = fd.fd, tag = "vpn")
+                Core.start(this, selected, current.failoverGroups(), coreSettings(s, Core.newCheckProxy()),
+                    failover = s.failover, tunFd = fd.fd, tag = "vpn", autoBest = s.autoBest)
             }
             val core = launchCore!!()
             if (stopping) {
@@ -106,6 +108,7 @@ class SvpnVpnService : VpnService() {
                     routeRemark = server["remark"].toString(), startedAt = System.currentTimeMillis(), hasBackup = hasBackup)
             }
             updateNotification()
+            VpnTile.refresh(this)
             startWorkers(core, store)
         } catch (e: Exception) {
             shutdown(e.message ?: "Не удалось подключиться.")
@@ -124,8 +127,12 @@ class SvpnVpnService : VpnService() {
                     continue
                 }
                 try {
+                    var lastNotify = 0L
                     core.api.streamTraffic { up, down ->
                         VpnController.update { it.copy(up = up, down = down, sessionUp = it.sessionUp + up, sessionDown = it.sessionDown + down) }
+                        // Скорость в уведомлении — не чаще раза в 2 секунды.
+                        val now = System.currentTimeMillis()
+                        if (now - lastNotify >= 2000) { lastNotify = now; updateNotification() }
                     }
                 } catch (_: Exception) {
                     if (stopping) break
@@ -232,6 +239,8 @@ class SvpnVpnService : VpnService() {
         runCatching { tun?.close() }
         tun = null
         VpnController.update { ConnState(status = Status.OFF, error = error) }
+        VpnWidget.refresh(this)
+        VpnTile.refresh(this)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -248,8 +257,18 @@ class SvpnVpnService : VpnService() {
 
     private fun updateNotification() {
         val s = VpnController.state.value
-        val title = if (s.onBackup) getString(R.string.notif_backup) else getString(R.string.notif_connected)
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(title, s.routeRemark))
+        if (s.status != Status.ON) return
+        val title = com.sadness.vpn.ui.L.t(if (s.onBackup) "VPN подключён через запасной сервер" else "VPN подключён") +
+            if (s.routeRemark.isNotEmpty()) " · " + s.routeRemark else ""
+        val seconds = (System.currentTimeMillis() - s.startedAt) / 1000
+        val text = "↓ ${speed(s.down)} · ↑ ${speed(s.up)} · %02d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60)
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(title, text))
+        VpnWidget.refresh(this)
+    }
+
+    private fun speed(bytes: Long): String {
+        val mbit = bytes * 8 / 1_000_000.0
+        return (if (mbit >= 10) "%.0f" else "%.1f").format(mbit).replace('.', ',') + " " + com.sadness.vpn.ui.L.t("Мбит/с")
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -273,18 +292,26 @@ class SvpnVpnService : VpnService() {
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, getString(R.string.disconnect), stop).build())
+            .setOnlyAlertOnce(true)
+            .addAction(Notification.Action.Builder(null, com.sadness.vpn.ui.L.t("Отключить"), stop).build())
             .build()
     }
 
     companion object {
         /** Настройки приложения → настройки ядра. */
-        fun coreSettings(s: com.sadness.vpn.data.Settings) = MihomoConfig.Settings(
-            dnsPreset = s.dnsPreset, ipv6 = s.ipv6, mux = s.mux, blockUdp = s.blockUdp, geminiDns = s.geminiDns,
-            socks = if (s.socksEnabled && s.socksPassword.isNotEmpty()) {
-                MihomoConfig.Socks(Store.SOCKS_PORT, s.socksUser, s.socksPassword, s.socksLan)
-            } else null,
-        )
+        fun coreSettings(s: com.sadness.vpn.data.Settings, check: MihomoConfig.CheckProxy? = null): MihomoConfig.Settings {
+            // Раздача по Wi-Fi включает тот же прокси, открытый в сеть; без пароля —
+            // только подсеть точки доступа, остальным (и приложениям телефона) — с паролем.
+            val hotspot = if (s.shareWifi) Hotspot.addresses().map { it.cidr } else emptyList()
+            val proxyOn = (s.socksEnabled || s.shareWifi) && s.socksPassword.isNotEmpty()
+            return MihomoConfig.Settings(
+                dnsPreset = s.dnsPreset, ipv6 = s.ipv6, mux = s.mux, blockUdp = s.blockUdp, geminiDns = s.geminiDns,
+                socks = if (proxyOn) MihomoConfig.Socks(Store.SOCKS_PORT, s.socksUser, s.socksPassword,
+                    lan = s.socksLan || s.shareWifi, noAuth = hotspot) else null,
+                routing = MihomoConfig.Routing(ruDirect = s.ruDirect, adblock = s.adblock, servicesVpn = s.servicesVpn, rules = s.rules),
+                checkProxy = check,
+            )
+        }
 
         const val ACTION_STOP = "com.sadness.vpn.STOP"
         private const val MAX_RESTARTS = 3

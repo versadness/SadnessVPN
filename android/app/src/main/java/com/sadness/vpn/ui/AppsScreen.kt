@@ -48,15 +48,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier) {
+fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier, onBack: () -> Unit) {
     LaunchedEffect(Unit) { model.loadApps() }
     val settings = ui.data.settings
     var query by remember { mutableStateOf("") }
     var showSystem by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Приложения", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = Palette.Text, modifier = Modifier.padding(top = 12.dp))
+        BackTitle(L.t("Приложения"), onBack)
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Palette.Field).padding(3.dp)) {
-            for ((mode, title) in listOf(AppsMode.ALL to "Все", AppsMode.ONLY to "Только эти", AppsMode.EXCEPT to "Кроме этих")) {
+            for ((mode, title) in listOf(AppsMode.ALL to L.t("Все"), AppsMode.ONLY to L.t("Только эти"), AppsMode.EXCEPT to L.t("Кроме этих"))) {
                 val on = settings.appsMode == mode
                 Text(title, textAlign = TextAlign.Center, fontSize = 13.sp,
                     color = if (on) Palette.Text else Palette.Text3,
@@ -66,13 +66,13 @@ fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier) {
             }
         }
         val hint = when (settings.appsMode) {
-            AppsMode.ALL -> "Через VPN идут все приложения."
-            AppsMode.ONLY -> "Через VPN идут только отмеченные: ${settings.apps.size}."
-            AppsMode.EXCEPT -> "Отмеченные идут напрямую, остальные через VPN. Исключено: ${settings.apps.size}."
+            AppsMode.ALL -> L.t("Через VPN идут все приложения.")
+            AppsMode.ONLY -> L.t("Через VPN идут только отмеченные: ") + settings.apps.size
+            AppsMode.EXCEPT -> L.t("Отмеченные идут напрямую, остальные через VPN. Исключено: ") + settings.apps.size
         }
         Text(hint, color = Palette.Text3, fontSize = 12.sp)
         if (settings.appsMode != AppsMode.ALL) {
-            TextField(query, { query = it }, singleLine = true, placeholder = { Text("Поиск приложений") },
+            TextField(query, { query = it }, singleLine = true, placeholder = { Text(L.t("Поиск приложений")) },
                 leadingIcon = { Icon(Icons.Outlined.Search, null) },
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
                 colors = TextFieldDefaults.colors(focusedContainerColor = Palette.Field, unfocusedContainerColor = Palette.Field,
@@ -102,7 +102,7 @@ fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier) {
                     }
                 }
                 item {
-                    Text(if (showSystem) "Скрыть системные" else "Показать системные", color = Palette.Accent, fontSize = 13.sp,
+                    Text(if (showSystem) L.t("Скрыть системные") else L.t("Показать системные"), color = Palette.Accent, fontSize = 13.sp,
                         modifier = Modifier.fillMaxWidth().clickable { showSystem = !showSystem }.padding(14.dp), textAlign = TextAlign.Center)
                 }
             }

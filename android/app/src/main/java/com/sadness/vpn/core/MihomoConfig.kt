@@ -12,7 +12,7 @@ package com.sadness.vpn.core
  *   любое установленное приложение, а API управления закрыто секретом.
  */
 object MihomoConfig {
-    val SUPPORTED_PROTOCOLS = setOf("vless", "vmess", "ss", "trojan", "hysteria2")
+    val SUPPORTED_PROTOCOLS = setOf("vless", "vmess", "ss", "trojan", "hysteria2", "wireguard")
     val SUPPORTED_NETWORKS = setOf("tcp", "ws", "httpupgrade", "grpc", "http", "h2", "xhttp", "splithttp")
     val SUPPORTED_SS_PLUGINS = setOf("obfs", "v2ray-plugin")
 
@@ -49,6 +49,10 @@ object MihomoConfig {
             Hysteria2.validate(server)
             return server
         }
+        if (protocol == "wireguard") {
+            WireGuard.validate(server)
+            return server
+        }
         if (protocol == "ss") {
             val plugin = server["plugin"]?.toString().orEmpty()
             if (plugin.isNotEmpty() && plugin !in SUPPORTED_SS_PLUGINS) {
@@ -72,6 +76,7 @@ object MihomoConfig {
     fun proxy(server: Server): MutableMap<String, Any?> {
         val proto = server.str("protocol", "vless").ifEmpty { "vless" }
         ensureSupported(server)
+        if (proto == "wireguard") return WireGuard.proxy(server)
         val proxy: MutableMap<String, Any?> = linkedMapOf(
             "name" to "proxy", "type" to proto, "server" to server.str("host"),
             "port" to server["port"].toString().toInt(), "udp" to true,
@@ -170,9 +175,88 @@ object MihomoConfig {
         val geminiDns: Boolean = false,
         /** Локальный SOCKS5: порт, логин и пароль; null — выключен. */
         val socks: Socks? = null,
+        val routing: Routing = Routing(),
+        val checkProxy: CheckProxy? = null,
     )
 
-    data class Socks(val port: Int, val user: String, val password: String, val lan: Boolean)
+    /** Маршруты: готовые наборы и свои правила. */
+    data class Routing(
+        val ruDirect: Boolean = false,
+        val adblock: Boolean = false,
+        val servicesVpn: Boolean = false,
+        val rules: List<Rule> = emptyList(),
+    )
+
+    /** Своё правило: type — "domain" или "ip", action — "vpn", "direct" или "block". */
+    data class Rule(val type: String, val value: String, val action: String)
+
+    /** Наборы правил в assets/rules — копируются ядру в rules/. */
+    val RULE_FILES = listOf("site-category-ru", "site-category-gov-ru", "site-category-ads-all", "site-youtube",
+        "site-discord", "site-telegram", "ip-ru", "ip-telegram")
+
+    private val DOMAIN = Regex("""^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.?$""", RegexOption.IGNORE_CASE)
+    private val CIDR = Regex("""^[0-9a-fA-F:.]+(/\d{1,3})?$""")
+
+    /** Нормализовать своё правило или бросить понятную ошибку. */
+    fun normalizeRule(type: String, raw: String): String {
+        val value = raw.trim().lowercase().removePrefix("https://").removePrefix("http://").substringBefore('/')
+            .let { if (type == "domain") it.removePrefix("*.").trimEnd('.') else raw.trim() }
+        when (type) {
+            "domain" -> if (value.isEmpty() || !DOMAIN.matches(value) || '.' !in value) throw IllegalArgumentException("Нужен домен вида example.com")
+            "ip" -> {
+                if (!CIDR.matches(value)) throw IllegalArgumentException("Нужен IP-адрес или подсеть вида 10.0.0.0/8")
+                val prefix = value.substringAfter('/', "").toIntOrNull()
+                if (prefix != null && prefix > (if (':' in value) 128 else 32)) throw IllegalArgumentException("Неверная длина подсети")
+            }
+            else -> throw IllegalArgumentException("Неизвестный тип правила")
+        }
+        return value
+    }
+
+    private fun routingRules(routing: Routing): List<String> {
+        val rules = mutableListOf<String>()
+        for (rule in routing.rules) {
+            val target = when (rule.action) { "direct" -> "DIRECT"; "block" -> "REJECT"; else -> "proxy" }
+            val value = runCatching { normalizeRule(rule.type, rule.value) }.getOrNull() ?: continue
+            rules += when {
+                rule.type == "domain" -> "DOMAIN-SUFFIX,$value,$target"
+                ':' in value -> "IP-CIDR6,${if ('/' in value) value else "$value/128"},$target,no-resolve"
+                else -> "IP-CIDR,${if ('/' in value) value else "$value/32"},$target,no-resolve"
+            }
+        }
+        if (routing.adblock) rules += "RULE-SET,site-category-ads-all,REJECT"
+        if (routing.servicesVpn) {
+            rules += listOf("RULE-SET,site-youtube,proxy", "RULE-SET,site-discord,proxy",
+                "RULE-SET,site-telegram,proxy", "RULE-SET,ip-telegram,proxy,no-resolve")
+        }
+        if (routing.ruDirect) {
+            rules += listOf("DOMAIN-SUFFIX,ru,DIRECT", "DOMAIN-SUFFIX,su,DIRECT", "DOMAIN-SUFFIX,xn--p1ai,DIRECT",
+                "RULE-SET,site-category-gov-ru,DIRECT", "RULE-SET,site-category-ru,DIRECT", "RULE-SET,ip-ru,DIRECT,no-resolve")
+        }
+        return rules
+    }
+
+    private fun ruleProviders(routing: Routing): Map<String, Any?> {
+        val used = buildSet {
+            if (routing.adblock) add("site-category-ads-all")
+            if (routing.servicesVpn) addAll(listOf("site-youtube", "site-discord", "site-telegram", "ip-telegram"))
+            if (routing.ruDirect) addAll(listOf("site-category-gov-ru", "site-category-ru", "ip-ru"))
+        }
+        return RULE_FILES.filter { it in used }.associateWith { name ->
+            linkedMapOf("type" to "file", "behavior" to if (name.startsWith("ip-")) "ipcidr" else "domain",
+                "format" to "mrs", "path" to "./rules/$name.mrs")
+        }
+    }
+
+    /**
+     * Локальный прокси (HTTP + SOCKS5 на одном порту). noAuth — подсети, которым
+     * пароль не нужен: только точка доступа телефона при раздаче по Wi-Fi.
+     */
+    data class Socks(val port: Int, val user: String, val password: String, val lan: Boolean,
+                     val noAuth: List<String> = emptyList())
+
+    /** Внутренний вход для «Проверки соединения»: только 127.0.0.1, свой пароль. */
+    data class CheckProxy(val port: Int, val user: String, val password: String)
 
     /**
      * Сервисы Google AI через Smart DNS: Xbox DNS отдаёт адреса своих узлов,
@@ -226,6 +310,7 @@ object MihomoConfig {
             "IP-CIDR6,fc00::/7,DIRECT,no-resolve", "IP-CIDR6,fe80::/10,DIRECT,no-resolve",
         )
         if (settings.geminiDns) GEMINI_DOMAINS.forEach { rules += "DOMAIN-SUFFIX,$it,DIRECT" }
+        rules += routingRules(settings.routing)
         if (settings.blockUdp) rules += "NETWORK,UDP,REJECT"
         rules += "MATCH,proxy"
         val config: MutableMap<String, Any?> = linkedMapOf(
@@ -242,15 +327,22 @@ object MihomoConfig {
             "proxies" to mutableListOf<Any?>(proxy),
             "rules" to rules,
         )
+        ruleProviders(settings.routing).takeIf { it.isNotEmpty() }?.let { config["rule-providers"] = it }
         settings.socks?.takeIf { tunFd >= 0 }?.let { socks ->
             // К 127.0.0.1 на телефоне может обратиться любое приложение, поэтому
             // пароль обязателен всегда: skip-auth-prefixes пуст (по умолчанию
             // Mihomo пропускает 127.0.0.0/8 без пароля).
-            config["socks-port"] = socks.port
+            config["mixed-port"] = socks.port
             config["allow-lan"] = socks.lan
             config["bind-address"] = if (socks.lan) "*" else "127.0.0.1"
             config["authentication"] = listOf("${socks.user}:${socks.password}")
-            config["skip-auth-prefixes"] = emptyList<String>()
+            config["skip-auth-prefixes"] = socks.noAuth
+        }
+        settings.checkProxy?.takeIf { tunFd >= 0 }?.let { check ->
+            config["listeners"] = listOf(linkedMapOf(
+                "name" to "check-in", "type" to "mixed", "port" to check.port, "listen" to "127.0.0.1",
+                "users" to listOf(linkedMapOf("username" to check.user, "password" to check.password)),
+            ))
         }
         if (tunFd >= 0) {
             config["tun"] = linkedMapOf(
