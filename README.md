@@ -8,9 +8,10 @@
 ![Status: Beta](https://img.shields.io/badge/status-BETA-orange)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_10%2F11_x64-0078D4)
 ![Linux x86_64](https://img.shields.io/badge/platform-Linux_x86__64-FCC624)
+![Android 8+](https://img.shields.io/badge/platform-Android_8%2B-3DDC84)
 ![Release: 3.4.1 Beta](https://img.shields.io/badge/release-3.4.1_Beta-8b5cf6)
 
-VPN-клиент для Windows и Linux с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
+VPN-клиент для Windows, Linux и Android с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
 
 ## Скачать 3.4.1 Beta
 
@@ -24,6 +25,15 @@ VPN-клиент для Windows и Linux с подписками, TUN, марш�
 | Fedora | [`.rpm` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.1-beta/SadnessVPN-3.4.1-linux-x86_64.rpm) | `sudo dnf install ./SadnessVPN-3.4.1-linux-x86_64.rpm` |
 | Arch / Manjaro | [`.pacman` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.1-beta/SadnessVPN-3.4.1-linux-x64.pacman) | `sudo pacman -U SadnessVPN-3.4.1-linux-x64.pacman` |
 | Bazzite и любой другой | [`AppImage` · 145 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.1-beta/SadnessVPN-3.4.1-linux-x86_64.AppImage) | `chmod +x` и запустить |
+
+### Android 8+ (Beta) · 1.0.0
+
+| Телефон | Скачать |
+|---|---|
+| Почти все современные (64-битный ARM) | [`SadnessVPN-Android-1.0.0-beta-arm64.apk` · 18 МиБ](https://github.com/versadness/SadnessVPN/releases/download/android-v1.0.0-beta/SadnessVPN-Android-1.0.0-beta-arm64.apk) |
+| Старые 32-битные (ARMv7) | [`SadnessVPN-Android-1.0.0-beta-armv7.apk` · 18 МиБ](https://github.com/versadness/SadnessVPN/releases/download/android-v1.0.0-beta/SadnessVPN-Android-1.0.0-beta-armv7.apk) |
+
+Подписки, смена сервера на лету, резерв и выбор приложений для VPN; root не нужен. [Описание Android-версии](https://github.com/versadness/SadnessVPN/releases/tag/android-v1.0.0-beta)
 
 [Описание версии 3.4.1](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.1-beta) · [Описание 3.4.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
 
@@ -168,7 +178,7 @@ VPN-клиент для Windows и Linux с подписками, TUN, марш�
 - TUN и локальные SOCKS5/HTTP-порты.
 - Маршрутизация по приложениям, доменам, GeoSite, GeoIP и IP-CIDR.
 - Одновременное назначение разных серверов разным приложениям.
-- Windows 10/11 x64 и Linux x86_64 (Ubuntu, Fedora, Arch, Bazzite).
+- Windows 10/11 x64, Linux x86_64 (Ubuntu, Fedora, Arch, Bazzite) и Android 8+.
 - AI-DNS, Zapret (Windows), статистика, журнал и встроенная проверка обновлений.
 - Стеклянный интерфейс Electron, прозрачность и выбор акцентного цвета.
 
@@ -196,6 +206,14 @@ VPN-клиент для Windows и Linux с подписками, TUN, марш�
 
 Профиль пользователя: `~/.local/share/SadnessVPN`. На Linux пока недоступны Zapret и AmneziaWG.
 
+### Android
+
+1. Скачайте APK для своего телефона из таблицы выше (если не знаете — `arm64`) и откройте его; разрешите установку из этого источника.
+2. Добавьте подписку на вкладке «Серверы» и нажмите кнопку на главном экране. Android один раз спросит разрешение на VPN.
+3. Новые версии ставятся поверх — подписки и настройки сохраняются.
+
+На Android пока нет Zapret, WireGuard/AmneziaWG и встроенного обновления.
+
 Подписки, правила и настройки не входят в публичный установщик.
 
 ## Проверка загрузки
@@ -207,6 +225,8 @@ VPN-клиент для Windows и Linux с подписками, TUN, марш�
 | `SadnessVPN-3.4.1-linux-amd64.deb` | 108 125 104 | `89f2e1c4c52e3050c6ffba98b9c079d61933f811756bd65b058f6bc2d1247587` |
 | `SadnessVPN-3.4.1-linux-x86_64.rpm` | 107 977 201 | `8240cac057b5e1eac54e0522541e01175277a2550d9109f6ad8206a6e9324614` |
 | `SadnessVPN-3.4.1-linux-x64.pacman` | 108 159 044 | `c3e9490f0b46925efe129a833719f5bb345dfc1dbc0e30f5e69caf701bdc03dd` |
+| `SadnessVPN-Android-1.0.0-beta-arm64.apk` | 18 365 439 | `df5af83872b5ee2d85b39a68be7231e7a210d4e56176c09daae8e5c34d35d142` |
+| `SadnessVPN-Android-1.0.0-beta-armv7.apk` | 19 004 237 | `99fb2555b154856b4adfcf10b69240c68dadc64f41fac6dcf63f88fd4252207c` |
 
 Проверка в PowerShell:
 
@@ -222,7 +242,7 @@ Get-FileHash -LiteralPath '.\SadnessVPN-3.4.0-Setup-x64.exe' -Algorithm SHA256
 
 [Создать Issue](https://github.com/versadness/SadnessVPN/issues/new)
 
-Укажите версию Windows или дистрибутив Linux, версию Sadness VPN, шаги воспроизведения, ожидаемый результат и приложите скриншот. При проблемах подключения укажите протокол и транспорт сервера.
+Укажите версию Windows, дистрибутив Linux или модель телефона и версию Android, версию Sadness VPN, шаги воспроизведения, ожидаемый результат и приложите скриншот. При проблемах подключения укажите протокол и транспорт сервера.
 
 Журналы:
 
