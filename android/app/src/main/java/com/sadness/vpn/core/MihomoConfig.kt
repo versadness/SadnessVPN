@@ -167,13 +167,31 @@ object MihomoConfig {
         val ipv6: Boolean = false,
         val mux: Boolean = false,
         val blockUdp: Boolean = false,
+        val geminiDns: Boolean = false,
+        /** Локальный SOCKS5: порт, логин и пароль; null — выключен. */
+        val socks: Socks? = null,
     )
+
+    data class Socks(val port: Int, val user: String, val password: String, val lan: Boolean)
+
+    /**
+     * Сервисы Google AI через Smart DNS: Xbox DNS отдаёт адреса своих узлов,
+     * которые пускают к Gemini из России. Запросы и трафик идут напрямую —
+     * Smart DNS должен видеть настоящий адрес телефона.
+     */
+    val GEMINI_DOMAINS = listOf(
+        "gemini.google.com", "gemini.google", "aistudio.google.com", "ai.google.dev",
+        "generativelanguage.googleapis.com", "makersuite.google.com", "alkalimakersuite-pa.clients6.google.com",
+        "notebooklm.google", "notebooklm.google.com", "labs.google", "bard.google.com", "deepmind.google",
+        "proactivebackend-pa.googleapis.com", "robinfrontend-pa.googleapis.com",
+    )
+    const val XBOX_DNS = "111.88.96.50"
 
     fun dnsBlock(settings: Settings, ipv6: Boolean): MutableMap<String, Any?> {
         val preset = settings.dnsPreset
         val raw = DNS_PRESETS[preset] ?: DNS_PRESETS.getValue("cf_google")
         val bootstrap = SMART_DNS_BOOTSTRAP[preset]
-        return linkedMapOf(
+        return linkedMapOf<String, Any?>(
             "enable" to true,
             "ipv6" to ipv6,
             // На телефоне fake-ip: приложения получают адреса из служебного
@@ -184,7 +202,14 @@ object MihomoConfig {
             "proxy-server-nameserver" to listOf("1.1.1.1", "8.8.8.8"),
             "default-nameserver" to (if (bootstrap != null) listOf(bootstrap.removePrefix("udp://")) else listOf("1.1.1.1", "8.8.8.8")),
             "respect-rules" to (preset !in SMART_DNS_BOOTSTRAP),
-        )
+        ).also { dns ->
+            if (settings.geminiDns) {
+                // «#DIRECT» — запрос к Xbox DNS идёт мимо сервера, с настоящего адреса.
+                dns["nameserver-policy"] = LinkedHashMap<String, Any?>().apply {
+                    GEMINI_DOMAINS.forEach { put("+.$it", "$XBOX_DNS#DIRECT") }
+                }
+            }
+        }
     }
 
     /**
@@ -200,6 +225,7 @@ object MihomoConfig {
             "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
             "IP-CIDR6,fc00::/7,DIRECT,no-resolve", "IP-CIDR6,fe80::/10,DIRECT,no-resolve",
         )
+        if (settings.geminiDns) GEMINI_DOMAINS.forEach { rules += "DOMAIN-SUFFIX,$it,DIRECT" }
         if (settings.blockUdp) rules += "NETWORK,UDP,REJECT"
         rules += "MATCH,proxy"
         val config: MutableMap<String, Any?> = linkedMapOf(
@@ -216,6 +242,16 @@ object MihomoConfig {
             "proxies" to mutableListOf<Any?>(proxy),
             "rules" to rules,
         )
+        settings.socks?.takeIf { tunFd >= 0 }?.let { socks ->
+            // К 127.0.0.1 на телефоне может обратиться любое приложение, поэтому
+            // пароль обязателен всегда: skip-auth-prefixes пуст (по умолчанию
+            // Mihomo пропускает 127.0.0.0/8 без пароля).
+            config["socks-port"] = socks.port
+            config["allow-lan"] = socks.lan
+            config["bind-address"] = if (socks.lan) "*" else "127.0.0.1"
+            config["authentication"] = listOf("${socks.user}:${socks.password}")
+            config["skip-auth-prefixes"] = emptyList<String>()
+        }
         if (tunFd >= 0) {
             config["tun"] = linkedMapOf(
                 "enable" to true, "stack" to "gvisor", "file-descriptor" to tunFd,

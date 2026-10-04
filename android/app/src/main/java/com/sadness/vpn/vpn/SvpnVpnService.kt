@@ -91,9 +91,8 @@ class SvpnVpnService : VpnService() {
                 val current = store.load()
                 val selected = current.selected()?.second ?: server
                 val s = current.settings
-                Core.start(this, selected, current.failoverGroups(), MihomoConfig.Settings(
-                    dnsPreset = s.dnsPreset, ipv6 = s.ipv6, mux = s.mux, blockUdp = s.blockUdp,
-                ), failover = s.failover, tunFd = fd.fd, tag = "vpn")
+                Core.start(this, selected, current.failoverGroups(), coreSettings(s),
+                    failover = s.failover, tunFd = fd.fd, tag = "vpn")
             }
             val core = launchCore!!()
             if (stopping) {
@@ -279,6 +278,14 @@ class SvpnVpnService : VpnService() {
     }
 
     companion object {
+        /** Настройки приложения → настройки ядра. */
+        fun coreSettings(s: com.sadness.vpn.data.Settings) = MihomoConfig.Settings(
+            dnsPreset = s.dnsPreset, ipv6 = s.ipv6, mux = s.mux, blockUdp = s.blockUdp, geminiDns = s.geminiDns,
+            socks = if (s.socksEnabled && s.socksPassword.isNotEmpty()) {
+                MihomoConfig.Socks(Store.SOCKS_PORT, s.socksUser, s.socksPassword, s.socksLan)
+            } else null,
+        )
+
         const val ACTION_STOP = "com.sadness.vpn.STOP"
         private const val MAX_RESTARTS = 3
         private const val CHANNEL = "vpn"

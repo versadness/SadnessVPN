@@ -174,27 +174,47 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.Main) { connect() }
     }
 
-    /** Задержка через каждый сервер — настоящим запросом через ядро. */
+    /**
+     * Задержка серверов. HTTP — настоящий запрос через каждый сервер (ядро);
+     * TCP — только время установки соединения до сервера, быстрее, но без
+     * проверки протокола. У Hysteria 2 нет TCP — она всегда проверяется через ядро.
+     */
     fun pingAll() {
         val data = _ui.value.data
         val servers = data.groups.flatMap { it.servers }
         if (servers.isEmpty() || _ui.value.pinging) return
         _ui.update { it.copy(pinging = true, pings = emptyMap()) }
+        val tcpMode = data.settings.pingMode == "tcp"
         viewModelScope.launch(Dispatchers.IO) {
             var temp: Core? = null
             try {
-                val running = VpnController.core
-                val core = running ?: Core.start(getApplication(), servers.first(), data.failoverGroups(),
-                    MihomoConfig.Settings(dnsPreset = data.settings.dnsPreset), failover = false, tunFd = -1, tag = "probe").also { temp = it }
                 val gate = Semaphore(8)
-                core.live.map { (name, server) ->
-                    async {
-                        gate.withPermit {
-                            val ms = core.api.delay(name, Failover.HEALTH_URL, 5000) ?: -1
-                            _ui.update { it.copy(pings = it.pings + (server["ui_id"].toString() to ms)) }
+                val viaCore = if (tcpMode) servers.filter { Failover.transport(it) == "quic" } else servers
+                val jobs = mutableListOf<kotlinx.coroutines.Deferred<Unit>>()
+                if (tcpMode) {
+                    servers.filter { Failover.transport(it) != "quic" }.forEach { server ->
+                        jobs += async {
+                            gate.withPermit {
+                                val ms = tcpPing(server["host"].toString(), server["port"].toString().toIntOrNull() ?: 443)
+                                _ui.update { it.copy(pings = it.pings + (server["ui_id"].toString() to ms)) }
+                            }
                         }
                     }
-                }.awaitAll()
+                }
+                if (viaCore.isNotEmpty()) {
+                    val ids = viaCore.map { it["ui_id"].toString() }.toSet()
+                    val core = VpnController.core ?: Core.start(getApplication(), servers.first(), data.failoverGroups(),
+                        MihomoConfig.Settings(dnsPreset = data.settings.dnsPreset), failover = false, tunFd = -1, tag = "probe").also { temp = it }
+                    core.live.filter { it.value["ui_id"].toString() in ids }.forEach { (name, server) ->
+                        jobs += async {
+                            gate.withPermit {
+                                val ms = core.api.delay(name, Failover.HEALTH_URL, 5000) ?: -1
+                                _ui.update { it.copy(pings = it.pings + (server["ui_id"].toString() to ms)) }
+                            }
+                        }
+                    }
+                }
+                jobs.awaitAll()
             } catch (e: Exception) {
                 message(e.message ?: "Проверка серверов не удалась.")
             } finally {
@@ -203,6 +223,34 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    private fun tcpPing(host: String, port: Int): Int = try {
+        java.net.Socket().use { socket ->
+            val started = System.nanoTime()
+            socket.connect(java.net.InetSocketAddress(host, port), 3000)
+            ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
+        }
+    } catch (_: Exception) {
+        -1
+    }
+
+    /** Выбрать подписку: её первый сервер, если выбранный сейчас не из неё. */
+    fun selectGroup(groupId: String) {
+        val group = _ui.value.data.groups.firstOrNull { it.id == groupId } ?: return
+        if (_ui.value.data.selectedGroup == groupId) return
+        val first = group.servers.firstOrNull() ?: run { message("В подписке нет серверов — обновите её."); return }
+        select(groupId, first["ui_id"].toString())
+    }
+
+    fun regenerateSocksPassword() = updateSettings { it.copy(socksPassword = Store.newSocksPassword()) }
+
+    /** IPv4-адрес телефона в локальной сети — для подключения к SOCKS5 с других устройств. */
+    fun lanAddress(): String = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback && !it.name.startsWith("tun") }
+            .flatMap { it.inetAddresses.toList() }
+            .firstOrNull { it is java.net.Inet4Address && it.isSiteLocalAddress }?.hostAddress
+    }.getOrNull() ?: "адрес не найден — подключитесь к Wi-Fi"
 
     // ── Приложения ──────────────────────────────────────────
 

@@ -13,6 +13,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.outlined.RssFeed
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
+import com.sadness.vpn.vpn.Status
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,10 +38,6 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -62,6 +75,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             SadnessTheme { App(model, onConnect = ::requestConnect) }
         }
+        // «Подключаться при запуске»: только при холодном старте и если разрешение
+        // на VPN уже выдано — без системных окон поверх только что открытого приложения.
+        if (savedInstanceState == null && model.ui.value.data.settings.connectOnLaunch &&
+            model.vpn.value.status == Status.OFF && model.ui.value.data.selected() != null &&
+            VpnService.prepare(this) == null) {
+            model.connect()
+        }
     }
 
     private fun requestConnect() {
@@ -79,7 +99,8 @@ private data class Tab(val title: String, val icon: ImageVector)
 private val TABS = listOf(
     Tab("Главная", Icons.Outlined.Home),
     Tab("Серверы", Icons.Outlined.Dns),
-    Tab("Приложения", Icons.Outlined.Apps),
+    Tab("Прилож.", Icons.Outlined.Apps),
+    Tab("Подписки", Icons.Outlined.RssFeed),
     Tab("Настройки", Icons.Outlined.Settings),
 )
 
@@ -97,37 +118,44 @@ fun App(model: AppModel, onConnect: () -> Unit) {
         }
     }
 
-    Scaffold(
-        containerColor = Palette.Bg,
-        snackbarHost = {
-            SnackbarHost(snackbar) { data ->
-                Snackbar(data, containerColor = Palette.Surface2, contentColor = Palette.Text, shape = RoundedCornerShape(12.dp))
-            }
-        },
-        bottomBar = {
-            NavigationBar(containerColor = Palette.Bg, tonalElevation = 0.dp) {
-                TABS.forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        selected = tab == index,
-                        onClick = { tab = index },
-                        icon = { Icon(item.icon, contentDescription = item.title) },
-                        label = { Text(item.title) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Palette.Accent, selectedTextColor = Palette.Accent,
-                            unselectedIconColor = Palette.Text3, unselectedTextColor = Palette.Text3,
-                            indicatorColor = Palette.AccentSoft,
-                        ),
-                    )
-                }
-            }
-        },
-    ) { padding ->
-        val modifier = Modifier.padding(padding)
+    Box(Modifier.fillMaxSize().background(Palette.Bg)) {
+        val modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(bottom = 76.dp)
         when (tab) {
             0 -> HomeScreen(ui, vpn, modifier, onConnect = onConnect, onDisconnect = model::disconnect, onOpenServers = { tab = 1 })
-            1 -> ServersScreen(ui, vpn, model, modifier)
+            1 -> ServersScreen(ui, vpn, model, modifier, onOpenSubscriptions = { tab = 3 })
             2 -> AppsScreen(ui, model, modifier)
+            3 -> SubscriptionsScreen(ui, model, modifier)
             else -> SettingsScreen(ui, model, modifier)
+        }
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()) {
+            SnackbarHost(snackbar, Modifier.padding(horizontal = 8.dp)) { data ->
+                Snackbar(data, containerColor = Palette.Surface2, contentColor = Palette.Text, shape = RoundedCornerShape(12.dp))
+            }
+            FloatingNav(tab) { tab = it }
+        }
+    }
+}
+
+/** Плавающая нижняя панель — скруглённая, с отступом от краёв. */
+@Composable
+private fun FloatingNav(selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp)).background(Palette.Field)
+            .border(1.dp, Palette.Border, RoundedCornerShape(22.dp)).padding(horizontal = 4.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+    ) {
+        TABS.forEachIndexed { index, item ->
+            val on = index == selected
+            Column(
+                Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
+                    .background(if (on) Palette.AccentSoft else Palette.Field)
+                    .clickable { onSelect(index) }.padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(item.icon, contentDescription = item.title, tint = if (on) Palette.Accent else Palette.Text3, modifier = Modifier.size(22.dp))
+                Text(item.title, fontSize = 10.sp, color = if (on) Palette.Accent else Palette.Text3, maxLines = 1)
+            }
         }
     }
 }
