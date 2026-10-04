@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Незашифрованный HTTP разрешён: API ядра работает на http://127.0.0.1 (закрыт
+  секретом), а часть провайдеров отдаёт подписки по http:// — десктоп их
+  принимает. Сертификаты HTTPS проверяются как обычно, пользовательские CA
+  не доверяются.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,14 @@
+.gradle/
+build/
+app/build/
+app/.cxx/
+.kotlin/
+local.properties
+.idea/
+*.iml
+# Ядро Mihomo скачивается скриптом tools/fetch_mihomo.sh, в git не хранится.
+app/src/main/jniLibs/
+# Ключ подписи и пароли к нему — только вне репозитория.
+*.jks
+*.keystore
+signing.properties

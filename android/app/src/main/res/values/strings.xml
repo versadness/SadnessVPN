@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sadness VPN</string>
+    <string name="notif_channel">Состояние VPN</string>
+    <string name="notif_connecting">Подключение…</string>
+    <string name="notif_connected">VPN подключён</string>
+    <string name="notif_backup">VPN подключён через запасной сервер</string>
+    <string name="disconnect">Отключить</string>
+</resources>
