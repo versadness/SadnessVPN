@@ -268,7 +268,7 @@ class SvpnVpnService : VpnService() {
 
     private fun speed(bytes: Long): String {
         val mbit = bytes * 8 / 1_000_000.0
-        return (if (mbit >= 10) "%.0f" else "%.1f").format(mbit).replace('.', ',') + " " + com.sadness.vpn.ui.L.t("Мбит/с")
+        return com.sadness.vpn.ui.formatSpeed(bytes) + " " + com.sadness.vpn.ui.L.t("Мбит/с")
     }
 
     private fun startForegroundCompat(notification: Notification) {

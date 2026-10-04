@@ -196,9 +196,9 @@ private fun CheckCard(ui: UiState, on: Boolean, model: AppModel) {
 @Composable
 private fun CheckRow(label: String, value: Pair<String, Color>?) {
     Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-        Text(label, color = Palette.Text3, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        if (value == null) Text("…", color = Palette.Text3, fontSize = 13.sp)
-        else Text(value.first, color = value.second, fontSize = 13.sp, maxLines = 2)
+        Text(label, color = Palette.Text3, fontSize = 13.sp, modifier = Modifier.weight(0.4f), maxLines = 1)
+        Text(value?.first ?: "…", color = value?.second ?: Palette.Text3, fontSize = 13.sp, maxLines = 3,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(0.6f))
     }
 }
 

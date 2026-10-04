@@ -386,6 +386,33 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val proxy = java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress("127.0.0.1", check.port))
             val auth = "Basic " + java.util.Base64.getEncoder().encodeToString("${check.user}:${check.password}".toByteArray())
+            // HTTPS через прокси с паролем: Android не отдаёт пароль в CONNECT сам (Mihomo
+            // не присылает вызов Proxy-Authenticate), поэтому туннель открывается вручную.
+            fun getHttps(host: String, path: String): String? = runCatching {
+                java.net.Socket().use { raw ->
+                    raw.connect(java.net.InetSocketAddress("127.0.0.1", check.port), 8000)
+                    raw.soTimeout = 10_000
+                    val crlf = "\r\n"
+                    raw.getOutputStream().write(("CONNECT $host:443 HTTP/1.1$crlf" + "Host: $host:443$crlf" +
+                        "Proxy-Authorization: $auth$crlf$crlf").toByteArray())
+                    val input = raw.getInputStream()
+                    val head = StringBuilder()
+                    while (!head.endsWith("$crlf$crlf")) {
+                        val b = input.read()
+                        if (b < 0) break
+                        head.append(b.toChar())
+                    }
+                    if (!head.startsWith("HTTP/1.1 200") && !head.startsWith("HTTP/1.0 200")) return@use null
+                    val factory = javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory
+                    (factory.createSocket(raw, host, 443, false) as javax.net.ssl.SSLSocket).use { s ->
+                        s.startHandshake()
+                        s.outputStream.write(("GET $path HTTP/1.0$crlf" + "Host: $host$crlf" +
+                            "User-Agent: SadnessVPN$crlf" + "Connection: close$crlf$crlf").toByteArray())
+                        val text = s.inputStream.readBytes().decodeToString()
+                        if (text.startsWith("HTTP/1.1 200") || text.startsWith("HTTP/1.0 200")) text.substringAfter("$crlf$crlf") else null
+                    }
+                }
+            }.getOrNull()
             fun get(url: String, viaVpn: Boolean): String? = runCatching {
                 val c = java.net.URL(url).openConnection(if (viaVpn) proxy else java.net.Proxy.NO_PROXY) as java.net.HttpURLConnection
                 c.connectTimeout = 8000
@@ -404,17 +431,17 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             // с настоящей страной телефона (если она отличается от страны VPN).
             val realCountry = get("http://ip-api.com/json/?fields=countryCode", viaVpn = false)
                 ?.let { runCatching { org.json.JSONObject(it).optString("countryCode") }.getOrNull() }
-            val id = get("http://bash.ws/id", viaVpn = true)?.trim()?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+            val id = getHttps("bash.ws", "/id")?.trim()?.takeIf { it.length in 4..64 && it.all(Char::isLetterOrDigit) }
             var dnsCountries: List<String> = emptyList()
             var leak: Boolean? = null
             if (id != null) {
                 (1..6).forEach { n -> get("http://$n.$id.bash.ws", viaVpn = true) }
-                val json = get("http://bash.ws/dnsleak/test/$id?json", viaVpn = true)
+                val json = getHttps("bash.ws", "/dnsleak/test/$id?json")
                 runCatching {
                     val arr = org.json.JSONArray(json)
                     val dns = (0 until arr.length()).map { arr.getJSONObject(it) }.filter { it.optString("type") == "dns" }
                     dnsCountries = dns.map { it.optString("country_name") }.filter { it.isNotEmpty() }.distinct()
-                    val codes = dns.map { it.optString("country_code").uppercase() }
+                    val codes = dns.map { it.optString("country").uppercase() }
                     val vpnCode = vpnIp?.optString("countryCode")?.uppercase()
                     leak = realCountry != null && realCountry.uppercase() != vpnCode && realCountry.uppercase() in codes
                 }

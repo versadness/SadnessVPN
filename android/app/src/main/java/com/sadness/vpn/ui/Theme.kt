@@ -76,7 +76,8 @@ fun formatBytes(bytes: Long): String {
 
 fun formatSpeed(bytesPerSec: Long): String {
     val mbit = bytesPerSec * 8 / 1_000_000.0
-    return if (mbit >= 10) "%.0f".format(mbit) else "%.1f".format(mbit).replace('.', ',')
+    return if (mbit >= 10) "%.0f".format(java.util.Locale.ROOT, mbit)
+    else "%.1f".format(java.util.Locale.ROOT, mbit).replace('.', if (L.lang == "en") '.' else ',')
 }
 
 fun formatDuration(ms: Long): String {
