@@ -14,3 +14,6 @@ app/src/main/jniLibs/
 signing.properties
 # Наборы правил скачиваются tools/fetch_rules.sh.
 app/src/main/assets/rules/
+
+# Корневое правило data/ (пользовательские данные десктопа) не должно задевать код.
+!/app/src/main/java/com/sadness/vpn/data/
