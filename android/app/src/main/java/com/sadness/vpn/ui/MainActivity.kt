@@ -96,9 +96,6 @@ fun App(model: AppModel, onConnect: () -> Unit) {
             model.clearMessage()
         }
     }
-    LaunchedEffect(vpn.error) {
-        if (vpn.error.isNotEmpty()) snackbar.showSnackbar(vpn.error)
-    }
 
     Scaffold(
         containerColor = Palette.Bg,

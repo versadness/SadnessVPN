@@ -25,6 +25,9 @@ class Core private constructor(
     /** Последние строки журнала ядра — для понятной ошибки, без секретов конфигурации. */
     fun tail(lines: Int = 12): String = Core.tail(log, lines)
 
+    /** Текст последней ошибки ядра (уровень error/fatal) или пустая строка. */
+    fun lastError(): String = errorMessage(tail(30)).orEmpty()
+
     companion object {
         /**
          * Запустить ядро. tunFd < 0 — режим проверки серверов без туннеля.
@@ -67,10 +70,15 @@ class Core private constructor(
         fun tail(log: File, lines: Int): String =
             runCatching { log.readLines().takeLast(lines).joinToString("\n") }.getOrDefault("")
 
-        /** Первая строка ошибки из журнала ядра, без адресов и ключей. */
-        private fun reason(tail: String): String {
-            val line = tail.lines().lastOrNull { "level=error" in it || "level=fatal" in it || "Parse config error" in it }
-                ?: tail.lines().lastOrNull { it.isNotBlank() } ?: return "журнал пуст"
+        /** Причина из журнала ядра для пользователя, без адресов и ключей. */
+        private fun reason(tail: String): String = errorMessage(tail)
+            ?: tail.lines().lastOrNull { it.isNotBlank() }?.let(::clean) ?: "журнал пуст"
+
+        /** Последняя строка уровня error/fatal или null. */
+        fun errorMessage(tail: String): String? =
+            tail.lines().lastOrNull { "level=error" in it || "level=fatal" in it || "Parse config error" in it }?.let(::clean)
+
+        private fun clean(line: String): String {
             val msg = Regex("""msg="?([^"]+)"?""").find(line)?.groupValues?.get(1) ?: line
             return msg.replace(Regex("""\b\d{1,3}(\.\d{1,3}){3}(:\d+)?\b"""), "<адрес>").take(240)
         }

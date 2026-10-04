@@ -102,6 +102,12 @@ fun HomeScreen(ui: UiState, vpn: ConnState, modifier: Modifier, onConnect: () ->
             })
         }
 
+        if (vpn.status == Status.OFF && vpn.error.isNotEmpty()) {
+            // Причина отключения видна, пока пользователь не подключится снова.
+            Panel(Modifier.fillMaxWidth()) {
+                Text(vpn.error, color = Palette.Danger, fontSize = 13.sp)
+            }
+        }
         val on = vpn.status == Status.ON
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
             Text(if (on) formatSpeed(vpn.down) else "—", fontSize = 30.sp, fontWeight = FontWeight.Medium, color = Palette.Text)

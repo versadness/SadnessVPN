@@ -85,9 +85,17 @@ class SvpnVpnService : VpnService() {
             }
             val fd = builder.establish() ?: throw IllegalStateException("Android не разрешил создать VPN. Откройте приложение и подключитесь ещё раз.")
             tun = fd
-            val core = Core.start(this, server, state.failoverGroups(), MihomoConfig.Settings(
-                dnsPreset = settings.dnsPreset, ipv6 = settings.ipv6, mux = settings.mux, blockUdp = settings.blockUdp,
-            ), failover = settings.failover, tunFd = fd.fd, tag = "vpn")
+            // Запуск ядра на уже открытом туннеле. Им же ядро перезапускается после
+            // неожиданного выхода: туннель остаётся, приложения не теряют сеть.
+            launchCore = {
+                val current = store.load()
+                val selected = current.selected()?.second ?: server
+                val s = current.settings
+                Core.start(this, selected, current.failoverGroups(), MihomoConfig.Settings(
+                    dnsPreset = s.dnsPreset, ipv6 = s.ipv6, mux = s.mux, blockUdp = s.blockUdp,
+                ), failover = s.failover, tunFd = fd.fd, tag = "vpn")
+            }
+            val core = launchCore!!()
             if (stopping) {
                 core.stop()
                 return
@@ -105,28 +113,60 @@ class SvpnVpnService : VpnService() {
         }
     }
 
-    private fun startWorkers(core: Core, store: Store) {
-        // Скорость и объём за сессию.
+    private var launchCore: (() -> Core)? = null
+
+    private fun startWorkers(@Suppress("UNUSED_PARAMETER") first: Core, store: Store) {
+        // Скорость и объём за сессию; ядро берётся текущее — оно могло перезапуститься.
         workers += Thread {
-            while (!stopping && core.alive()) {
+            while (!stopping) {
+                val core = VpnController.core ?: break
+                if (!core.alive()) {
+                    try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
+                    continue
+                }
                 try {
                     core.api.streamTraffic { up, down ->
                         VpnController.update { it.copy(up = up, down = down, sessionUp = it.sessionUp + up, sessionDown = it.sessionDown + down) }
                     }
                 } catch (_: Exception) {
                     if (stopping) break
-                    Thread.sleep(1000)
+                    try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
                 }
             }
         }.apply { name = "svpn-traffic"; isDaemon = true; start() }
-        // Ядро упало — VPN выключается с объяснением, а не остаётся «подключённым» без интернета.
-        // Здесь же раз в 3 секунды — через какой сервер реально идёт трафик.
+        // Ядро упало — до трёх перезапусков на том же туннеле (как на десктопе);
+        // не вышло — VPN выключается с объяснением, а не остаётся «подключённым»
+        // без интернета. Здесь же раз в 3 секунды — через какой сервер идёт трафик.
         workers += Thread {
             var lastRoute = ""
+            var restarts = 0
+            var restartedAt = 0L
             while (!stopping) {
+                val core = VpnController.core ?: return@Thread
+                // Десять минут стабильной работы — сбои считаются заново.
+                if (restarts > 0 && System.currentTimeMillis() - restartedAt > 10 * 60_000) restarts = 0
                 if (!core.alive()) {
-                    shutdown("Ядро VPN неожиданно завершилось. " + core.tail(3).lines().lastOrNull().orEmpty().take(160))
-                    return@Thread
+                    val reason = core.lastError()
+                    if (restarts >= MAX_RESTARTS || launchCore == null) {
+                        shutdown("Ядро VPN неожиданно завершилось" + if (reason.isEmpty()) "." else ": $reason")
+                        return@Thread
+                    }
+                    restarts++
+                    restartedAt = System.currentTimeMillis()
+                    try {
+                        val fresh = launchCore!!()
+                        if (stopping) { fresh.stop(); return@Thread }
+                        VpnController.core = fresh
+                        lastRoute = ""
+                        val selected = Store(this).load().selected()?.second
+                        VpnController.update {
+                            it.copy(serverId = selected?.get("ui_id")?.toString() ?: it.serverId, hasBackup = fresh.hasBackup, onBackup = false)
+                        }
+                    } catch (e: Exception) {
+                        shutdown("Ядро VPN завершилось и не перезапустилось: " + (e.message ?: reason.ifEmpty { "причина неизвестна" }))
+                        return@Thread
+                    }
+                    continue
                 }
                 val route = currentRoute(core)
                 if (route != null && route != lastRoute) {
@@ -240,6 +280,7 @@ class SvpnVpnService : VpnService() {
 
     companion object {
         const val ACTION_STOP = "com.sadness.vpn.STOP"
+        private const val MAX_RESTARTS = 3
         private const val CHANNEL = "vpn"
         private const val NOTIFICATION_ID = 1
 

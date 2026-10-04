@@ -208,7 +208,10 @@ object MihomoConfig {
             "external-controller" to controller, "secret" to secret,
             "find-process-mode" to "off", "geo-auto-update" to false,
             "unified-delay" to true,
-            "profile" to linkedMapOf("store-selected" to false, "store-fake-ip" to false),
+            // store-fake-ip: после перезапуска ядра на том же туннеле приложения
+            // продолжают ходить по уже выданным адресам 198.18.x.x — новое ядро
+            // восстанавливает их соответствие доменам из cache.db.
+            "profile" to linkedMapOf("store-selected" to false, "store-fake-ip" to true),
             "dns" to dnsBlock(settings, ipv6),
             "proxies" to mutableListOf<Any?>(proxy),
             "rules" to rules,
