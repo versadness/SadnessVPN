@@ -34,6 +34,8 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lan
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.PhoneAndroid
@@ -92,12 +94,16 @@ fun SettingsScreen(ui: UiState, model: AppModel, modifier: Modifier) {
     when (page) {
         "socks" -> { BackHandler { page = "main" }; SocksScreen(ui, model, modifier, onBack = { page = "main" }) }
         "wifi" -> { BackHandler { page = "main" }; WifiShareScreen(ui, model, modifier, onBack = { page = "main" }) }
-        else -> MainSettings(ui, model, modifier, onOpenSocks = { page = "socks" }, onOpenWifi = { page = "wifi" })
+        "traffic" -> { BackHandler { page = "main" }; TrafficScreen(modifier, onBack = { page = "main" }) }
+        "backup" -> { BackHandler { page = "main" }; BackupScreen(model, modifier, onBack = { page = "main" }) }
+        "report" -> { BackHandler { page = "main" }; ReportScreen(model, modifier, onBack = { page = "main" }) }
+        else -> MainSettings(ui, model, modifier, onOpenSocks = { page = "socks" }, onOpenWifi = { page = "wifi" }, onOpen = { page = it })
     }
 }
 
 @Composable
-private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpenSocks: () -> Unit, onOpenWifi: () -> Unit) {
+private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpenSocks: () -> Unit, onOpenWifi: () -> Unit,
+                         onOpen: (String) -> Unit) {
     val s = ui.data.settings
     val context = LocalContext.current
     var dnsMenu by remember { mutableStateOf(false) }
@@ -137,7 +143,7 @@ private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpe
                             color = if (on) Palette.Bg else Palette.Text3,
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
                                 .background(if (on) Palette.Accent else Palette.Field)
-                                .clickable { model.updateSettings { it.copy(pingMode = key) } }.padding(vertical = 8.dp))
+                                .clickableTv { model.updateSettings { it.copy(pingMode = key) } }.padding(vertical = 8.dp))
                     }
                 }
             }
@@ -145,11 +151,28 @@ private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpe
             Toggle(L.t("Обновлять подписки при запуске"), L.t("Как на компьютере: при каждом открытии приложения"), s.autoUpdate) { v -> model.updateSettings { it.copy(autoUpdate = v) } }
         }
 
+        Section(Icons.Outlined.Notifications, L.t("Подписки"))
+        Card {
+            Toggle(L.t("Обновлять в фоне"), L.t("Даже когда приложение закрыто"), s.bgRefresh) { v -> model.updateSettingsQuiet { it.copy(bgRefresh = v) } }
+            if (s.bgRefresh) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Text(L.t("Как часто"), color = Palette.Text)
+                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (h in listOf(3, 6, 12, 24)) Chip("$h " + L.t("ч"), s.bgHours == h) { model.updateSettingsQuiet { it.copy(bgHours = h) } }
+                    }
+                }
+            }
+            Divider()
+            Toggle(L.t("Предупреждать о конце"), L.t("За 3 дня и за 1 день до окончания"), s.warnExpire) { v -> model.updateSettingsQuiet { it.copy(warnExpire = v) } }
+            Divider()
+            Toggle(L.t("Предупреждать о трафике"), L.t("Когда осталось 10% и 0%"), s.warnTraffic) { v -> model.updateSettingsQuiet { it.copy(warnTraffic = v) } }
+        }
+
         Section(Icons.Outlined.Public, L.t("VPN и доступ"))
         Card {
             Toggle(L.t("Поддержка Gemini / AI Studio"), L.t("DNS сервисов Google AI через Xbox DNS, их трафик — напрямую"), s.geminiDns) { v -> model.updateSettings { it.copy(geminiDns = v) } }
             Divider()
-            Row(Modifier.fillMaxWidth().clickable(onClick = onOpenSocks).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickableTv(onOpenSocks).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(L.t("SOCKS5 / прокси"), color = Palette.Text)
                     Text("127.0.0.1:${Store.SOCKS_PORT} · " + L.t("с паролем"), color = Palette.Text3, fontSize = 12.sp)
@@ -158,7 +181,7 @@ private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpe
                 Icon(Icons.Outlined.ChevronRight, null, tint = Palette.Text3)
             }
             Divider()
-            Row(Modifier.fillMaxWidth().clickable(onClick = onOpenWifi).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickableTv(onOpenWifi).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(L.t("Раздача по Wi-Fi"), color = Palette.Text)
                     Text(L.t("VPN для устройств в точке доступа телефона"), color = Palette.Text3, fontSize = 12.sp)
@@ -205,6 +228,15 @@ private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpe
                 Spacer(Modifier.height(8.dp))
                 Segmented(listOf("ru" to L.t("Русский"), "en" to "English"), s.language) { model.setLanguage(it) }
             }
+        }
+
+        Section(Icons.Outlined.Storage, L.t("Данные"))
+        Card {
+            Link(L.t("Трафик по приложениям"), L.t("Сколько каждое приложение прогнало через VPN")) { onOpen("traffic") }
+            Divider()
+            Link(L.t("Резервная копия"), L.t("Сохранить или восстановить")) { onOpen("backup") }
+            Divider()
+            Link(L.t("Сообщить об ошибке"), L.t("Отчёт без адресов и ключей")) { onOpen("report") }
         }
 
         Section(Icons.Outlined.Info, L.t("Дополнительно"))
@@ -292,7 +324,7 @@ private fun SocksScreen(ui: UiState, model: AppModel, modifier: Modifier, onBack
                 model.updateSettings { it.copy(socksLan = v) }
             }
             Divider()
-            Row(Modifier.fillMaxWidth().clickable { newPassword = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickableTv { newPassword = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(L.t("Новый пароль"), color = Palette.Text)
                     Text(L.t("Старые настройки в приложениях перестанут работать"), color = Palette.Text3, fontSize = 12.sp)
@@ -340,7 +372,7 @@ private fun Divider() = HorizontalDivider(color = Palette.Border, modifier = Mod
 
 @Composable
 private fun Link(title: String, value: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickableTv(onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, color = Palette.Text)
             Text(value, color = Palette.Text3, fontSize = 12.sp, maxLines = 2)
@@ -360,7 +392,7 @@ private fun Field(label: String, value: String) {
 @Composable
 private fun ActionButton(icon: ImageVector, title: String, primary: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (primary) Palette.Accent else Palette.Surface2)
-        .clickable(onClick = onClick).padding(vertical = 12.dp),
+        .clickableTv(onClick).padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = if (primary) Palette.Bg else Palette.Text)
         Spacer(Modifier.width(8.dp))
@@ -370,7 +402,7 @@ private fun ActionButton(icon: ImageVector, title: String, primary: Boolean, onC
 
 @Composable
 private fun Toggle(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickableTv { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 10.dp)) {
             Text(title, color = Palette.Text)
             Text(subtitle, color = Palette.Text3, fontSize = 12.sp)

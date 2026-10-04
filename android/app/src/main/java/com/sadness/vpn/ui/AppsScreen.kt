@@ -62,7 +62,7 @@ fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier, onBack: () -> U
                     color = if (on) Palette.Text else Palette.Text3,
                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
                         .background(if (on) Palette.Track else Palette.Field)
-                        .clickable { model.setAppsMode(mode) }.padding(vertical = 8.dp))
+                        .clickableTv { model.setAppsMode(mode) }.padding(vertical = 8.dp))
             }
         }
         val hint = when (settings.appsMode) {
@@ -88,7 +88,7 @@ fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier, onBack: () -> U
                 .sortedBy { it.pkg !in settings.apps }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
                 items(list, key = { it.pkg }) { app ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { model.toggleApp(app.pkg) }
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickableTv { model.toggleApp(app.pkg) }
                         .padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(app.pkg)
                         Spacer(Modifier.width(12.dp))
@@ -103,7 +103,7 @@ fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier, onBack: () -> U
                 }
                 item {
                     Text(if (showSystem) L.t("Скрыть системные") else L.t("Показать системные"), color = Palette.Accent, fontSize = 13.sp,
-                        modifier = Modifier.fillMaxWidth().clickable { showSystem = !showSystem }.padding(14.dp), textAlign = TextAlign.Center)
+                        modifier = Modifier.fillMaxWidth().clickableTv { showSystem = !showSystem }.padding(14.dp), textAlign = TextAlign.Center)
                 }
             }
         }

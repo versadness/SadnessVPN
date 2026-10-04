@@ -81,10 +81,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         Palette.apply(_ui.value.data.settings.theme)
         if (_ui.value.data.settings.autoUpdate && _ui.value.data.groups.isNotEmpty()) refreshAll(silent = true)
         checkUpdates(manual = false)
+        com.sadness.vpn.data.SubscriptionWork.schedule(app, _ui.value.data.settings)
+        viewModelScope.launch(Dispatchers.IO) { com.sadness.vpn.data.SubscriptionWork.checkWarnings(app) }
     }
 
     private fun mutate(block: (State) -> State) {
-        synchronized(store) {
+        synchronized(Store.LOCK) {
             val next = block(store.load())
             store.save(next)
             _ui.update { it.copy(data = next) }
@@ -115,31 +117,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(busyGroups = it.busyGroups + groupId) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { Subscription.fetch(group.url, client, store.load().hwid) }
+                runCatching { Subscription.fetch(group.url, com.sadness.vpn.data.SubscriptionUpdater.client, store.load().hwid) }
             }
             _ui.update { it.copy(busyGroups = it.busyGroups - groupId) }
             result.onSuccess { fetched ->
-                val ids = HashMap<String, Int>()
-                val servers = fetched.servers.map { server ->
-                    val base = Store.serverId(server)
-                    val n = ids.merge(base, 1, Int::plus)!!
-                    server.apply { this["ui_id"] = if (n == 1) base else "$base-$n" }
-                }
-                val title = fetched.metadata["provider_name"]?.toString().orEmpty()
-                mutate { state ->
-                    val groups = state.groups.map {
-                        if (it.id != groupId) it else it.copy(
-                            name = it.name.ifEmpty { title.ifEmpty { L.t("Подписка") } },
-                            servers = servers, meta = fetched.metadata, error = "",
-                        )
-                    }
-                    var next = state.copy(groups = groups)
-                    if (next.selected() == null && servers.isNotEmpty() && (state.selectedGroup.isEmpty() || state.selectedGroup == groupId)) {
-                        next = next.copy(selectedGroup = groupId, selectedServer = servers.first()["ui_id"].toString())
-                    }
-                    next
-                }
-                if (!silent) message("«${_ui.value.data.groups.firstOrNull { it.id == groupId }?.name}»: ${servers.size} " + L.t("серверов"))
+                mutate { state -> com.sadness.vpn.data.SubscriptionUpdater.merge(state, groupId, fetched) }
+                com.sadness.vpn.data.SubscriptionWork.checkWarnings(getApplication())
+                if (!silent) message("«${_ui.value.data.groups.firstOrNull { it.id == groupId }?.name}»: ${fetched.servers.size} " + L.t("серверов"))
             }.onFailure { error ->
                 val text = (error as? SubscriptionException)?.message ?: L.t("Не удалось обновить подписку.")
                 if ((error as? SubscriptionException)?.notModified == true) return@onFailure
@@ -493,15 +477,19 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val pm = getApplication<Application>().packageManager
             val own = getApplication<Application>().packageName
-            val launchable = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-                .map { it.activityInfo.packageName }.toSet()
-            val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                .filter { it.packageName != own && pm.checkPermission(android.Manifest.permission.INTERNET, it.packageName) == PackageManager.PERMISSION_GRANTED }
-                .map { info ->
-                    val system = info.flags and ApplicationInfo.FLAG_SYSTEM != 0 && info.packageName !in launchable
-                    AppEntry(info.packageName, pm.getApplicationLabel(info).toString(), system)
-                }
-                .sortedWith(compareBy({ it.system }, { it.label.lowercase() }))
+            // Без QUERY_ALL_PACKAGES Android показывает приложениям только те, у которых
+            // есть иконка (см. <queries> в манифесте). Ранее выбранные без иконки
+            // остаются в списке по имени пакета — VPN всё равно их учитывает.
+            val launcher = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                .map { it.activityInfo.packageName }.toSet() +
+                pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0)
+                    .map { it.activityInfo.packageName }
+            val selected = _ui.value.data.settings.apps
+            val apps = (launcher + selected).filter { it != own }.map { pkg ->
+                val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull()
+                val system = info == null || (info.flags and ApplicationInfo.FLAG_SYSTEM != 0 && pkg !in launcher)
+                AppEntry(pkg, info?.let { pm.getApplicationLabel(it).toString() } ?: pkg, system)
+            }.sortedWith(compareBy({ it.system }, { it.label.lowercase() }))
             _ui.update { it.copy(apps = apps, appsLoading = false) }
         }
     }
@@ -514,6 +502,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun updateSettings(block: (Settings) -> Settings) {
         mutate { it.copy(settings = block(it.settings)) }
+        com.sadness.vpn.data.SubscriptionWork.schedule(getApplication(), _ui.value.data.settings)
         if (vpn.value.status == Status.ON) message(L.t("Изменения применятся при следующем подключении."))
     }
 
@@ -523,7 +512,35 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun setLanguage(lang: String) { L.lang = lang; updateSettingsQuiet { it.copy(language = lang) } }
 
     /** Изменение настроек, не влияющих на работающий VPN (без сообщения о переподключении). */
-    fun updateSettingsQuiet(block: (Settings) -> Settings) = mutate { it.copy(settings = block(it.settings)) }
+    fun updateSettingsQuiet(block: (Settings) -> Settings) {
+        mutate { it.copy(settings = block(it.settings)) }
+        com.sadness.vpn.data.SubscriptionWork.schedule(getApplication(), _ui.value.data.settings)
+    }
+
+    // ── Резервная копия и отчёт ──
+
+    fun exportBackup(includeHwid: Boolean, password: String?): ByteArray =
+        com.sadness.vpn.data.Backup.export(store, store.load(), includeHwid, password)
+
+    /** Восстановить из файла. null — успешно; иначе текст ошибки. */
+    fun importBackup(bytes: ByteArray, password: String?): String? = try {
+        val restored = com.sadness.vpn.data.Backup.import(store, bytes, password, store.load())
+        mutate { restored }
+        L.lang = restored.settings.language
+        Palette.apply(restored.settings.theme)
+        com.sadness.vpn.data.SubscriptionWork.schedule(getApplication(), restored.settings)
+        if (vpn.value.status == Status.ON) message(L.t("Восстановлено. Переподключите VPN, чтобы применить."))
+        else message(L.t("Резервная копия восстановлена."))
+        null
+    } catch (e: com.sadness.vpn.data.Backup.NeedPassword) {
+        "need-password"
+    } catch (e: com.sadness.vpn.data.Backup.WrongPassword) {
+        L.t("Неверный пароль резервной копии.")
+    } catch (e: Exception) {
+        L.t(e.message ?: "Не удалось прочитать резервную копию.")
+    }
+
+    fun bugReport(): String = com.sadness.vpn.data.BugReport.build(getApplication(), store.load())
 
     companion object {
         const val LOCAL_LINKS = "local-links"

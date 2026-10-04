@@ -94,7 +94,7 @@ fun RoutesScreen(ui: UiState, model: AppModel, modifier: Modifier) {
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Palette.Surface2).clickable { adding = true }.padding(vertical = 11.dp),
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Palette.Surface2).clickableTv { adding = true }.padding(vertical = 11.dp),
             horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Add, null, tint = Palette.Text)
             Spacer(Modifier.width(6.dp))
@@ -103,7 +103,7 @@ fun RoutesScreen(ui: UiState, model: AppModel, modifier: Modifier) {
 
         SectionTitle(Icons.Outlined.Apps, L.t("Приложения"))
         CardBox {
-            Row(Modifier.fillMaxWidth().clickable { page = "apps" }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickableTv { page = "apps" }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(L.t("Через VPN"), color = Palette.Text)
                     Text(when (s.appsMode) {
@@ -156,7 +156,7 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, onSelect: (
                 color = if (on) Palette.Bg else Palette.Text3,
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
                     .background(if (on) Palette.Accent else Palette.Field)
-                    .clickable { onSelect(key) }.padding(vertical = 8.dp))
+                    .clickableTv { onSelect(key) }.padding(vertical = 8.dp))
         }
     }
 }
@@ -165,7 +165,7 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, onSelect: (
 fun Chip(text: String, on: Boolean = false, onClick: (() -> Unit)? = null) {
     Text(text, fontSize = 11.sp, color = if (on) Palette.Accent else Palette.Text2,
         modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) Palette.AccentSoft else Palette.Surface2)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.clickableTv(onClick) else Modifier)
             .padding(horizontal = 10.dp, vertical = 5.dp))
 }
 
@@ -188,7 +188,7 @@ fun RowDivider() = androidx.compose.material3.HorizontalDivider(color = Palette.
 
 @Composable
 fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickableTv { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 10.dp)) {
             Text(title, color = Palette.Text)
             if (subtitle.isNotEmpty()) Text(subtitle, color = Palette.Text3, fontSize = 12.sp)

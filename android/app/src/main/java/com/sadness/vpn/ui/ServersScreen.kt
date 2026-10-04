@@ -111,7 +111,7 @@ fun ServersScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifi
 
 @Composable
 private fun GroupHeader(group: Group, busy: Boolean, open: Boolean, onToggle: () -> Unit, onRefresh: () -> Unit) {
-    Panel(Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
+    Panel(Modifier.fillMaxWidth().clickableTv(onToggle)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(group.name.ifEmpty { L.t("Подписка") }, color = Palette.Text, fontWeight = FontWeight.Medium, maxLines = 1)
@@ -131,7 +131,7 @@ private fun ServerRow(server: Server, selected: Boolean, active: Boolean, ping: 
     Row(
         Modifier.fillMaxWidth().clip(shape)
             .then(if (selected) Modifier.background(Palette.AccentSoft).border(1.dp, Palette.Accent.copy(alpha = 0.35f), shape) else Modifier)
-            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 11.dp),
+            .clickableTv(onClick).padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(flagOf(remark), fontSize = 18.sp)
@@ -147,7 +147,7 @@ private fun ServerRow(server: Server, selected: Boolean, active: Boolean, ping: 
             Text(label + if (active) " · " + L.t("сейчас через него") else "", color = if (active) Palette.Warn else Palette.Text3, fontSize = 11.sp)
         }
         Text(if (favorite) "★" else "☆", color = if (favorite) Palette.Warn else Palette.Text3, fontSize = 18.sp,
-            modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onFavorite).padding(horizontal = 8.dp, vertical = 2.dp))
+            modifier = Modifier.clip(RoundedCornerShape(50)).clickableTv(onFavorite).padding(horizontal = 8.dp, vertical = 2.dp))
         Text(when { ping == null -> ""; ping < 0 -> "—"; else -> "$ping" }, color = pingColor(ping), fontSize = 14.sp)
     }
 }

@@ -76,7 +76,7 @@ fun SubscriptionsScreen(ui: UiState, model: AppModel, modifier: Modifier, onScan
             }
         }
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.Accent)
-            .clickable { menu = true }.padding(vertical = 12.dp),
+            .clickableTv { menu = true }.padding(vertical = 12.dp),
             horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Add, null, tint = Palette.Bg)
             Spacer(Modifier.width(6.dp))
@@ -121,7 +121,7 @@ fun SubscriptionsScreen(ui: UiState, model: AppModel, modifier: Modifier, onScan
 
 @Composable
 private fun MenuRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp),
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickableTv(onClick).padding(vertical = 12.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = Palette.Accent)
         Spacer(Modifier.width(12.dp))
@@ -138,7 +138,7 @@ private fun SubscriptionCard(group: Group, selected: Boolean, busy: Boolean, onS
     val shape = RoundedCornerShape(18.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Palette.Surface)
         .border(1.dp, if (selected) Palette.Accent.copy(alpha = 0.55f) else Palette.Border, shape)
-        .clickable(onClick = onSelect).padding(14.dp)) {
+        .clickableTv(onSelect).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.RssFeed, null, tint = if (selected) Palette.Accent else Palette.Text3, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
@@ -154,7 +154,7 @@ private fun SubscriptionCard(group: Group, selected: Boolean, busy: Boolean, onS
                 fontFamily = FontFamily.Monospace, maxLines = if (showUrl) 3 else 1, modifier = Modifier.weight(1f, fill = false))
             Icon(if (showUrl) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
                 contentDescription = if (showUrl) L.t("Скрыть ссылку") else L.t("Показать ссылку"), tint = Palette.Text3,
-                modifier = Modifier.padding(start = 6.dp).size(18.dp).clickable { showUrl = !showUrl })
+                modifier = Modifier.padding(start = 6.dp).size(18.dp).clickableTv { showUrl = !showUrl })
         }
         Text(updatedLine(group), color = Palette.Text3, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
         expireLine(group)?.let { (text, days) ->

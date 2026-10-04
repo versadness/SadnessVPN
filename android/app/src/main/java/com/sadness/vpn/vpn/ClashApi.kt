@@ -60,6 +60,27 @@ class ClashApi(private val port: Int, private val secret: String) {
         runCatching { request("/group/${enc(group)}/delay?timeout=5000&url=${enc(url)}", timeoutMs = 8000) }
     }
 
+    data class Connection(val id: String, val network: String, val sourceIp: String, val sourcePort: Int,
+                          val inboundIp: String, val inboundPort: Int, val upload: Long, val download: Long)
+
+    /** Снимок соединений: открытые соединения и общий счётчик байт ядра. */
+    data class Snapshot(val total: Long, val connections: List<Connection>)
+
+    /** Открытые соединения ядра (для учёта трафика по приложениям). */
+    fun connections(): Snapshot? = runCatching {
+        val (code, text) = request("/connections")
+        if (code != 200) return@runCatching null
+        val root = JSONObject(text)
+        val total = root.optLong("uploadTotal") + root.optLong("downloadTotal")
+        val arr = root.optJSONArray("connections") ?: return@runCatching Snapshot(total, emptyList())
+        Snapshot(total, (0 until arr.length()).mapNotNull { i ->
+            val c = arr.getJSONObject(i)
+            val m = c.optJSONObject("metadata") ?: return@mapNotNull null
+            Connection(c.optString("id"), m.optString("network"), m.optString("sourceIP"), m.optString("sourcePort").toIntOrNull() ?: 0,
+                m.optString("inboundIP"), m.optString("inboundPort").toIntOrNull() ?: 0, c.optLong("upload"), c.optLong("download"))
+        })
+    }.getOrNull()
+
     /** Поток скорости: вызывает onSample(up, down) раз в секунду, пока не прерван. */
     fun streamTraffic(onSample: (Long, Long) -> Unit) {
         val connection = open("/traffic", timeoutMs = 10_000)

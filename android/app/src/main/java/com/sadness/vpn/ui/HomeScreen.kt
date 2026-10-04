@@ -90,7 +90,7 @@ fun HomeScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier,
             }
         }
 
-        Panel(Modifier.fillMaxWidth().clickable(onClick = onOpenServers)) {
+        Panel(Modifier.fillMaxWidth().clickableTv(onOpenServers)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (selection == null) {
                     Text(L.t("Сервер не выбран — добавьте подписку"), color = Palette.Text2, modifier = Modifier.weight(1f))
@@ -168,7 +168,7 @@ private fun CheckCard(ui: UiState, on: Boolean, model: AppModel) {
                 Text(L.t("Проверка соединения"), color = Palette.Text, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                 if (ui.checking) CircularProgressIndicator(Modifier.size(18.dp), color = Palette.Accent, strokeWidth = 2.dp)
                 else Text(L.t("Проверить"), color = if (on) Palette.Accent else Palette.Text3, fontSize = 14.sp,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = model::checkConnection).padding(horizontal = 8.dp, vertical = 4.dp))
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickableTv(model::checkConnection).padding(horizontal = 8.dp, vertical = 4.dp))
             }
             val c = ui.check
             if (c == null) {
@@ -210,7 +210,7 @@ fun flagFromCode(code: String?): String {
 @Composable
 fun SmallButton(text: String, background: Color, color: Color, modifier: Modifier, onClick: () -> Unit) {
     Text(text, color = color, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        modifier = modifier.clip(RoundedCornerShape(10.dp)).background(background).clickable(onClick = onClick).padding(vertical = 9.dp))
+        modifier = modifier.clip(RoundedCornerShape(10.dp)).background(background).clickableTv(onClick).padding(vertical = 9.dp))
 }
 
 @Composable
@@ -230,7 +230,7 @@ private fun PowerButton(status: Status, onClick: () -> Unit) {
         Modifier.size(160.dp).clip(CircleShape)
             .background(color.copy(alpha = 0.08f))
             .border(3.dp, color, CircleShape)
-            .clickable(onClick = onClick),
+            .clickableTv(onClick),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {

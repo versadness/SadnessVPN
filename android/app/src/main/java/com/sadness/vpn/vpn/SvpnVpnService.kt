@@ -116,6 +116,7 @@ class SvpnVpnService : VpnService() {
     }
 
     private var launchCore: (() -> Core)? = null
+    private var appTraffic: AppTraffic? = null
 
     private fun startWorkers(@Suppress("UNUSED_PARAMETER") first: Core, store: Store) {
         // Скорость и объём за сессию; ядро берётся текущее — оно могло перезапуститься.
@@ -188,6 +189,14 @@ class SvpnVpnService : VpnService() {
                 try { Thread.sleep(3000) } catch (_: InterruptedException) { return@Thread }
             }
         }.apply { name = "svpn-monitor"; isDaemon = true; start() }
+        // Трафик по приложениям — опрос соединений ядра раз в 2 секунды.
+        appTraffic = AppTraffic(this)
+        workers += Thread {
+            while (!stopping) {
+                VpnController.core?.takeIf { it.alive() }?.let { core -> runCatching { appTraffic?.poll(core.api) } }
+                try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
+            }
+        }.apply { name = "svpn-apps"; isDaemon = true; start() }
         // Учёт трафика за день — раз в минуту и при отключении.
         workers += Thread {
             var saved = 0L
@@ -231,6 +240,7 @@ class SvpnVpnService : VpnService() {
         VpnController.update { it.copy(status = Status.STOPPING) }
         workers.forEach { it.interrupt() }
         workers.clear()
+        runCatching { appTraffic?.flush() }
         VpnController.core?.let { core ->
             runCatching { saveToday(Store(this), todaySaved) }
             core.stop()

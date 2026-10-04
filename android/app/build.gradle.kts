@@ -7,8 +7,8 @@ plugins {
 }
 
 // Версия Android-клиента идёт своей нумерацией: у десктопа 3.x, у телефона — 1.x.
-val appVersionName = "1.2.0"
-val appVersionCode = 3
+val appVersionName = "1.3.0"
+val appVersionCode = 4
 
 // Ключ подписи хранится вне репозитория. Путь к файлу с его параметрами
 // задаётся переменной SADNESS_SIGNING или лежит рядом: ../../signing.properties
@@ -128,6 +128,8 @@ dependencies {
     // QR: сканер (камера) и генерация кода для раздачи по Wi-Fi.
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.google.zxing:core:3.5.3")
+    // Фоновое обновление подписок.
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

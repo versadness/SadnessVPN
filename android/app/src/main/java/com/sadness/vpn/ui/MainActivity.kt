@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AltRoute
@@ -149,6 +151,11 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_VIEW -> intent.dataString?.let { model.importText(it) }
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { model.importText(it) }
             VpnToggle.ACTION_CONNECT -> if (model.vpn.value.status == Status.OFF) requestConnect()
+            // Только в отладочной сборке: разовый запуск фонового обновления подписок для проверки.
+            "com.sadness.vpn.DEBUG_RUN_WORK" -> if (com.sadness.vpn.BuildConfig.DEBUG) {
+                androidx.work.WorkManager.getInstance(this).enqueue(
+                    androidx.work.OneTimeWorkRequestBuilder<com.sadness.vpn.data.SubscriptionWork>().build())
+            }
         }
     }
 
@@ -227,6 +234,16 @@ fun App(model: AppModel, batteryRestricted: Boolean, onConnect: () -> Unit, onFi
     // Ссылка, открытая из Telegram, сразу показывает подписки.
     LaunchedEffect(ui.data.groups.size) { if (ui.data.groups.isNotEmpty() && ui.data.selected() == null) tab = 3 }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    // Планшет, раскладушка в раскрытом виде, Android TV: вкладки сбоку, на главной — две колонки.
+    val wide = config.screenWidthDp >= 720 || isTv(context)
+    if (wide) {
+        WideLayout(ui, vpn, model, tabs, tab, { tab = it }, snackbar, batteryRestricted, onConnect, onFixBattery, onScanQr, onPickFile, readClipboard)
+        ui.update?.let { info -> UpdateDialog(info, ui.updateProgress, model, onInstall) }
+        return
+    }
+
     Box(Modifier.fillMaxSize().background(Palette.Bg)) {
         val modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(bottom = 76.dp)
         when (tab) {
@@ -273,6 +290,52 @@ private fun UpdateDialog(info: UpdateInfo, progress: Int, model: AppModel, onIns
     )
 }
 
+@Composable
+private fun WideLayout(ui: UiState, vpn: com.sadness.vpn.vpn.ConnState, model: AppModel, tabs: List<Tab>, tab: Int, onTab: (Int) -> Unit,
+                       snackbar: SnackbarHostState, batteryRestricted: Boolean, onConnect: () -> Unit, onFixBattery: () -> Unit,
+                       onScanQr: () -> Unit, onPickFile: () -> Unit, readClipboard: () -> String?) {
+    Box(Modifier.fillMaxSize().background(Palette.Bg)) {
+        Row(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            // Боковая панель вкладок.
+            Column(Modifier.width(92.dp).fillMaxSize().background(Palette.Field).padding(vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                tabs.forEachIndexed { index, item ->
+                    val on = index == tab
+                    Column(Modifier.width(80.dp).clip(RoundedCornerShape(14.dp)).background(if (on) Palette.AccentSoft else Palette.Field)
+                        .clickableTv { onTab(index) }.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(item.icon, contentDescription = item.title, tint = if (on) Palette.Accent else Palette.Text3, modifier = Modifier.size(24.dp))
+                        Text(item.title, fontSize = 11.sp, color = if (on) Palette.Accent else Palette.Text3, maxLines = 1)
+                    }
+                }
+            }
+            val content = Modifier.fillMaxSize()
+            when (tab) {
+                0 -> Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.width(420.dp)) {
+                        HomeScreen(ui, vpn, model, content, batteryRestricted, onFixBattery, onConnect, onOpenServers = { onTab(1) })
+                    }
+                    Box(Modifier.weight(1f).fillMaxSize().background(Palette.Field.copy(alpha = 0.35f))) {
+                        ServersScreen(ui, vpn, model, content, onOpenSubscriptions = { onTab(3) })
+                    }
+                }
+                else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    Box(Modifier.widthIn(max = 760.dp)) {
+                        when (tab) {
+                            1 -> ServersScreen(ui, vpn, model, content, onOpenSubscriptions = { onTab(3) })
+                            2 -> RoutesScreen(ui, model, content)
+                            3 -> SubscriptionsScreen(ui, model, content, onScanQr, onPickFile, readClipboard)
+                            else -> SettingsScreen(ui, model, content)
+                        }
+                    }
+                }
+            }
+        }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)) { data ->
+            Snackbar(data, containerColor = Palette.Surface2, contentColor = Palette.Text, shape = RoundedCornerShape(12.dp))
+        }
+    }
+}
+
 /** Плавающая нижняя панель — скруглённая, с отступом от краёв. */
 @Composable
 private fun FloatingNav(tabs: List<Tab>, selected: Int, onSelect: (Int) -> Unit) {
@@ -287,7 +350,7 @@ private fun FloatingNav(tabs: List<Tab>, selected: Int, onSelect: (Int) -> Unit)
             Column(
                 Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
                     .background(if (on) Palette.AccentSoft else Palette.Field)
-                    .clickable { onSelect(index) }.padding(vertical = 6.dp),
+                    .clickableTv { onSelect(index) }.padding(vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(item.icon, contentDescription = item.title, tint = if (on) Palette.Accent else Palette.Text3, modifier = Modifier.size(22.dp))
