@@ -50,12 +50,16 @@ fun pingColor(ms: Int?): Color = when {
     else -> Palette.Warn
 }
 
-fun formatBytes(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes Б"
-    bytes < 1024L * 1024 -> "%.0f КБ".format(bytes / 1024.0)
-    bytes < 1024L * 1024 * 1024 -> "%.1f МБ".format(bytes / 1024.0 / 1024)
-    else -> "%.2f ГБ".format(bytes / 1024.0 / 1024 / 1024)
-}.replace('.', ',')
+fun formatBytes(bytes: Long): String {
+    fun trim(value: Double, digits: Int) = "%.${digits}f".format(java.util.Locale.ROOT, value)
+        .let { if ('.' in it) it.trimEnd('0').trimEnd('.') else it }.replace('.', ',')
+    return when {
+        bytes < 1024 -> "$bytes Б"
+        bytes < 1024L * 1024 -> trim(bytes / 1024.0, 0) + " КБ"
+        bytes < 1024L * 1024 * 1024 -> trim(bytes / 1024.0 / 1024, 1) + " МБ"
+        else -> trim(bytes / 1024.0 / 1024 / 1024, 2) + " ГБ"
+    }
+}
 
 fun formatSpeed(bytesPerSec: Long): String {
     val mbit = bytesPerSec * 8 / 1_000_000.0
