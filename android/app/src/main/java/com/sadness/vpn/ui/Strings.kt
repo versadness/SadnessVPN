@@ -74,6 +74,8 @@ object Strings {
         "Исправить" to "Fix",
         "К последнему серверу при открытии приложения" to "To the last server when the app opens",
         "Как в системе" to "System",
+        "Защищено" to "Protected",
+        "Нажми, чтобы подключить" to "Tap to connect",
         "Фон главного экрана" to "Home background",
         "Авто" to "Auto", "Океан" to "Ocean", "Закат" to "Sunset", "Неон" to "Neon", "Выкл" to "Off",
         "Авто меняет цвет по состоянию VPN. В режиме энергосбережения фон замирает." to "Auto follows the VPN state. In battery saver the background stops moving.",

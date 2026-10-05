@@ -1,6 +1,11 @@
 package com.sadness.vpn.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,101 +70,114 @@ fun HomeScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier,
         }
     }
     val on = vpn.status == Status.ON
-    Box(modifier.fillMaxSize()) {
+    // Раскладка как в макете «Жидкий градиент»: живой фон на весь экран,
+    // поверх — полупрозрачные «стеклянные» элементы с белым текстом.
+    val white = Color.White
+    val glass = Modifier.clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = 0.18f))
+        .border(1.dp, white.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+    Box(modifier.fillMaxSize().background(Color(0xFF05060A))) {
     if (s.aurora != "off") Aurora(s.aurora, vpn.status, vpn.up + vpn.down, Modifier.matchParentSize())
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(bottom = 76.dp)
+        .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Sadness VPN", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = Palette.Text, modifier = Modifier.weight(1f))
-            Text("Beta", fontSize = 12.sp, color = Palette.Accent,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Palette.AccentSoft).padding(horizontal = 8.dp, vertical = 2.dp))
+            Text("Sadness VPN", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = white, modifier = Modifier.weight(1f))
+            Text("Beta", fontSize = 12.sp, color = white,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(white.copy(alpha = 0.12f)).padding(horizontal = 10.dp, vertical = 3.dp))
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(glass.fillMaxWidth().clickableTv(onOpenServers).padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            val label = when {
+                selection == null -> L.t("Сервер не выбран — добавьте подписку")
+                s.autoBest -> "⚡ " + L.t("Лучший сервер") + if (on && vpn.routeRemark.isNotEmpty()) " · " + cleanRemark(vpn.routeRemark) else ""
+                else -> {
+                    val (group, server) = selection
+                    val remark = server["remark"].toString()
+                    val ping = ui.pings[server["ui_id"].toString()]
+                    val tail = when { ping == null -> group.name; ping < 0 -> L.t("не отвечает"); else -> "$ping " + L.t("мс") }
+                    flagOf(remark) + "  " + cleanRemark(remark) + " · " + tail
+                }
+            }
+            Text(label, color = white, fontSize = 14.sp, maxLines = 1, modifier = Modifier.weight(1f))
+            Icon(Icons.Outlined.ChevronRight, null, tint = white.copy(alpha = 0.6f))
         }
 
         if (batteryRestricted && !s.batteryDismissed) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.Warn.copy(alpha = 0.12f))
-                .border(1.dp, Palette.Warn.copy(alpha = 0.4f), RoundedCornerShape(14.dp)).padding(12.dp)) {
-                Text(L.t("Телефон может отключать VPN в фоне"), color = Palette.Text, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.35f))
+                .border(1.dp, Palette.Warn.copy(alpha = 0.5f), RoundedCornerShape(14.dp)).padding(12.dp)) {
+                Text(L.t("Телефон может отключать VPN в фоне"), color = white, fontWeight = FontWeight.Medium)
                 Text(L.t("Разрешите работу без ограничений батареи, иначе система может закрыть VPN при выключенном экране."),
-                    color = Palette.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp, bottom = 8.dp))
+                    color = white.copy(alpha = 0.75f), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp, bottom = 8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SmallButton(L.t("Исправить"), Palette.Warn, Palette.Bg, Modifier.weight(1f), onFixBattery)
-                    SmallButton(L.t("Позже"), Palette.Surface2, Palette.Text, Modifier.weight(1f)) {
+                    SmallButton(L.t("Исправить"), Palette.Warn, Color(0xFF080A0F), Modifier.weight(1f), onFixBattery)
+                    SmallButton(L.t("Позже"), white.copy(alpha = 0.12f), white, Modifier.weight(1f)) {
                         model.updateSettingsQuiet { it.copy(batteryDismissed = true) }
                     }
                 }
             }
         }
 
-        Panel(Modifier.fillMaxWidth().clickableTv(onOpenServers)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selection == null) {
-                    Text(L.t("Сервер не выбран — добавьте подписку"), color = Palette.Text2, modifier = Modifier.weight(1f))
-                } else if (s.autoBest) {
-                    Text("⚡", fontSize = 24.sp)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(L.t("Лучший сервер"), color = Palette.Text, fontWeight = FontWeight.Medium)
-                        Text(if (on && vpn.routeRemark.isNotEmpty()) L.t("Сейчас: ") + vpn.routeRemark else selection.first.name,
-                            color = Palette.Text3, fontSize = 13.sp, maxLines = 1)
-                    }
-                } else {
-                    val (group, server) = selection
-                    val remark = server["remark"].toString()
-                    Text(flagOf(remark), fontSize = 26.sp)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(cleanRemark(remark), color = Palette.Text, fontWeight = FontWeight.Medium, maxLines = 1)
-                        val ping = ui.pings[server["ui_id"].toString()]
-                        val pingText = when { ping == null -> ""; ping < 0 -> " · " + L.t("не отвечает"); else -> " · $ping " + L.t("мс") }
-                        Text(group.name + pingText, color = Palette.Text3, fontSize = 13.sp, maxLines = 1)
-                    }
-                }
-                Icon(Icons.Outlined.ChevronRight, null, tint = Palette.Text3)
-            }
-        }
-
-        Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-            PowerButton(vpn.status, onClick = {
+        Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            GlassPowerButton(vpn.status) {
                 when (vpn.status) {
                     Status.OFF -> onConnect()
                     Status.ON, Status.CONNECTING -> model.disconnect()
                     Status.STOPPING -> Unit
                 }
-            })
-        }
-
-        if (vpn.status == Status.OFF && vpn.error.isNotEmpty()) {
-            Panel(Modifier.fillMaxWidth()) { Text(vpn.error, color = Palette.Danger, fontSize = 13.sp) }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
-            Text(if (on) formatSpeed(vpn.down) else "—", fontSize = 30.sp, fontWeight = FontWeight.Medium, color = Palette.Text)
-            Text("  " + L.t("Мбит/с"), fontSize = 14.sp, color = Palette.Text3, modifier = Modifier.padding(bottom = 5.dp))
-        }
-        if (on && vpn.onBackup && !s.autoBest) {
-            Text(L.t("Выбранный сервер не отвечает — трафик идёт через ") + "«${cleanRemark(vpn.routeRemark)}»",
-                color = Palette.Warn, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp))
-        }
-
-        val today = ui.data.todayBytes.takeIf { ui.data.todayDate == LocalDate.now().toString() } ?: 0
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Tile(L.t("Отдача"), if (on) "${formatSpeed(vpn.up)} " + L.t("Мбит/с") else "—", Modifier.weight(1f))
-            Tile(L.t("Сессия"), if (on) formatDuration(now - vpn.startedAt) else "—", Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Tile(L.t("Сегодня"), formatBytes(today + if (on) vpn.sessionUp + vpn.sessionDown else 0), Modifier.weight(1f))
-            val backup = when {
-                !on -> "—" to Palette.Text
-                vpn.onBackup && !s.autoBest -> L.t("Используется") to Palette.Warn
-                vpn.hasBackup -> L.t("Готов") to Palette.Accent
-                else -> L.t("Нет") to Palette.Text3
             }
-            Tile(L.t("Резерв"), backup.first, Modifier.weight(1f), backup.second)
+            Spacer(Modifier.height(14.dp))
+            val state = when (vpn.status) {
+                Status.ON -> L.t("Защищено")
+                Status.CONNECTING -> L.t("Подключение…")
+                Status.STOPPING -> L.t("Отключение…")
+                Status.OFF -> L.t("Нажми, чтобы подключить")
+            }
+            Text(state.uppercase(), color = white.copy(alpha = 0.88f), fontSize = 13.sp, letterSpacing = 1.sp)
+            Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
+                Text(if (on) formatSpeed(vpn.down) else "—", fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = white)
+                if (on) Text("  " + L.t("Мбит/с"), fontSize = 13.sp, color = white.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 6.dp))
+            }
+            if (vpn.status == Status.OFF && vpn.error.isNotEmpty()) {
+                Text(vpn.error, color = Color(0xFFFF8A95), fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.35f)).padding(10.dp))
+            }
+            if (on && vpn.onBackup && !s.autoBest) {
+                Text(L.t("Выбранный сервер не отвечает — трафик идёт через ") + "«${cleanRemark(vpn.routeRemark)}»",
+                    color = Palette.Warn, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(top = 10.dp))
+            }
         }
 
-        CheckCard(ui, on, model)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GlassTile(L.t("Отдача"), if (on) "${formatSpeed(vpn.up)} " + L.t("Мбит/с") else "—", glass, Modifier.weight(1f))
+            GlassTile(L.t("Сессия"), if (on) formatDuration(now - vpn.startedAt) else "—", glass, Modifier.weight(1f))
+        }
     }
+    }
+}
+
+@Composable
+private fun GlassTile(label: String, value: String, glass: Modifier, modifier: Modifier) {
+    Column(modifier.then(glass).padding(horizontal = 14.dp, vertical = 11.dp)) {
+        Text(label, color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
+        Text(value, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+/** Кнопка из матового стекла; при подключении мягко пульсирует. */
+@Composable
+private fun GlassPowerButton(status: Status, onClick: () -> Unit) {
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse")
+    val k by pulse.animateFloat(1f, if (status == Status.CONNECTING) 1.06f else 1f,
+        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(700),
+            androidx.compose.animation.core.RepeatMode.Reverse), label = "k")
+    val on = status == Status.ON
+    Box(Modifier.size(128.dp).graphicsLayer { scaleX = k; scaleY = k }.clip(CircleShape)
+        .background(Color.White.copy(alpha = if (on) 0.16f else 0.09f))
+        .border(1.dp, Color.White.copy(alpha = if (on) 0.4f else 0.2f), CircleShape)
+        .clickableTv(onClick), contentAlignment = Alignment.Center) {
+        Icon(Icons.Outlined.PowerSettingsNew, L.t("Подключить"), tint = Color.White, modifier = Modifier.size(46.dp))
     }
 }
 

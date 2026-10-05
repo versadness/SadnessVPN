@@ -61,6 +61,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as CColor
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -247,7 +248,7 @@ fun App(model: AppModel, batteryRestricted: Boolean, onConnect: () -> Unit, onFi
     Box(Modifier.fillMaxSize().background(Palette.Bg)) {
         val modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(bottom = 76.dp)
         when (tab) {
-            0 -> HomeScreen(ui, vpn, model, modifier, batteryRestricted, onFixBattery, onConnect, onOpenServers = { tab = 1 })
+            0 -> HomeScreen(ui, vpn, model, Modifier.fillMaxSize(), batteryRestricted, onFixBattery, onConnect, onOpenServers = { tab = 1 })
             1 -> ServersScreen(ui, vpn, model, modifier, onOpenSubscriptions = { tab = 3 })
             2 -> RoutesScreen(ui, model, modifier)
             3 -> SubscriptionsScreen(ui, model, modifier, onScanQr, onPickFile, readClipboard)
@@ -257,7 +258,7 @@ fun App(model: AppModel, batteryRestricted: Boolean, onConnect: () -> Unit, onFi
             SnackbarHost(snackbar, Modifier.padding(horizontal = 8.dp)) { data ->
                 Snackbar(data, containerColor = Palette.Surface2, contentColor = Palette.Text, shape = RoundedCornerShape(12.dp))
             }
-            FloatingNav(tabs, tab) { tab = it }
+            FloatingNav(tabs, tab, glass = tab == 0) { tab = it }
         }
     }
 
@@ -338,23 +339,24 @@ private fun WideLayout(ui: UiState, vpn: com.sadness.vpn.vpn.ConnState, model: A
 
 /** Плавающая нижняя панель — скруглённая, с отступом от краёв. */
 @Composable
-private fun FloatingNav(tabs: List<Tab>, selected: Int, onSelect: (Int) -> Unit) {
+private fun FloatingNav(tabs: List<Tab>, selected: Int, glass: Boolean = false, onSelect: (Int) -> Unit) {
+    val bg = if (glass) CColor.Black.copy(alpha = 0.22f) else Palette.Field
     Row(
         Modifier.padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp)).background(Palette.Field)
-            .border(1.dp, Palette.Border, RoundedCornerShape(22.dp)).padding(horizontal = 4.dp, vertical = 6.dp),
+            .clip(RoundedCornerShape(22.dp)).background(bg)
+            .border(1.dp, if (glass) CColor.White.copy(alpha = 0.08f) else Palette.Border, RoundedCornerShape(22.dp)).padding(horizontal = 4.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceAround,
     ) {
         tabs.forEachIndexed { index, item ->
             val on = index == selected
             Column(
                 Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
-                    .background(if (on) Palette.AccentSoft else Palette.Field)
+                    .background(if (on) (if (glass) CColor.White.copy(alpha = 0.14f) else Palette.AccentSoft) else CColor.Transparent)
                     .clickableTv { onSelect(index) }.padding(vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(item.icon, contentDescription = item.title, tint = if (on) Palette.Accent else Palette.Text3, modifier = Modifier.size(22.dp))
-                Text(item.title, fontSize = 10.sp, color = if (on) Palette.Accent else Palette.Text3, maxLines = 1)
+                Icon(item.icon, contentDescription = item.title, tint = if (on) (if (glass) CColor.White else Palette.Accent) else if (glass) CColor.White.copy(alpha = 0.7f) else Palette.Text3, modifier = Modifier.size(22.dp))
+                Text(item.title, fontSize = 10.sp, color = if (on) (if (glass) CColor.White else Palette.Accent) else if (glass) CColor.White.copy(alpha = 0.7f) else Palette.Text3, maxLines = 1)
             }
         }
     }
