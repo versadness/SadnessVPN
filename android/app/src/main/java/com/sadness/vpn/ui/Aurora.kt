@@ -161,13 +161,16 @@ float3 lava(float2 p) {
   c *= 0.25 + 1.25 * f * f; c += pow(max(0.0, f - 0.58), 2.5) * 3.5 * mix(float3(1), C3, 0.4);
   return c * (1.0 - 0.6 * dot(p, p)); }
 float3 aurora(float2 p) {
-  float3 c = mix(float3(0.01, 0.015, 0.04), C0 * 0.25, smoothstep(-0.6, 0.6, p.y));
-  float2 g = floor(p * 150.0); float2 l = fract(p * 150.0) - 0.5; c += step(0.993, h(g)) * h(g + 3.0) * smoothstep(0.45, 0.0, length(l)) * 1.2;
-  for (int i = 0; i < 4; i++) { float fi = float(i); float k = fbm(float2(p.x * 1.6 + fi * 3.1, T * 0.12 + fi));
-    float cy = 0.18 + 0.22 * k - fi * 0.07; float dy = p.y - cy; float a = dy > 0.0 ? exp(-dy * (3.5 + fi)) : exp(dy * 28.0);
-    float st = 0.55 + 0.45 * n(float2(p.x * 38.0 + fi * 13.0 + k * 6.0, T * 0.4));
-    c += pal(fi * 0.22 + p.x * 0.25 + 0.15) * a * st * (0.55 + 0.25 * E) * (1.0 - fi * 0.15); }
-  return c * (1.0 - 0.35 * dot(p, p)); }
+  float3 c = mix(float3(0.01, 0.015, 0.04), C0 * 0.3, smoothstep(-0.2, 0.6, p.y));
+  c += pal(0.35) * 0.22 * exp(-(p.y + 0.5) * 4.0);
+  float2 g = floor(p * 150.0); float2 l = fract(p * 150.0) - 0.5;
+  c += step(0.993, h(g)) * h(g + 3.0) * smoothstep(0.45, 0.0, length(l)) * smoothstep(-0.2, 0.3, p.y);
+  for (int i = 0; i < 5; i++) { float fi = float(i); float k = fbm(float2(p.x * 3.2 + fi * 3.1, T * 0.12 + fi * 1.7));
+    float cy = 0.32 - fi * 0.15 + 0.16 * (k - 0.5) + 0.04 * sin(p.x * 9.0 + T * 0.5 + fi);
+    float dy = p.y - cy; float a = dy > 0.0 ? exp(-dy * (2.8 + fi * 0.6)) : exp(dy * 14.0);
+    float st = 0.5 + 0.5 * n(float2(p.x * 70.0 + fi * 13.0 + k * 8.0, T * 0.35));
+    c += pal(fi * 0.21 + p.x * 0.6 + 0.1) * a * st * (0.5 + 0.25 * E) * (1.0 - fi * 0.1); }
+  return c * (1.0 - 0.3 * dot(p, p)); }
 float3 ink(float2 p) {
   float2 s = p * 1.7; float w = fbm(s * 1.3 - T * 0.07); float f = fbm(s + w * 1.8 + float2(T * 0.05, -T * 0.04));
   float3 ir = 0.5 + 0.5 * cos(6.283 * (f * 2.2 + float3(0.0, 0.33, 0.67)) + T * 0.25);
