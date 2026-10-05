@@ -65,18 +65,24 @@ fun Aurora(style: String, status: Status, bytesPerSec: Long, modifier: Modifier 
     // Экономия: не каждый кадр экрана, а 30 к/с (в покое — 15), в энергосбережении
     // фон замирает. Состояние читается только при рисовании — без перекомпоновки.
     // Когда приложение свёрнуто, часы кадров стоят и анимация не тратит ничего.
+    // Ровные 30 к/с: ждём каждый кадр экрана (60/90/120 Гц), но шаг делаем,
+    // только когда прошло ~33 мс. Так кадры идут через равные промежутки, без рывков.
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) {
             withFrameNanos { t ->
-                if (last != 0L && !power.isPowerSaveMode) {
-                    val dt = min((t - last) / 1e9f, 0.1f)
-                    phase.floatValue += dt * energy
-                    clock.floatValue += dt
+                if (last == 0L) last = t
+                val elapsed = t - last
+                if (elapsed >= 31_000_000L) {
+                    if (!power.isPowerSaveMode) {
+                        val dt = min(elapsed / 1e9f, 0.1f)
+                        phase.floatValue += dt * energy
+                        clock.floatValue += dt
+                    }
+                    last = t
                 }
-                last = t
             }
-            delay(if (energy < 0.4f) 66 else 33)
+            if (power.isPowerSaveMode) delay(500)
         }
     }
     if (Build.VERSION.SDK_INT >= 33) {
@@ -107,8 +113,8 @@ private const val FADE = 5f
 /**
  * Android 13+: три сцены-шейдера (жидкий градиент, сияние, перламутр) по кругу.
  * Переход — не простое затухание: новая сцена «протекает» сквозь старую по
- * шумовой маске. Рисуется в слой в 2 раза меньше экрана и растягивается
- * с фильтрацией — картинка мягкая, а пикселей в 4 раза меньше.
+ * шумовой маске. Рисуется в слой в 3 раза меньше экрана и растягивается
+ * с фильтрацией — картинка мягкая, а пикселей в 9 раз меньше.
  */
 @RequiresApi(33)
 @Composable
@@ -117,8 +123,8 @@ private fun ShaderAurora(colors: List<Color>, phase: State<Float>, clock: State<
     val paint = remember { android.graphics.Paint().apply { this.shader = shader } }
     val node = remember { RenderNode("aurora").apply { setUseCompositingLayer(true, android.graphics.Paint().apply { isFilterBitmap = true }) } }
     Spacer(modifier.drawBehind {
-        val w = (size.width / 2f).toInt().coerceAtLeast(1)
-        val h = (size.height / 2f).toInt().coerceAtLeast(1)
+        val w = (size.width / 3f).toInt().coerceAtLeast(1)
+        val h = (size.height / 3f).toInt().coerceAtLeast(1)
         val c = clock.value
         val period = HOLD + FADE
         val scene = (c / period).toInt() % 3
@@ -147,11 +153,12 @@ private fun ShaderAurora(colors: List<Color>, phase: State<Float>, clock: State<
 private const val AURORA_AGSL = """
 uniform float2 R; uniform float T; uniform float E; uniform float A; uniform float B; uniform float K;
 uniform float3 C0; uniform float3 C1; uniform float3 C2; uniform float3 C3;
-float h(float2 p) { return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
+// Хеш без sin(): на мобильных GPU sin() больших чисел неточен и даёт квадратные «блоки».
+float h(float2 p) { float3 q = fract(float3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float n(float2 p) { float2 i = floor(p); float2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h(i), h(i + float2(1, 0)), f.x), mix(h(i + float2(0, 1)), h(i + 1.0), f.x), f.y); }
 float fbm(float2 p) { float v = 0.0; float a = 0.5;
-  for (int i = 0; i < 5; i++) { v += a * n(p); p = p * 2.03 + float2(1.7, 9.2); a *= 0.5; } return v; }
+  for (int i = 0; i < 4; i++) { v += a * n(p); p = p * 2.03 + float2(1.7, 9.2); a *= 0.5; } return v; }
 float3 pal(float x) { x = fract(x) * 4.0;
   return x < 1.0 ? mix(C0, C1, x) : x < 2.0 ? mix(C1, C2, x - 1.0) : x < 3.0 ? mix(C2, C3, x - 2.0) : mix(C3, C0, x - 3.0); }
 float3 lava(float2 p) {
@@ -174,7 +181,7 @@ float3 aurora(float2 p) {
 float3 ink(float2 p) {
   float2 s = p * 1.7; float w = fbm(s * 1.3 - T * 0.07); float f = fbm(s + w * 1.8 + float2(T * 0.05, -T * 0.04));
   float3 ir = 0.5 + 0.5 * cos(6.283 * (f * 2.2 + float3(0.0, 0.33, 0.67)) + T * 0.25);
-  float3 c = mix(pal(f * 1.5), ir, 0.42) * smoothstep(0.2, 0.75, f) * 1.15; c += pow(max(0.0, f - 0.6), 2.0) * 2.5;
+  float3 c = mix(pal(f * 1.5), pal(f * 1.5) * ir * 1.6, 0.35) * smoothstep(0.2, 0.75, f) * 1.1; c += pow(max(0.0, f - 0.6), 2.0) * 1.6 * mix(float3(1), C3, 0.5);
   return c * (1.0 - 0.5 * dot(p, p)); }
 float3 scene(float m, float2 p) { return m < 0.5 ? lava(p) : (m < 1.5 ? aurora(p) : ink(p)); }
 half4 main(float2 fc) {
