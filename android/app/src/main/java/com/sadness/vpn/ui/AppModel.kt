@@ -508,6 +508,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun regenerateHwid() = mutate { it.copy(hwid = Subscription.generateHwid()) }
 
+    fun setAurora(style: String) = updateSettingsQuiet { it.copy(aurora = style) }
     fun setTheme(theme: String) { Palette.apply(theme); updateSettingsQuiet { it.copy(theme = theme) } }
     fun setLanguage(lang: String) { L.lang = lang; updateSettingsQuiet { it.copy(language = lang) } }
 

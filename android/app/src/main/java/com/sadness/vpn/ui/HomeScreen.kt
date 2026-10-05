@@ -65,8 +65,10 @@ fun HomeScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier,
         }
     }
     val on = vpn.status == Status.ON
+    Box(modifier.fillMaxSize()) {
+    if (s.aurora != "off") Aurora(s.aurora, vpn.status, vpn.up + vpn.down, Modifier.matchParentSize())
     Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -157,6 +159,7 @@ fun HomeScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier,
         }
 
         CheckCard(ui, on, model)
+    }
     }
 }
 

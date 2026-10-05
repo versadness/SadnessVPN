@@ -224,6 +224,14 @@ private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpe
             }
             Divider()
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Text(L.t("Фон главного экрана"), color = Palette.Text)
+                Spacer(Modifier.height(8.dp))
+                Segmented(listOf("auto" to L.t("Авто"), "ocean" to L.t("Океан"), "sunset" to L.t("Закат"), "neon" to L.t("Неон"), "off" to L.t("Выкл")), s.aurora) { model.setAurora(it) }
+                Spacer(Modifier.height(6.dp))
+                Text(L.t("Авто меняет цвет по состоянию VPN. В режиме энергосбережения фон замирает."), color = Palette.Text3, fontSize = 12.sp)
+            }
+            Divider()
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(L.t("Язык"), color = Palette.Text)
                 Spacer(Modifier.height(8.dp))
                 Segmented(listOf("ru" to L.t("Русский"), "en" to "English"), s.language) { model.setLanguage(it) }
