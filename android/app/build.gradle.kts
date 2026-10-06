@@ -7,8 +7,8 @@ plugins {
 }
 
 // Версия Android-клиента идёт своей нумерацией: у десктопа 3.x, у телефона — 1.x.
-val appVersionName = "1.4.1"
-val appVersionCode = 6
+val appVersionName = "1.4.2"
+val appVersionCode = 7
 
 // Ключ подписи хранится вне репозитория. Путь к файлу с его параметрами
 // задаётся переменной SADNESS_SIGNING или лежит рядом: ../../signing.properties
