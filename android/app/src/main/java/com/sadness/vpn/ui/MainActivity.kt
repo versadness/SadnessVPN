@@ -61,6 +61,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color as CColor
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -246,6 +247,7 @@ fun App(model: AppModel, batteryRestricted: Boolean, onConnect: () -> Unit, onFi
     }
 
     Box(Modifier.fillMaxSize().background(Palette.Bg)) {
+        AppBackground(ui, vpn, tab)
         val modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(bottom = 76.dp)
         when (tab) {
             0 -> HomeScreen(ui, vpn, model, Modifier.fillMaxSize(), batteryRestricted, onFixBattery, onConnect, onOpenServers = { tab = 1 })
@@ -256,7 +258,7 @@ fun App(model: AppModel, batteryRestricted: Boolean, onConnect: () -> Unit, onFi
         }
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()) {
             SnackbarHost(snackbar, Modifier.padding(horizontal = 8.dp)) { data ->
-                Snackbar(data, containerColor = Palette.Surface2, contentColor = Palette.Text, shape = RoundedCornerShape(12.dp))
+                Snackbar(data, containerColor = Palette.Surface2Solid, contentColor = Palette.Text, shape = RoundedCornerShape(12.dp))
             }
             FloatingNav(tabs, tab, glass = tab == 0) { tab = it }
         }
@@ -296,6 +298,7 @@ private fun WideLayout(ui: UiState, vpn: com.sadness.vpn.vpn.ConnState, model: A
                        snackbar: SnackbarHostState, batteryRestricted: Boolean, onConnect: () -> Unit, onFixBattery: () -> Unit,
                        onScanQr: () -> Unit, onPickFile: () -> Unit, readClipboard: () -> String?) {
     Box(Modifier.fillMaxSize().background(Palette.Bg)) {
+        AppBackground(ui, vpn, tab)
         Row(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             // Боковая панель вкладок.
             Column(Modifier.width(92.dp).fillMaxSize().background(Palette.Field).padding(vertical = 16.dp),
@@ -332,8 +335,24 @@ private fun WideLayout(ui: UiState, vpn: com.sadness.vpn.vpn.ConnState, model: A
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)) { data ->
-            Snackbar(data, containerColor = Palette.Surface2, contentColor = Palette.Text, shape = RoundedCornerShape(12.dp))
+            Snackbar(data, containerColor = Palette.Surface2Solid, contentColor = Palette.Text, shape = RoundedCornerShape(12.dp))
         }
+    }
+}
+
+/** Общий живой фон: яркий на главной, на остальных вкладках приглушён и спокойнее. */
+@Composable
+private fun AppBackground(ui: UiState, vpn: com.sadness.vpn.vpn.ConnState, tab: Int) {
+    val style = ui.data.settings.aurora
+    // В светлой теме тёмный текст вкладок не читается на фоне — там фон только на главной.
+    val show = style != "off" && (Palette.dark || tab == 0)
+    Palette.glass = style != "off"
+    if (!show) return
+    val dim by androidx.compose.animation.core.animateFloatAsState(if (tab == 0) 0f else 0.6f,
+        androidx.compose.animation.core.tween(500), label = "dim")
+    Box(Modifier.fillMaxSize()) {
+        Aurora(style, vpn.status, vpn.up + vpn.down, Modifier.fillMaxSize(), calm = tab != 0)
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = dim }.background(CColor.Black))
     }
 }
 

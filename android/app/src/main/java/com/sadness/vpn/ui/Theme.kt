@@ -20,15 +20,21 @@ object Palette {
     /** Тёмная ли сейчас системная тема (обновляет SadnessTheme). */
     var systemDark by mutableStateOf(true)
     val dark: Boolean get() = mode == "dark" || (mode == "system" && systemDark)
+    /** Под экранами живой фон: карточки становятся полупрозрачными («стекло»). */
+    var glass by mutableStateOf(false)
+    private val see: Boolean get() = glass && dark
 
     fun apply(theme: String) { mode = theme }
 
     private fun pick(dark: Long, light: Long) = Color(if (this.dark) dark else light)
 
     val Bg get() = pick(0xFF080A0F, 0xFFF4F6F9)
-    val Surface get() = pick(0xFF181C26, 0xFFFFFFFF)
-    val Surface2 get() = pick(0xFF1F2430, 0xFFEEF1F5)
-    val Field get() = pick(0xFF151922, 0xFFE9ECF1)
+    val Surface get() = if (see) Color(0x8C12151D) else pick(0xFF181C26, 0xFFFFFFFF)
+    val Surface2 get() = if (see) Color(0x991A1E28) else pick(0xFF1F2430, 0xFFEEF1F5)
+    val Field get() = if (see) Color(0x80101318) else pick(0xFF151922, 0xFFE9ECF1)
+    /** Непрозрачные варианты — для диалогов и меню поверх всего. */
+    val SurfaceSolid get() = pick(0xFF181C26, 0xFFFFFFFF)
+    val Surface2Solid get() = pick(0xFF1F2430, 0xFFEEF1F5)
     val Border get() = pick(0x14FFFFFF, 0x1F0B1220)
     val Text get() = pick(0xFFF5F6FA, 0xFF141821)
     val Text2 get() = pick(0xFFAEB4C3, 0xFF454D5E)
@@ -46,8 +52,9 @@ fun SadnessTheme(content: @Composable () -> Unit) {
     Palette.systemDark = isSystemInDarkTheme()
     val scheme = if (Palette.dark) darkColorScheme(
         primary = Palette.Accent, onPrimary = Palette.Bg, secondary = Palette.Purple,
-        background = Palette.Bg, onBackground = Palette.Text, surface = Palette.Surface, onSurface = Palette.Text,
-        surfaceVariant = Palette.Surface2, onSurfaceVariant = Palette.Text2, outline = Palette.Border, error = Palette.Danger,
+        background = Palette.Bg, onBackground = Palette.Text, surface = Palette.SurfaceSolid, onSurface = Palette.Text,
+        surfaceVariant = Palette.Surface2Solid, onSurfaceVariant = Palette.Text2, outline = Palette.Border, error = Palette.Danger,
+        surfaceContainerHigh = Palette.Surface2Solid, surfaceContainer = Palette.SurfaceSolid,
     ) else lightColorScheme(
         primary = Palette.Accent, onPrimary = Color.White, secondary = Palette.Purple,
         background = Palette.Bg, onBackground = Palette.Text, surface = Palette.Surface, onSurface = Palette.Text,

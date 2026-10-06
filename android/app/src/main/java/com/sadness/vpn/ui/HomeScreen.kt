@@ -75,8 +75,8 @@ fun HomeScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier,
     val white = Color.White
     val glass = Modifier.clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = 0.18f))
         .border(1.dp, white.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-    Box(modifier.fillMaxSize().background(Color(0xFF05060A))) {
-    if (s.aurora != "off") Aurora(s.aurora, vpn.status, vpn.up + vpn.down, Modifier.matchParentSize())
+    // Живой фон рисует MainActivity под всеми вкладками; без него — тёмная заливка.
+    Box(modifier.fillMaxSize().background(if (s.aurora != "off") Color.Transparent else Color(0xFF05060A))) {
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(bottom = 76.dp)
         .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -38,7 +38,7 @@ import kotlin.math.sin
  * Радиальные градиенты без размытия — одинаково работает на Android 8+.
  */
 @Composable
-fun Aurora(style: String, status: Status, bytesPerSec: Long, modifier: Modifier = Modifier) {
+fun Aurora(style: String, status: Status, bytesPerSec: Long, modifier: Modifier = Modifier, calm: Boolean = false) {
     val context = LocalContext.current
     val power = remember { context.getSystemService(PowerManager::class.java) }
     val target = when (style) {
@@ -57,7 +57,7 @@ fun Aurora(style: String, status: Status, bytesPerSec: Long, modifier: Modifier 
         Status.ON -> 0.45f + min(mbit / 15f, 1f) * 1.4f
         Status.CONNECTING, Status.STOPPING -> 1.8f
         Status.OFF -> 0.25f
-    }
+    } * if (calm) 0.6f else 1f
     val energy by animateFloatAsState(energyTarget, tween(1200), label = "energy")
     val phase = remember { mutableFloatStateOf(0f) }
     /** Реальное время для смены сцен — не зависит от трафика. */
