@@ -498,6 +498,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleApp(pkg: String) = updateSettings { s -> s.copy(apps = if (pkg in s.apps) s.apps - pkg else s.apps + pkg) }
 
+    fun setRecommendedDirect(on: Boolean) = updateSettings { it.copy(recommendedDirect = on) }
+
+    /** Рекомендованное приложение: вернуть в VPN или снова пустить напрямую. */
+    fun toggleRecommended(pkg: String) = updateSettings { s ->
+        s.copy(recommendedOff = if (pkg in s.recommendedOff) s.recommendedOff - pkg else s.recommendedOff + pkg)
+    }
+
     // ── Настройки ───────────────────────────────────────────
 
     fun updateSettings(block: (Settings) -> Settings) {

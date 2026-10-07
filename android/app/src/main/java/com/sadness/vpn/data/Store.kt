@@ -39,6 +39,10 @@ data class Settings(
     val autoUpdate: Boolean = true,
     val appsMode: AppsMode = AppsMode.ALL,
     val apps: Set<String> = emptySet(),
+    /** Российские банки, госуслуги и т. п. — напрямую, мимо VPN (см. RuApps). */
+    val recommendedDirect: Boolean = true,
+    /** Рекомендованные приложения, которые пользователь вернул в VPN. */
+    val recommendedOff: Set<String> = emptySet(),
     /** Подключаться к последнему серверу при открытии приложения. */
     val connectOnLaunch: Boolean = false,
     /** "http" — настоящий запрос через сервер, "tcp" — только время соединения. */
@@ -136,6 +140,7 @@ class Store(context: Context) {
         "settings" to with(state.settings) {
             linkedMapOf("dns_preset" to dnsPreset, "ipv6" to ipv6, "mux" to mux, "failover" to failover,
                 "block_udp" to blockUdp, "auto_update" to autoUpdate, "apps_mode" to appsMode.key, "apps" to apps.sorted(),
+                "recommended_direct" to recommendedDirect, "recommended_off" to recommendedOff.sorted(),
                 "connect_on_launch" to connectOnLaunch, "ping_mode" to pingMode, "gemini_dns" to geminiDns,
                 "socks_enabled" to socksEnabled, "socks_lan" to socksLan, "socks_user" to socksUser, "socks_password" to socksPassword,
                 "share_wifi" to shareWifi, "ru_direct" to ruDirect, "adblock" to adblock, "services_vpn" to servicesVpn,
@@ -177,6 +182,8 @@ class Store(context: Context) {
                 autoUpdate = s["auto_update"] as? Boolean ?: true,
                 appsMode = AppsMode.of(s["apps_mode"]?.toString()),
                 apps = (s["apps"] as? List<Any?>).orEmpty().map { it.toString() }.toSet(),
+                recommendedDirect = s["recommended_direct"] as? Boolean ?: true,
+                recommendedOff = (s["recommended_off"] as? List<Any?>).orEmpty().map { it.toString() }.toSet(),
                 connectOnLaunch = s["connect_on_launch"] as? Boolean ?: false,
                 pingMode = if (s["ping_mode"] == "tcp") "tcp" else "http",
                 geminiDns = s["gemini_dns"] as? Boolean ?: false,

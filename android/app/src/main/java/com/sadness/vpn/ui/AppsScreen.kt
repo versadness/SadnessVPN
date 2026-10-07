@@ -71,7 +71,32 @@ fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier, onBack: () -> U
             AppsMode.EXCEPT -> L.t("Отмеченные идут напрямую, остальные через VPN. Исключено: ") + settings.apps.size
         }
         Text(hint, color = Palette.Text3, fontSize = 12.sp)
-        if (settings.appsMode != AppsMode.ALL) {
+        if (settings.appsMode != AppsMode.ONLY) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Palette.Surface)
+                .clickableTv { model.setRecommendedDirect(!settings.recommendedDirect) }.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(L.t("Рекомендуемые исключения"), color = Palette.Text, fontWeight = FontWeight.Medium)
+                    Text(L.t("Российские банки, госуслуги, маркетплейсы и операторы — напрямую: через VPN они часто не пускают или тормозят."),
+                        color = Palette.Text3, fontSize = 12.sp)
+                }
+                Spacer(Modifier.width(8.dp))
+                Switch(checked = settings.recommendedDirect, onCheckedChange = { model.setRecommendedDirect(it) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Palette.Accent, checkedThumbColor = Palette.Text,
+                        uncheckedTrackColor = Palette.Track, uncheckedThumbColor = Palette.Text2, uncheckedBorderColor = Palette.Track))
+            }
+        }
+        val recommended = settings.recommendedDirect && settings.appsMode != AppsMode.ONLY
+        fun isRec(pkg: String) = recommended && com.sadness.vpn.data.RuApps.isRecommended(pkg)
+        fun direct(pkg: String) = when (settings.appsMode) {
+            AppsMode.ONLY -> pkg in settings.apps
+            else -> pkg in settings.apps || (isRec(pkg) && pkg !in settings.recommendedOff)
+        }
+        fun toggle(pkg: String) {
+            if (settings.appsMode != AppsMode.ONLY && isRec(pkg) && pkg !in settings.apps) model.toggleRecommended(pkg)
+            else model.toggleApp(pkg)
+        }
+        if (settings.appsMode != AppsMode.ALL || recommended) {
             TextField(query, { query = it }, singleLine = true, placeholder = { Text(L.t("Поиск приложений")) },
                 leadingIcon = { Icon(Icons.Outlined.Search, null) },
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
@@ -83,20 +108,23 @@ fun AppsScreen(ui: UiState, model: AppModel, modifier: Modifier, onBack: () -> U
                 }
             }
             val q = query.trim().lowercase()
+            // В режиме «Все» показываем только рекомендованные — остальные и так через VPN.
             val list = ui.apps.filter { (showSystem || !it.system || it.pkg in settings.apps) &&
+                (settings.appsMode != AppsMode.ALL || isRec(it.pkg)) &&
                 (q.isEmpty() || q in it.label.lowercase() || q in it.pkg) }
-                .sortedBy { it.pkg !in settings.apps }
+                .sortedWith(compareBy({ !direct(it.pkg) }, { !isRec(it.pkg) }, { it.label.lowercase() }))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
                 items(list, key = { it.pkg }) { app ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickableTv { model.toggleApp(app.pkg) }
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickableTv { toggle(app.pkg) }
                         .padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(app.pkg)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(app.label, color = Palette.Text, maxLines = 1)
-                            Text(app.pkg, color = Palette.Text3, fontSize = 11.sp, maxLines = 1)
+                            if (isRec(app.pkg)) Text(L.t("Рекомендовано: напрямую"), color = Palette.Accent, fontSize = 11.sp, maxLines = 1)
+                            else Text(app.pkg, color = Palette.Text3, fontSize = 11.sp, maxLines = 1)
                         }
-                        Switch(checked = app.pkg in settings.apps, onCheckedChange = { model.toggleApp(app.pkg) },
+                        Switch(checked = direct(app.pkg), onCheckedChange = { toggle(app.pkg) },
                             colors = SwitchDefaults.colors(checkedTrackColor = Palette.Accent, checkedThumbColor = Palette.Text,
                                 uncheckedTrackColor = Palette.Track, uncheckedThumbColor = Palette.Text2, uncheckedBorderColor = Palette.Track))
                     }

@@ -85,6 +85,11 @@ class SvpnVpnService : VpnService() {
                 }
                 AppsMode.ALL -> builder.addDisallowedApplication(packageName)
             }
+            // Рекомендуемые исключения: российские банки, госуслуги и т. п. — напрямую.
+            if (settings.recommendedDirect && settings.appsMode != AppsMode.ONLY) {
+                com.sadness.vpn.data.RuApps.installed(this, settings.recommendedOff + settings.apps)
+                    .forEach { runCatching { builder.addDisallowedApplication(it) } }
+            }
             val fd = builder.establish() ?: throw IllegalStateException("Android не разрешил создать VPN. Откройте приложение и подключитесь ещё раз.")
             tun = fd
             // Запуск ядра на уже открытом туннеле. Им же ядро перезапускается после
