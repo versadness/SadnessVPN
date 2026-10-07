@@ -28,9 +28,8 @@ class AppTraffic(private val context: Context) {
     private var lastSave = 0L
 
     /** Один опрос ядра: прибавить новые байты к UID владельцев соединений. */
-    fun poll(api: ClashApi) {
+    fun poll(snapshot: ClashApi.Snapshot) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        val snapshot = api.connections() ?: return
         val cm = context.getSystemService(ConnectivityManager::class.java)
         val alive = HashSet<String>()
         var attributed = 0L

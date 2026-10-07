@@ -28,6 +28,7 @@ class SvpnVpnService : VpnService() {
     @Volatile private var stopping = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Whitelist.start(this)
         when (intent?.action) {
             ACTION_STOP -> {
                 Thread { shutdown("") }.start()
@@ -130,43 +131,6 @@ class SvpnVpnService : VpnService() {
     private fun screenOn(): Boolean = getSystemService(android.os.PowerManager::class.java)?.isInteractive != false
 
     private fun startWorkers(@Suppress("UNUSED_PARAMETER") first: Core, store: Store) {
-        // Скорость и объём за сессию; ядро берётся текущее — оно могло перезапуститься.
-        workers += Thread {
-            while (!stopping) {
-                val core = VpnController.core ?: break
-                if (!core.alive()) {
-                    try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
-                    continue
-                }
-                // Экран погашен — скорость никто не видит: поток не держим,
-                // счётчик за сессию догоняется по общему счётчику ядра при включении.
-                if (!screenOn()) {
-                    VpnController.update { it.copy(up = 0, down = 0) }
-                    try { Thread.sleep(5000) } catch (_: InterruptedException) { break }
-                    continue
-                }
-                try {
-                    var lastNotify = 0L
-                    // Объём за сессию — от общего счётчика ядра: так не теряются байты,
-                    // пока экран был погашен и поток скорости не читался.
-                    if (core !== countedCore) {
-                        countedCore = core
-                        val s = VpnController.state.value
-                        baseUp = s.sessionUp; baseDown = s.sessionDown
-                    }
-                    core.api.streamTraffic { up, down, upTotal, downTotal ->
-                        if (!screenOn()) throw InterruptedException("screen off")
-                        VpnController.update { it.copy(up = up, down = down, sessionUp = baseUp + upTotal, sessionDown = baseDown + downTotal) }
-                        // Скорость в уведомлении — не чаще раза в 2 секунды.
-                        val now = System.currentTimeMillis()
-                        if (now - lastNotify >= 2000) { lastNotify = now; updateNotification() }
-                    }
-                } catch (_: Exception) {
-                    if (stopping) break
-                    try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
-                }
-            }
-        }.apply { name = "svpn-traffic"; isDaemon = true; start() }
         // Ядро упало — до трёх перезапусков на том же туннеле (как на десктопе);
         // не вышло — VPN выключается с объяснением, а не остаётся «подключённым»
         // без интернета. Здесь же раз в 3 секунды — через какой сервер идёт трафик.
@@ -215,16 +179,45 @@ class SvpnVpnService : VpnService() {
                 try { Thread.sleep(if (screenOn()) 3000 else 15_000) } catch (_: InterruptedException) { return@Thread }
             }
         }.apply { name = "svpn-monitor"; isDaemon = true; start() }
-        // Трафик по приложениям — опрос соединений ядра раз в 2 секунды.
+        // Скорость, объём за сессию и трафик по приложениям — одним запросом
+        // соединений ядра (как на ПК). Поток /traffic на части телефонов не
+        // доходил до приложения, а его поле «за секунду» часто показывает 0.
+        // Экран включён — раз в секунду, погашен — раз в 20 с.
         appTraffic = AppTraffic(this)
         workers += Thread {
+            var prevUp = -1L; var prevDown = -1L; var prevAt = 0L
+            var shownUp = 0.0; var shownDown = 0.0
+            var lastNotify = 0L
             while (!stopping) {
-                VpnController.core?.takeIf { it.alive() }?.let { core -> runCatching { appTraffic?.poll(core.api) } }
-                // При погашенном экране — раз в 20 с: байты закрывшихся соединений
-                // всё равно учитываются по общему счётчику ядра.
-                try { Thread.sleep(if (screenOn()) 2000 else 20_000) } catch (_: InterruptedException) { break }
+                val core = VpnController.core
+                val snapshot = core?.takeIf { it.alive() }?.let { runCatching { it.api.connections() }.getOrNull() }
+                if (core != null && snapshot != null) {
+                    // Новое ядро начинает счёт с нуля — сессия продолжается с накопленного.
+                    if (core !== countedCore) {
+                        countedCore = core
+                        val s = VpnController.state.value
+                        baseUp = s.sessionUp; baseDown = s.sessionDown
+                        prevUp = -1L
+                    }
+                    val on = screenOn()
+                    val nowNs = System.nanoTime()
+                    if (on && prevUp >= 0 && snapshot.upTotal >= prevUp && snapshot.downTotal >= prevDown) {
+                        val dt = ((nowNs - prevAt) / 1e9).coerceAtLeast(0.2)
+                        shownUp = shownUp * 0.3 + (snapshot.upTotal - prevUp) / dt * 0.7
+                        shownDown = shownDown * 0.3 + (snapshot.downTotal - prevDown) / dt * 0.7
+                    } else if (!on) { shownUp = 0.0; shownDown = 0.0 }
+                    prevUp = snapshot.upTotal; prevDown = snapshot.downTotal; prevAt = nowNs
+                    VpnController.update {
+                        it.copy(up = shownUp.toLong(), down = shownDown.toLong(),
+                            sessionUp = baseUp + snapshot.upTotal, sessionDown = baseDown + snapshot.downTotal)
+                    }
+                    runCatching { appTraffic?.poll(snapshot) }
+                    val now = System.currentTimeMillis()
+                    if (on && now - lastNotify >= 2000) { lastNotify = now; updateNotification() }
+                }
+                try { Thread.sleep(if (screenOn()) 1000 else 20_000) } catch (_: InterruptedException) { break }
             }
-        }.apply { name = "svpn-apps"; isDaemon = true; start() }
+        }.apply { name = "svpn-traffic"; isDaemon = true; start() }
         // Учёт трафика за день — раз в минуту и при отключении.
         workers += Thread {
             var saved = 0L

@@ -1,6 +1,7 @@
 package com.sadness.vpn.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.runtime.collectAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -100,6 +101,23 @@ fun HomeScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier,
             }
             Text(label, color = white, fontSize = 14.sp, maxLines = 1, modifier = Modifier.weight(1f))
             Icon(Icons.Outlined.ChevronRight, null, tint = white.copy(alpha = 0.6f))
+        }
+
+        val whitelist by com.sadness.vpn.vpn.Whitelist.state.collectAsState()
+        if (s.whitelistCheck && whitelist == com.sadness.vpn.vpn.Whitelist.State.ON) {
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.35f))
+                .border(1.dp, Palette.Warn.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+                .clickableTv { com.sadness.vpn.vpn.Whitelist.recheck() }.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("⚠", fontSize = 20.sp, color = Palette.Warn)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(L.t("Оператор включил белые списки"), color = white, fontWeight = FontWeight.Medium)
+                    Text(L.t("Зарубежные сайты напрямую не открываются. Если VPN перестал работать — выберите сервер для белых списков."),
+                        color = white.copy(alpha = 0.75f), fontSize = 12.sp)
+                }
+            }
         }
 
         if (batteryRestricted && !s.batteryDismissed) {

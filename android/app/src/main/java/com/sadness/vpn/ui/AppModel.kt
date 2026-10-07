@@ -82,6 +82,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (_ui.value.data.settings.autoUpdate && _ui.value.data.groups.isNotEmpty()) refreshAll(silent = true)
         checkUpdates(manual = false)
         com.sadness.vpn.data.SubscriptionWork.schedule(app, _ui.value.data.settings)
+        com.sadness.vpn.vpn.Whitelist.start(app)
         viewModelScope.launch(Dispatchers.IO) { com.sadness.vpn.data.SubscriptionWork.checkWarnings(app) }
     }
 
@@ -499,6 +500,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun toggleApp(pkg: String) = updateSettings { s -> s.copy(apps = if (pkg in s.apps) s.apps - pkg else s.apps + pkg) }
 
     fun setRecommendedDirect(on: Boolean) = updateSettings { it.copy(recommendedDirect = on) }
+
+    fun setWhitelistCheck(on: Boolean) {
+        updateSettingsQuiet { it.copy(whitelistCheck = on) }
+        com.sadness.vpn.vpn.Whitelist.recheck()
+    }
 
     /** Рекомендованное приложение: вернуть в VPN или снова пустить напрямую. */
     fun toggleRecommended(pkg: String) = updateSettings { s ->

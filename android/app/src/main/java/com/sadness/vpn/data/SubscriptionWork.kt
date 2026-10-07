@@ -100,7 +100,7 @@ class SubscriptionWork(context: Context, params: WorkerParameters) : CoroutineWo
             pending.forEach { (title, text) -> notify(context, title, text) }
         }
 
-        private fun notify(context: Context, title: String, text: String) {
+        fun notify(context: Context, title: String, text: String) {
             val manager = context.getSystemService(NotificationManager::class.java)
             if (manager.getNotificationChannel(CHANNEL) == null) {
                 manager.createNotificationChannel(NotificationChannel(CHANNEL, L.t("Подписки"), NotificationManager.IMPORTANCE_DEFAULT))

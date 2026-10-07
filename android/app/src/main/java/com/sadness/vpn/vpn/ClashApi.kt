@@ -64,16 +64,19 @@ class ClashApi(private val port: Int, private val secret: String) {
                           val inboundIp: String, val inboundPort: Int, val upload: Long, val download: Long)
 
     /** Снимок соединений: открытые соединения и общий счётчик байт ядра. */
-    data class Snapshot(val total: Long, val connections: List<Connection>)
+    data class Snapshot(val upTotal: Long, val downTotal: Long, val connections: List<Connection>) {
+        val total: Long get() = upTotal + downTotal
+    }
 
     /** Открытые соединения ядра (для учёта трафика по приложениям). */
     fun connections(): Snapshot? = runCatching {
         val (code, text) = request("/connections")
         if (code != 200) return@runCatching null
         val root = JSONObject(text)
-        val total = root.optLong("uploadTotal") + root.optLong("downloadTotal")
-        val arr = root.optJSONArray("connections") ?: return@runCatching Snapshot(total, emptyList())
-        Snapshot(total, (0 until arr.length()).mapNotNull { i ->
+        val up = root.optLong("uploadTotal")
+        val down = root.optLong("downloadTotal")
+        val arr = root.optJSONArray("connections") ?: return@runCatching Snapshot(up, down, emptyList())
+        Snapshot(up, down, (0 until arr.length()).mapNotNull { i ->
             val c = arr.getJSONObject(i)
             val m = c.optJSONObject("metadata") ?: return@mapNotNull null
             Connection(c.optString("id"), m.optString("network"), m.optString("sourceIP"), m.optString("sourcePort").toIntOrNull() ?: 0,

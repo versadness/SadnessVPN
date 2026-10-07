@@ -132,6 +132,8 @@ private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpe
         Card {
             Toggle(L.t("Подключаться при запуске"), L.t("К последнему серверу при открытии приложения"), s.connectOnLaunch) { v -> model.updateSettings { it.copy(connectOnLaunch = v) } }
             Divider()
+            Toggle(L.t("Определять белые списки"), L.t("При смене сети проверяем, открываются ли зарубежные сайты напрямую, и предупреждаем, если оператор включил белые списки."), s.whitelistCheck) { v -> model.setWhitelistCheck(v) }
+            Divider()
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(L.t("Проверка серверов"), color = Palette.Text)
                 Text(L.t("TCP быстрее, HTTP точнее — настоящий запрос через сервер"), color = Palette.Text3, fontSize = 12.sp)
