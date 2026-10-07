@@ -26,14 +26,14 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 | Arch / Manjaro | [`.pacman` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.1-beta/SadnessVPN-3.4.1-linux-x64.pacman) | `sudo pacman -U SadnessVPN-3.4.1-linux-x64.pacman` |
 | Bazzite и любой другой | [`AppImage` · 145 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.1-beta/SadnessVPN-3.4.1-linux-x86_64.AppImage) | `chmod +x` и запустить |
 
-### Android 8+ и Android TV (Beta) · 1.4.2
+### Android 8+ и Android TV (Beta) · 1.5.0
 
 | Телефон | Скачать |
 |---|---|
-| Почти все современные телефоны и ТВ-приставки (64-битный ARM) | [`SadnessVPN-Android-1.4.2-beta-arm64.apk` · 18 МиБ](https://github.com/versadness/SadnessVPN/releases/download/android-v1.4.2-beta/SadnessVPN-Android-1.4.2-beta-arm64.apk) |
-| Старые 32-битные телефоны и недорогие приставки (ARMv7) | [`SadnessVPN-Android-1.4.2-beta-armv7.apk` · 19 МиБ](https://github.com/versadness/SadnessVPN/releases/download/android-v1.4.2-beta/SadnessVPN-Android-1.4.2-beta-armv7.apk) |
+| Почти все современные телефоны и ТВ-приставки (64-битный ARM) | [`SadnessVPN-Android-1.5.0-beta-arm64.apk` · 18 МиБ](https://github.com/versadness/SadnessVPN/releases/download/android-v1.5.0-beta/SadnessVPN-Android-1.5.0-beta-arm64.apk) |
+| Старые 32-битные телефоны и недорогие приставки (ARMv7) | [`SadnessVPN-Android-1.5.0-beta-armv7.apk` · 19 МиБ](https://github.com/versadness/SadnessVPN/releases/download/android-v1.5.0-beta/SadnessVPN-Android-1.5.0-beta-armv7.apk) |
 
-Подписки, WireGuard и AmneziaWG, российские сайты напрямую, блокировка рекламы, лучший сервер, раздача по Wi-Fi, кнопка в шторке, живой фон главного экрана, трафик по приложениям, резервная копия, Android TV и обновление внутри приложения; root не нужен. [Описание Android-версии](https://github.com/versadness/SadnessVPN/releases/tag/android-v1.4.2-beta)
+Подписки, WireGuard и AmneziaWG, российские сайты напрямую, блокировка рекламы, лучший сервер, раздача по Wi-Fi, кнопка в шторке, живой фон главного экрана, трафик по приложениям, резервная копия, Android TV и обновление внутри приложения; root не нужен. [Описание Android-версии](https://github.com/versadness/SadnessVPN/releases/tag/android-v1.5.0-beta)
 
 [Описание версии 3.4.1](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.1-beta) · [Описание 3.4.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
 
@@ -225,8 +225,8 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 | `SadnessVPN-3.4.1-linux-amd64.deb` | 108 125 104 | `89f2e1c4c52e3050c6ffba98b9c079d61933f811756bd65b058f6bc2d1247587` |
 | `SadnessVPN-3.4.1-linux-x86_64.rpm` | 107 977 201 | `8240cac057b5e1eac54e0522541e01175277a2550d9109f6ad8206a6e9324614` |
 | `SadnessVPN-3.4.1-linux-x64.pacman` | 108 159 044 | `c3e9490f0b46925efe129a833719f5bb345dfc1dbc0e30f5e69caf701bdc03dd` |
-| `SadnessVPN-Android-1.4.2-beta-arm64.apk` | 18 875 483 | `7e8d3c4a9d04e582dbfe90fa3af7633583b637ad4d17469db27604e91be33a1c` |
-| `SadnessVPN-Android-1.4.2-beta-armv7.apk` | 19 514 281 | `0b7bd249ddab471c1af22a3cb823595399769b8c1c14b7649a0b40727ec2ee64` |
+| `SadnessVPN-Android-1.5.0-beta-arm64.apk` | 18 882 071 | `212318a044d46bdfd9bc11ae3ca35f01a56fbf3de690f69001146bc79e9d418e` |
+| `SadnessVPN-Android-1.5.0-beta-armv7.apk` | 19 520 873 | `a0dcd1322777f2f7dd9015c56686ffc8f079ea7219699b76c760659459cc6829` |
 
 Проверка в PowerShell:
 
