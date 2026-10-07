@@ -135,8 +135,9 @@ fun HomeScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier,
             }
             Text(state.uppercase(), color = white.copy(alpha = 0.88f), fontSize = 13.sp, letterSpacing = 1.sp)
             Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
-                Text(if (on) formatSpeed(vpn.down) else "—", fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = white)
-                if (on) Text("  " + L.t("Мбит/с"), fontSize = 13.sp, color = white.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 6.dp))
+                val rate = formatRate(vpn.down)
+                Text(if (on) rate.first else "—", fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = white)
+                if (on) Text("  " + rate.second, fontSize = 13.sp, color = white.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 6.dp))
             }
             if (vpn.status == Status.OFF && vpn.error.isNotEmpty()) {
                 Text(vpn.error, color = Color(0xFFFF8A95), fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -150,7 +151,7 @@ fun HomeScreen(ui: UiState, vpn: ConnState, model: AppModel, modifier: Modifier,
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GlassTile(L.t("Отдача"), if (on) "${formatSpeed(vpn.up)} " + L.t("Мбит/с") else "—", glass, Modifier.weight(1f))
+            GlassTile(L.t("Отдача"), if (on) formatRateText(vpn.up) else "—", glass, Modifier.weight(1f))
             GlassTile(L.t("Сессия"), if (on) formatDuration(now - vpn.startedAt) else "—", glass, Modifier.weight(1f))
         }
     }

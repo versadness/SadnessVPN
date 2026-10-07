@@ -81,8 +81,8 @@ class ClashApi(private val port: Int, private val secret: String) {
         })
     }.getOrNull()
 
-    /** Поток скорости: вызывает onSample(up, down) раз в секунду, пока не прерван. */
-    fun streamTraffic(onSample: (Long, Long) -> Unit) {
+    /** Поток скорости: onSample(up, down, upTotal, downTotal) раз в секунду, пока не прерван. */
+    fun streamTraffic(onSample: (Long, Long, Long, Long) -> Unit) {
         val connection = open("/traffic", timeoutMs = 10_000)
         try {
             connection.inputStream.bufferedReader().use { reader ->
@@ -90,7 +90,7 @@ class ClashApi(private val port: Int, private val secret: String) {
                     val line = reader.readLine() ?: break
                     if (line.isBlank()) continue
                     val json = JSONObject(line)
-                    onSample(json.optLong("up"), json.optLong("down"))
+                    onSample(json.optLong("up"), json.optLong("down"), json.optLong("upTotal"), json.optLong("downTotal"))
                 }
             }
         } finally {

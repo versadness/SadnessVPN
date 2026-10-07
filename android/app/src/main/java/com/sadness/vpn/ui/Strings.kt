@@ -86,6 +86,7 @@ object Strings {
         "Лучший сервер" to "Best server",
         "Маршруты" to "Routes",
         "Мбит/с" to "Mbit/s",
+        "Кбит/с" to "kbit/s",
         "Мультиплексирование (mux)" to "Multiplexing (mux)",
         "На другом устройстве: настройки этой Wi-Fi сети → Прокси → Вручную → адрес и порт выше. Через прокси идут браузеры и большинство приложений; игры и звонки (UDP) — напрямую. Раздача работает, пока VPN подключён; после включения точки доступа переподключите VPN." to "On the other device: this Wi-Fi network's settings → Proxy → Manual → the address and port above. Browsers and most apps use the proxy; games and calls (UDP) go direct. Sharing works while the VPN is connected; after turning on the hotspot, reconnect the VPN.",
         "Наведите камеру на QR-код подписки или сервера" to "Point the camera at a subscription or server QR code",

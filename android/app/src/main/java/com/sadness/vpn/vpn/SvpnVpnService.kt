@@ -117,6 +117,12 @@ class SvpnVpnService : VpnService() {
 
     private var launchCore: (() -> Core)? = null
     private var appTraffic: AppTraffic? = null
+    private var countedCore: Core? = null
+    private var baseUp = 0L
+    private var baseDown = 0L
+
+    /** Экран включён — только тогда нужны живая скорость и частые опросы. */
+    private fun screenOn(): Boolean = getSystemService(android.os.PowerManager::class.java)?.isInteractive != false
 
     private fun startWorkers(@Suppress("UNUSED_PARAMETER") first: Core, store: Store) {
         // Скорость и объём за сессию; ядро берётся текущее — оно могло перезапуститься.
@@ -127,10 +133,25 @@ class SvpnVpnService : VpnService() {
                     try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
                     continue
                 }
+                // Экран погашен — скорость никто не видит: поток не держим,
+                // счётчик за сессию догоняется по общему счётчику ядра при включении.
+                if (!screenOn()) {
+                    VpnController.update { it.copy(up = 0, down = 0) }
+                    try { Thread.sleep(5000) } catch (_: InterruptedException) { break }
+                    continue
+                }
                 try {
                     var lastNotify = 0L
-                    core.api.streamTraffic { up, down ->
-                        VpnController.update { it.copy(up = up, down = down, sessionUp = it.sessionUp + up, sessionDown = it.sessionDown + down) }
+                    // Объём за сессию — от общего счётчика ядра: так не теряются байты,
+                    // пока экран был погашен и поток скорости не читался.
+                    if (core !== countedCore) {
+                        countedCore = core
+                        val s = VpnController.state.value
+                        baseUp = s.sessionUp; baseDown = s.sessionDown
+                    }
+                    core.api.streamTraffic { up, down, upTotal, downTotal ->
+                        if (!screenOn()) throw InterruptedException("screen off")
+                        VpnController.update { it.copy(up = up, down = down, sessionUp = baseUp + upTotal, sessionDown = baseDown + downTotal) }
                         // Скорость в уведомлении — не чаще раза в 2 секунды.
                         val now = System.currentTimeMillis()
                         if (now - lastNotify >= 2000) { lastNotify = now; updateNotification() }
@@ -186,7 +207,7 @@ class SvpnVpnService : VpnService() {
                     }
                     updateNotification()
                 }
-                try { Thread.sleep(3000) } catch (_: InterruptedException) { return@Thread }
+                try { Thread.sleep(if (screenOn()) 3000 else 15_000) } catch (_: InterruptedException) { return@Thread }
             }
         }.apply { name = "svpn-monitor"; isDaemon = true; start() }
         // Трафик по приложениям — опрос соединений ядра раз в 2 секунды.
@@ -194,7 +215,9 @@ class SvpnVpnService : VpnService() {
         workers += Thread {
             while (!stopping) {
                 VpnController.core?.takeIf { it.alive() }?.let { core -> runCatching { appTraffic?.poll(core.api) } }
-                try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
+                // При погашенном экране — раз в 20 с: байты закрывшихся соединений
+                // всё равно учитываются по общему счётчику ядра.
+                try { Thread.sleep(if (screenOn()) 2000 else 20_000) } catch (_: InterruptedException) { break }
             }
         }.apply { name = "svpn-apps"; isDaemon = true; start() }
         // Учёт трафика за день — раз в минуту и при отключении.
@@ -278,7 +301,7 @@ class SvpnVpnService : VpnService() {
 
     private fun speed(bytes: Long): String {
         val mbit = bytes * 8 / 1_000_000.0
-        return com.sadness.vpn.ui.formatSpeed(bytes) + " " + com.sadness.vpn.ui.L.t("Мбит/с")
+        return com.sadness.vpn.ui.formatRateText(bytes)
     }
 
     private fun startForegroundCompat(notification: Notification) {

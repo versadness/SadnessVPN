@@ -81,6 +81,15 @@ fun formatBytes(bytes: Long): String {
     }
 }
 
+/** Скорость с подходящей единицей: ниже 1 Мбит/с — в Кбит/с, иначе фон показывал бы «0,0». */
+fun formatRate(bytesPerSec: Long): Pair<String, String> {
+    val kbit = bytesPerSec * 8 / 1000.0
+    return if (kbit < 1000) "%.0f".format(java.util.Locale.ROOT, kbit) to L.t("Кбит/с")
+    else formatSpeed(bytesPerSec) to L.t("Мбит/с")
+}
+
+fun formatRateText(bytesPerSec: Long): String = formatRate(bytesPerSec).let { it.first + " " + it.second }
+
 fun formatSpeed(bytesPerSec: Long): String {
     val mbit = bytesPerSec * 8 / 1_000_000.0
     return if (mbit >= 10) "%.0f".format(java.util.Locale.ROOT, mbit)

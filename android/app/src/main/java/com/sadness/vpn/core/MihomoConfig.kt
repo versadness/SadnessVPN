@@ -314,7 +314,12 @@ object MihomoConfig {
         if (settings.blockUdp) rules += "NETWORK,UDP,REJECT"
         rules += "MATCH,proxy"
         val config: MutableMap<String, Any?> = linkedMapOf(
-            "mode" to "rule", "log-level" to "info",
+            // warning, а не info: info пишет строку на каждое соединение — лишняя
+            // работа процессора и запись во флеш-память при каждом открытии сайта.
+            "mode" to "rule", "log-level" to "warning",
+            // TCP keep-alive реже (по умолчанию каждые 15 с): каждая проверка будит
+            // радиомодуль телефона. Приложения держат свои соединения сами.
+            "keep-alive-idle" to 600, "keep-alive-interval" to 60,
             "ipv6" to true,
             "external-controller" to controller, "secret" to secret,
             "find-process-mode" to "off", "geo-auto-update" to false,
