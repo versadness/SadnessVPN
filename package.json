@@ -1,7 +1,7 @@
 {
   "name": "sadness-vpn",
   "productName": "Sadness VPN",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "description": "Sadness Private Network — desktop client",
   "main": "electron/main.js",
   "author": "Sadness",
