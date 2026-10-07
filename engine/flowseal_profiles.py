@@ -4,7 +4,7 @@ Run tools/sync_flowseal_profiles.py against the official repository.
 """
 
 FLOWSEAL_SOURCE = "https://github.com/Flowseal/zapret-discord-youtube"
-FLOWSEAL_COMMIT = "6cec828910d0809863205702182a3557d9d0e8c3"
+FLOWSEAL_COMMIT = "eb16c1419057e36b8a36fbe7c959483450e6ac8b"
 
 FLOWSEAL_PROFILES = ({'id': 'flowseal_general',
   'name': 'General',
