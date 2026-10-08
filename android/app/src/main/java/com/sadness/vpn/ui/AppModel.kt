@@ -83,6 +83,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         checkUpdates(manual = false)
         com.sadness.vpn.data.SubscriptionWork.schedule(app, _ui.value.data.settings)
         com.sadness.vpn.vpn.Whitelist.start(app)
+        if (_ui.value.data.settings.tgProxy) com.sadness.vpn.vpn.TgProxyService.sync(app, true)
         viewModelScope.launch(Dispatchers.IO) { com.sadness.vpn.data.SubscriptionWork.checkWarnings(app) }
     }
 
@@ -500,6 +501,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun toggleApp(pkg: String) = updateSettings { s -> s.copy(apps = if (pkg in s.apps) s.apps - pkg else s.apps + pkg) }
 
     fun setRecommendedDirect(on: Boolean) = updateSettings { it.copy(recommendedDirect = on) }
+
+    fun setTgProxy(on: Boolean) {
+        updateSettingsQuiet { it.copy(tgProxy = on) }
+        com.sadness.vpn.vpn.TgProxyService.sync(getApplication(), on)
+    }
 
     fun setWhitelistCheck(on: Boolean) {
         updateSettingsQuiet { it.copy(whitelistCheck = on) }

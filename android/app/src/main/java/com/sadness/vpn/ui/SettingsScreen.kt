@@ -134,6 +134,15 @@ private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpe
             Divider()
             Toggle(L.t("Определять белые списки"), L.t("При смене сети проверяем, открываются ли зарубежные сайты напрямую, и предупреждаем, если оператор включил белые списки."), s.whitelistCheck) { v -> model.setWhitelistCheck(v) }
             Divider()
+            Toggle(L.t("Telegram-прокси"), L.t("Встроенный TG WS Proxy: Telegram ходит через WebSocket напрямую, мимо VPN-сервера. Работает и без VPN."), s.tgProxy) { v -> model.setTgProxy(v) }
+            if (s.tgProxy) {
+                Divider()
+                Link(L.t("Подключить в Telegram"), L.t("Откроет Telegram и предложит добавить прокси")) {
+                    runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(com.sadness.vpn.vpn.TgWsProxy.link(s.tgProxySecret)))) }
+                        .onFailure { model.message(L.t("Telegram не установлен")) }
+                }
+            }
+            Divider()
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(L.t("Проверка серверов"), color = Palette.Text)
                 Text(L.t("TCP быстрее, HTTP точнее — настоящий запрос через сервер"), color = Palette.Text3, fontSize = 12.sp)

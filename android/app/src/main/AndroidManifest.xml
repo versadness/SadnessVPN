@@ -88,6 +88,15 @@
         </service>
 
         <service
+            android:name=".vpn.TgProxyService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="telegram_proxy" />
+        </service>
+
+        <service
             android:name=".vpn.VpnTile"
             android:exported="true"
             android:icon="@drawable/ic_notification"

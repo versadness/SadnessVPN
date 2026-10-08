@@ -43,6 +43,9 @@ data class Settings(
     val recommendedDirect: Boolean = true,
     /** Проверять при смене сети, не включил ли оператор белые списки. */
     val whitelistCheck: Boolean = true,
+    /** Встроенный Telegram WS Proxy на 127.0.0.1 и его секрет (32 hex). */
+    val tgProxy: Boolean = false,
+    val tgProxySecret: String = "",
     /** Рекомендованные приложения, которые пользователь вернул в VPN. */
     val recommendedOff: Set<String> = emptySet(),
     /** Подключаться к последнему серверу при открытии приложения. */
@@ -111,6 +114,9 @@ class Store(context: Context) {
         var result = state ?: State()
         var changed = false
         if (result.hwid.isEmpty()) { result = result.copy(hwid = Subscription.generateHwid()); changed = true }
+        if (result.settings.tgProxySecret.isEmpty()) {
+            result = result.copy(settings = result.settings.copy(tgProxySecret = com.sadness.vpn.vpn.TgWsProxy.newSecret())); changed = true
+        }
         // Пароль SOCKS5 создаётся сразу: прокси без пароля не включается никогда.
         if (result.settings.socksPassword.isEmpty()) {
             result = result.copy(settings = result.settings.copy(socksPassword = newSocksPassword())); changed = true
@@ -142,7 +148,7 @@ class Store(context: Context) {
         "settings" to with(state.settings) {
             linkedMapOf("dns_preset" to dnsPreset, "ipv6" to ipv6, "mux" to mux, "failover" to failover,
                 "block_udp" to blockUdp, "auto_update" to autoUpdate, "apps_mode" to appsMode.key, "apps" to apps.sorted(),
-                "recommended_direct" to recommendedDirect, "whitelist_check" to whitelistCheck, "recommended_off" to recommendedOff.sorted(),
+                "recommended_direct" to recommendedDirect, "whitelist_check" to whitelistCheck, "tg_proxy" to tgProxy, "tg_proxy_secret" to tgProxySecret, "recommended_off" to recommendedOff.sorted(),
                 "connect_on_launch" to connectOnLaunch, "ping_mode" to pingMode, "gemini_dns" to geminiDns,
                 "socks_enabled" to socksEnabled, "socks_lan" to socksLan, "socks_user" to socksUser, "socks_password" to socksPassword,
                 "share_wifi" to shareWifi, "ru_direct" to ruDirect, "adblock" to adblock, "services_vpn" to servicesVpn,
@@ -186,6 +192,8 @@ class Store(context: Context) {
                 apps = (s["apps"] as? List<Any?>).orEmpty().map { it.toString() }.toSet(),
                 recommendedDirect = s["recommended_direct"] as? Boolean ?: true,
                 whitelistCheck = s["whitelist_check"] as? Boolean ?: true,
+                tgProxy = s["tg_proxy"] as? Boolean ?: false,
+                tgProxySecret = s["tg_proxy_secret"] as? String ?: "",
                 recommendedOff = (s["recommended_off"] as? List<Any?>).orEmpty().map { it.toString() }.toSet(),
                 connectOnLaunch = s["connect_on_launch"] as? Boolean ?: false,
                 pingMode = if (s["ping_mode"] == "tcp") "tcp" else "http",
