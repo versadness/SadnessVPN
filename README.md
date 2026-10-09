@@ -9,22 +9,22 @@
 ![Windows x64](https://img.shields.io/badge/platform-Windows_10%2F11_x64-0078D4)
 ![Linux x86_64](https://img.shields.io/badge/platform-Linux_x86__64-FCC624)
 ![Android 8+](https://img.shields.io/badge/platform-Android_8%2B-3DDC84)
-![Release: 3.4.2 Beta](https://img.shields.io/badge/release-3.4.2_Beta-8b5cf6)
+![Release: 3.4.3 Beta](https://img.shields.io/badge/release-3.4.3_Beta-8b5cf6)
 
 VPN-клиент для Windows, Linux и Android с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
 
-## Скачать 3.4.2 Beta
+## Скачать 3.4.3 Beta
 
-### [Скачать Setup.exe 3.4.2 для Windows x64 · около 167 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.2-beta/SadnessVPN-3.4.2-Setup-x64.exe)
+### [Скачать Setup.exe 3.4.3 для Windows x64 · около 167 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.3-beta/SadnessVPN-3.4.3-Setup-x64.exe)
 
-### Linux x86_64 (Beta) · 3.4.2
+### Linux x86_64 (Beta) · 3.4.3
 
 | Система | Скачать | Установка |
 |---|---|---|
-| Ubuntu / Debian / Mint | [`.deb` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.2-beta/SadnessVPN-3.4.2-linux-amd64.deb) | `sudo apt install ./SadnessVPN-3.4.2-linux-amd64.deb` |
-| Fedora | [`.rpm` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.2-beta/SadnessVPN-3.4.2-linux-x86_64.rpm) | `sudo dnf install ./SadnessVPN-3.4.2-linux-x86_64.rpm` |
-| Arch / Manjaro | [`.pacman` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.2-beta/SadnessVPN-3.4.2-linux-x64.pacman) | `sudo pacman -U SadnessVPN-3.4.2-linux-x64.pacman` |
-| Bazzite и любой другой | [`AppImage` · 145 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.2-beta/SadnessVPN-3.4.2-linux-x86_64.AppImage) | `chmod +x` и запустить |
+| Ubuntu / Debian / Mint | [`.deb` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.3-beta/SadnessVPN-3.4.3-linux-amd64.deb) | `sudo apt install ./SadnessVPN-3.4.3-linux-amd64.deb` |
+| Fedora | [`.rpm` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.3-beta/SadnessVPN-3.4.3-linux-x86_64.rpm) | `sudo dnf install ./SadnessVPN-3.4.3-linux-x86_64.rpm` |
+| Arch / Manjaro | [`.pacman` · 103 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.3-beta/SadnessVPN-3.4.3-linux-x64.pacman) | `sudo pacman -U SadnessVPN-3.4.3-linux-x64.pacman` |
+| Bazzite и любой другой | [`AppImage` · 145 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.3-beta/SadnessVPN-3.4.3-linux-x86_64.AppImage) | `chmod +x` и запустить |
 
 ### Android 8+ и Android TV (Beta) · 1.5.1
 
@@ -35,11 +35,16 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 
 Подписки, WireGuard и AmneziaWG, российские сайты напрямую, блокировка рекламы, лучший сервер, раздача по Wi-Fi, кнопка в шторке, живой фон главного экрана, трафик по приложениям, встроенный Telegram-прокси, резервная копия, Android TV и обновление внутри приложения; root не нужен. [Описание Android-версии](https://github.com/versadness/SadnessVPN/releases/tag/android-v1.5.1-beta)
 
-[Описание версии 3.4.2](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.2-beta) · [Описание 3.4.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
+[Описание версии 3.4.3](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.3-beta) · [Описание 3.4.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
 
-Файл **`SadnessVPN-3.4.2-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется. Пакеты Linux тоже самодостаточны.
+Файл **`SadnessVPN-3.4.3-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется. Пакеты Linux тоже самодостаточны.
 
 Архивы **Source code** на странице релиза — снимки репозитория дистрибутивов, а не установщики клиента.
+
+## Что нового в 3.4.3
+
+- **Обновления приходят с GitHub:** приложение само находит новую версию, проверяет подпись и контрольную сумму и ставит поверх. На 3.4.2 и старше эту версию нужно один раз поставить вручную.
+- **Подключение сразу после запуска работает:** приложение дожидается обновления подписок и подключается со свежими настройками сервера.
 
 ## Что нового в 3.4.2
 
@@ -193,7 +198,7 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 
 1. Используйте Windows 10/11 x64.
 2. Отключите VPN и полностью закройте клиент, включая значок в трее.
-3. Скачайте `SadnessVPN-3.4.2-Setup-x64.exe` только из Assets официального релиза.
+3. Скачайте `SadnessVPN-3.4.3-Setup-x64.exe` только из Assets официального релиза.
 4. Запустите файл и подтвердите системный запрос, если доверяете источнику.
 5. После установки запускайте Sadness VPN через созданный ярлык.
 
@@ -225,18 +230,18 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 
 | Файл | Размер, байт | SHA256 |
 |---|---|---|
-| `SadnessVPN-3.4.2-Setup-x64.exe` (версия **3.4.2.0**) | 174 667 287 | `cb1deef41ca813f991ddf12b139f45b622b4516732f86c0331a0a220b56bab4d` |
-| `SadnessVPN-3.4.2-linux-x86_64.AppImage` | 152 195 092 | `a17bdbef0db021316107412c3236f0074c5a79738b92f2011ef3a2bd185dfd0b` |
-| `SadnessVPN-3.4.2-linux-amd64.deb` | 108 134 716 | `8caefdf7cda3f1d68af377130b375fce523ef74b767aa6889051955fbee690ce` |
-| `SadnessVPN-3.4.2-linux-x86_64.rpm` | 107 980 165 | `407396dd06fd8416beadbdde6284b9756684f32a45474b5ae7db6df166c37aea` |
-| `SadnessVPN-3.4.2-linux-x64.pacman` | 108 147 292 | `f2ceeef21fe565527f530b83bc2216b5dbcd4075df0c9a48205e29ac339f696f` |
+| `SadnessVPN-3.4.3-Setup-x64.exe` (версия **3.4.3.0**) | 174 671 383 | `d0d809339c0a34200d2ad88a8c3b7ca444bcbe6bfa603f97d7b1d7aede9a4755` |
+| `SadnessVPN-3.4.3-linux-x86_64.AppImage` | 152 195 176 | `135d1f1c1d43693497f45018c440c0a8f8878119546ce9164ebcb7a2dab22086` |
+| `SadnessVPN-3.4.3-linux-amd64.deb` | 108 127 710 | `3cc518dd5e7637eb67e8cff3dea2e833c460ed5839fd65f23791fae7cad6f451` |
+| `SadnessVPN-3.4.3-linux-x86_64.rpm` | 107 977 825 | `2f8162ae8c85f46fb78e4921b852e9620db24fa787bd38784fd377ee32763ed6` |
+| `SadnessVPN-3.4.3-linux-x64.pacman` | 108 143 368 | `943d769efe6ad7ed29863f6fda7b8575fa61c60e41c4df264366511cdf191880` |
 | `SadnessVPN-Android-1.5.1-beta-arm64.apk` | 18 890 323 | `3bd6f6220b5d9eb9db57d03be50b0cc3b5d144ba657a497f596beeed3605958a` |
 | `SadnessVPN-Android-1.5.1-beta-armv7.apk` | 19 529 121 | `ae4560c349960ed2dbd59f9b00b1b5787bc0636ecde20121bed5b61b13ea168d` |
 
 Проверка в PowerShell:
 
 ```powershell
-Get-FileHash -LiteralPath '.\SadnessVPN-3.4.2-Setup-x64.exe' -Algorithm SHA256
+Get-FileHash -LiteralPath '.\SadnessVPN-3.4.3-Setup-x64.exe' -Algorithm SHA256
 ```
 
 На Linux: `sha256sum <файл>`.
