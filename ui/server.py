@@ -479,6 +479,13 @@ _wg_ping_scans = BackgroundTaskCoordinator()
 # ── Helpers ────────────────────────────────────────
 
 _subscription_lock = threading.Lock()
+# Снимается, когда стартовое обновление подписок закончено (или не нужно).
+# Подключение сразу после запуска ждёт его: иначе ядро стартует со старыми
+# параметрами сервера (сменённый SNI, flow, убранный транспорт), туннель
+# поднимается, но трафик не идёт — до переподключения.
+_startup_subscriptions_ready = threading.Event()
+_STARTUP_SUBSCRIPTIONS_WAIT = 15.0
+_startup_subscriptions_ready.set()  # снимается в run(), пока идёт стартовое обновление
 
 
 def _subscription_scope(wireguard):
@@ -577,7 +584,7 @@ def _update_one_subscription(target, url, name, is_new, wireguard):
     return {**outcome, "result": "updated", "accepted": len(servers)}
 
 
-def _run_subscription_jobs(jobs, auto=False):
+def _run_subscription_jobs(jobs, auto=False, done_event=None):
     """Выполнить обновления строго по очереди в одном фоновом потоке.
 
     Раньше «Обновить подписки» запускал запросы параллельно, бэкенд принимал
@@ -611,6 +618,8 @@ def _run_subscription_jobs(jobs, auto=False):
                 _broadcast({"type": "subscription_result", **outcome})
         finally:
             _subscription_lock.release()
+            if done_event is not None:
+                done_event.set()
             _broadcast({"type": "subscription_busy", "busy": False})
             _broadcast({
                 "type": "subscriptions_done", "auto": auto, "total": len(jobs),
@@ -646,7 +655,7 @@ def _start_subscription_update(data, refresh=False, wireguard=False):
     return _run_subscription_jobs([(target, url, name, is_new, wireguard)])
 
 
-def _start_subscription_refresh_all(auto=False):
+def _start_subscription_refresh_all(auto=False, done_event=None):
     """Все подписки (VLESS и WireGuard) одной очередью."""
     jobs = [(g, g["url"], "", False, wireguard)
             for wireguard in (False, True)
@@ -654,28 +663,33 @@ def _start_subscription_refresh_all(auto=False):
             if str(g.get("url") or "").startswith(("https://", "http://"))]
     if not jobs:
         return jsonify(ok=False, error="Нет подписок для обновления"), 400
-    return _run_subscription_jobs(jobs, auto=auto)
+    return _run_subscription_jobs(jobs, auto=auto, done_event=done_event)
 
-def _autoupdate_subscriptions_on_start(delay=3.0):
+def _autoupdate_subscriptions_on_start(delay=1.0):
     """Обновить все подписки при запуске приложения, если это не выключено.
 
-    Небольшая пауза даёт окну открыться, а автоподключению — начаться со
-    старым списком: очередь обновлений сохраняет выбранный сервер сама.
+    Подключение, начатое в это время, ждёт окончания обновления
+    (_startup_subscriptions_ready) и стартует уже со свежими параметрами.
     """
-    if not _app_settings.get("sub_autoupdate", True):
-        return
-    has_subscriptions = any(
-        str(g.get("url") or "").startswith(("https://", "http://"))
-        for wireguard in (False, True) for g in _subscription_scope(wireguard)[0])
-    if not has_subscriptions:
-        return
-    time.sleep(delay)
-    _system_log("Автообновление подписок при запуске", "info")
-    with app.app_context():
-        result = _start_subscription_refresh_all(auto=True)
-    response = result[0] if isinstance(result, tuple) else result
-    if not (response.get_json() or {}).get("ok"):
-        _system_log("Автообновление подписок пропущено: " + str((response.get_json() or {}).get("error")), "warn")
+    try:
+        if not _app_settings.get("sub_autoupdate", True):
+            return
+        has_subscriptions = any(
+            str(g.get("url") or "").startswith(("https://", "http://"))
+            for wireguard in (False, True) for g in _subscription_scope(wireguard)[0])
+        if not has_subscriptions:
+            return
+        time.sleep(delay)
+        _system_log("Автообновление подписок при запуске", "info")
+        with app.app_context():
+            result = _start_subscription_refresh_all(auto=True, done_event=_startup_subscriptions_ready)
+        response = result[0] if isinstance(result, tuple) else result
+        if not (response.get_json() or {}).get("ok"):
+            _system_log("Автообновление подписок пропущено: " + str((response.get_json() or {}).get("error")), "warn")
+            _startup_subscriptions_ready.set()
+    except Exception:
+        _startup_subscriptions_ready.set()
+        raise
 
 
 def _get_selected_server():
@@ -1770,6 +1784,13 @@ def api_connect():
     if _connection.state != "off":
         return jsonify(ok=False, error="Подключение уже активно или выполняется"), 409
     data = request.get_json(silent=True) or {}
+    if not _startup_subscriptions_ready.is_set() and data.get("reconnect") is not True:
+        _broadcast({"type": "status", "state": "connecting"})
+        _system_log("Ждём обновления подписок, чтобы подключиться со свежими настройками сервера", "info")
+        if not _startup_subscriptions_ready.wait(_STARTUP_SUBSCRIPTIONS_WAIT):
+            _system_log("Подписки обновляются слишком долго — подключаемся с сохранёнными", "warn")
+        if _stopping or _connection.state != "off":
+            return jsonify(ok=False, error="Подключение уже активно или выполняется"), 409
     if not _connect_request_lock.acquire(blocking=False):
         return jsonify(ok=False, error="Подключение уже выполняется"), 409
     try:
@@ -2114,6 +2135,7 @@ app.register_blueprint(_apps_routes.bp)
 def run(host="127.0.0.1", port=45678):
     threading.Thread(target=_tg_proxy_routes.autostart, daemon=True,
                      name="tg-proxy-autostart").start()
+    _startup_subscriptions_ready.clear()
     threading.Thread(target=_autoupdate_subscriptions_on_start, daemon=True,
                      name="subscriptions-autoupdate").start()
     app.run(host=host, port=port, debug=False, use_reloader=False)
