@@ -82,7 +82,9 @@ fun Aurora(style: String, status: Status, bytesPerSec: Long, modifier: Modifier 
                     last = t
                 }
             }
-            if (power.isPowerSaveMode) delay(500)
+            // Между шагами — сон, а не ожидание каждого кадра экрана: иначе приложение
+            // держит дисплей на 60–120 Гц, даже когда рисует 30 кадров в секунду.
+            delay(if (power.isPowerSaveMode) 500 else 24)
         }
     }
     if (Build.VERSION.SDK_INT >= 33) {

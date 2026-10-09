@@ -42,22 +42,42 @@ object Whitelist {
         val cm = app.getSystemService(ConnectivityManager::class.java)
         runCatching {
             cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) = schedule()
+                // onCapabilitiesChanged на мобильной сети приходит постоянно (уровень
+                // сигнала, пропускная способность). Проверка — только когда сеть
+                // сменилась или впервые прошла проверку системы, иначе каждый такой
+                // сигнал будил бы радиомодуль шестью запросами.
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                    if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) schedule()
+                    val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                    val key = network.toString()
+                    if (!validated) { if (key == lastNetwork) lastValidated = false; return }
+                    if (key == lastNetwork && lastValidated) return
+                    lastNetwork = key; lastValidated = true
+                    schedule()
                 }
-                override fun onLost(network: Network) { _state.value = State.UNKNOWN }
+                override fun onLost(network: Network) {
+                    if (network.toString() == lastNetwork) { lastNetwork = ""; lastValidated = false }
+                    _state.value = State.UNKNOWN
+                }
             })
         }
-        schedule()
     }
 
+    @Volatile private var lastNetwork = ""
+    @Volatile private var lastValidated = false
+    /** Когда и для какой сети была последняя проверка — не чаще раза в 10 минут. */
+    private var probedNetwork = ""
+    private var probedAt = 0L
+    private const val MIN_INTERVAL_MS = 10 * 60_000L
+
     /** Проверить сейчас (например, по кнопке). */
-    fun recheck() = schedule(0)
+    fun recheck() = schedule(0, force = true)
 
     @Synchronized
-    private fun schedule(delaySec: Long = 3) {
+    private fun schedule(delaySec: Long = 3, force: Boolean = false) {
         if (!enabled()) { _state.value = State.UNKNOWN; return }
+        val now = System.currentTimeMillis()
+        if (!force && lastNetwork == probedNetwork && now - probedAt < MIN_INTERVAL_MS) return
+        probedNetwork = lastNetwork; probedAt = now
         pending?.cancel(false)
         pending = pool.schedule({ probe() }, delaySec, TimeUnit.SECONDS)
     }

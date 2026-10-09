@@ -28,6 +28,7 @@ class SubscriptionWork(context: Context, params: WorkerParameters) : CoroutineWo
     override suspend fun doWork(): Result {
         val store = Store(applicationContext)
         L.lang = store.load().settings.language
+        val before = store.load().selected()?.second?.filterKeys { it != "ui_id" }
         for (group in store.load().groups.filter { it.url.isNotEmpty() }) {
             try {
                 SubscriptionUpdater.refresh(store, group.id)
@@ -36,6 +37,17 @@ class SubscriptionWork(context: Context, params: WorkerParameters) : CoroutineWo
             } catch (_: Exception) {
                 // Сеть пропала посреди загрузки — следующая попытка по расписанию.
             }
+        }
+        val after = store.load().selected()?.second?.filterKeys { it != "ui_id" }
+        if (before != null && after != null && before != after &&
+            com.sadness.vpn.vpn.VpnController.state.value.status == com.sadness.vpn.vpn.Status.ON) {
+            // Работающее ядро не знает новых SNI, flow или транспорта — без
+            // переподключения туннель остался бы поднятым, но без трафика.
+            com.sadness.vpn.vpn.SvpnVpnService.stop(applicationContext)
+            val deadline = System.currentTimeMillis() + 8000
+            while (com.sadness.vpn.vpn.VpnController.state.value.status != com.sadness.vpn.vpn.Status.OFF &&
+                System.currentTimeMillis() < deadline) kotlinx.coroutines.delay(100)
+            runCatching { com.sadness.vpn.vpn.SvpnVpnService.start(applicationContext) }
         }
         checkWarnings(applicationContext)
         return Result.success()

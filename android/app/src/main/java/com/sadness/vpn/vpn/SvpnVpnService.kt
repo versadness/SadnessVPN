@@ -236,9 +236,11 @@ class SvpnVpnService : VpnService() {
         val delta = total - alreadySaved
         if (delta <= 0) return alreadySaved
         val today = LocalDate.now().toString()
-        val state = store.load()
-        val base = if (state.todayDate == today) state.todayBytes else 0
-        store.save(state.copy(todayDate = today, todayBytes = base + delta))
+        synchronized(Store.LOCK) {
+            val state = store.load()
+            val base = if (state.todayDate == today) state.todayBytes else 0
+            store.save(state.copy(todayDate = today, todayBytes = base + delta))
+        }
         todaySaved = total
         return total
     }
@@ -298,7 +300,6 @@ class SvpnVpnService : VpnService() {
     }
 
     private fun speed(bytes: Long): String {
-        val mbit = bytes * 8 / 1_000_000.0
         return com.sadness.vpn.ui.formatRateText(bytes)
     }
 

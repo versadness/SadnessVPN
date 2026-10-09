@@ -60,6 +60,8 @@ data class UiState(
     val checking: Boolean = false,
     /** Текст из буфера, похожий на подписку или ссылки, — предложить добавить. */
     val clipboardOffer: String = "",
+    /** Ссылка, открытая из другого приложения или сайта, — добавить только после подтверждения. */
+    val importOffer: String = "",
 )
 
 class AppModel(app: Application) : AndroidViewModel(app) {
@@ -76,10 +78,17 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         },
     )
 
+    /**
+     * Обновление подписок при запуске. Подключение в это время ждёт его: иначе ядро
+     * стартует со старыми параметрами сервера (сменённые SNI, flow, транспорт) —
+     * туннель поднят, а трафик не идёт до переподключения.
+     */
+    private var startupRefresh: List<kotlinx.coroutines.Job> = emptyList()
+
     init {
         L.lang = _ui.value.data.settings.language
         Palette.apply(_ui.value.data.settings.theme)
-        if (_ui.value.data.settings.autoUpdate && _ui.value.data.groups.isNotEmpty()) refreshAll(silent = true)
+        if (_ui.value.data.settings.autoUpdate && _ui.value.data.groups.isNotEmpty()) startupRefresh = refreshAll(silent = true)
         checkUpdates(manual = false)
         com.sadness.vpn.data.SubscriptionWork.schedule(app, _ui.value.data.settings)
         com.sadness.vpn.vpn.Whitelist.start(app)
@@ -111,19 +120,29 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         refresh(id, removeOnFailure = true)
     }
 
-    fun refreshAll(silent: Boolean = false) = _ui.value.data.groups.forEach { refresh(it.id, silent = silent) }
+    fun refreshAll(silent: Boolean = false): List<kotlinx.coroutines.Job> =
+        _ui.value.data.groups.mapNotNull { refresh(it.id, silent = silent) }
 
-    fun refresh(groupId: String, removeOnFailure: Boolean = false, silent: Boolean = false) {
-        val group = _ui.value.data.groups.firstOrNull { it.id == groupId } ?: return
-        if (group.url.isEmpty()) return  // ссылки и файлы WireGuard — обновлять неоткуда
+    fun refresh(groupId: String, removeOnFailure: Boolean = false, silent: Boolean = false): kotlinx.coroutines.Job? {
+        val group = _ui.value.data.groups.firstOrNull { it.id == groupId } ?: return null
+        if (group.url.isEmpty()) return null  // ссылки и файлы WireGuard — обновлять неоткуда
         _ui.update { it.copy(busyGroups = it.busyGroups + groupId) }
-        viewModelScope.launch {
+        return viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { Subscription.fetch(group.url, com.sadness.vpn.data.SubscriptionUpdater.client, store.load().hwid) }
             }
             _ui.update { it.copy(busyGroups = it.busyGroups - groupId) }
             result.onSuccess { fetched ->
+                val before = _ui.value.data.selected()?.second?.let(::serverParams)
                 mutate { state -> com.sadness.vpn.data.SubscriptionUpdater.merge(state, groupId, fetched) }
+                val after = _ui.value.data.selected()?.second?.let(::serverParams)
+                // Провайдер поменял настройки сервера, через который идёт VPN (SNI, flow,
+                // транспорт…), — работающее ядро о них не знает: переподключаемся.
+                if (before != null && after != null && before != after && vpn.value.status == Status.ON &&
+                    _ui.value.data.selectedGroup == groupId) {
+                    message(L.t("Настройки сервера изменились — переподключаемся"))
+                    withContext(Dispatchers.IO) { reconnect() }
+                }
                 com.sadness.vpn.data.SubscriptionWork.checkWarnings(getApplication())
                 if (!silent) message("«${_ui.value.data.groups.firstOrNull { it.id == groupId }?.name}»: ${fetched.servers.size} " + L.t("серверов"))
             }.onFailure { error ->
@@ -176,8 +195,20 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             message(L.t("Сначала добавьте подписку и выберите сервер."))
             return
         }
-        SvpnVpnService.start(getApplication())
+        val pending = startupRefresh.filter { it.isActive }
+        if (pending.isEmpty()) {
+            SvpnVpnService.start(getApplication())
+            return
+        }
+        viewModelScope.launch {
+            kotlinx.coroutines.withTimeoutOrNull(15_000) { pending.forEach { it.join() } }
+            startupRefresh = emptyList()
+            if (vpn.value.status == Status.OFF && _ui.value.data.selected() != null) SvpnVpnService.start(getApplication())
+        }
     }
+
+    /** Параметры сервера без служебного ui_id — для сравнения до и после обновления. */
+    private fun serverParams(server: com.sadness.vpn.core.Server): Map<String, Any?> = server.filterKeys { it != "ui_id" }
 
     fun disconnect() = SvpnVpnService.stop(getApplication())
 
@@ -328,6 +359,21 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (!looks) return
         if (_ui.value.data.groups.any { it.url == first }) return
         _ui.update { it.copy(clipboardOffer = value) }
+    }
+
+    /** Ссылка из другого приложения или сайта: показать, что именно добавляем, и спросить. */
+    fun offerImport(text: String) {
+        val value = text.trim()
+        if (value.isEmpty() || value.length > 64 * 1024) return
+        _ui.update { it.copy(importOffer = value) }
+    }
+
+    fun dismissImport() = _ui.update { it.copy(importOffer = "") }
+
+    fun acceptImport() {
+        val text = _ui.value.importOffer
+        dismissImport()
+        importText(text)
     }
 
     fun dismissClipboard() {

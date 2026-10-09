@@ -150,8 +150,11 @@ class MainActivity : ComponentActivity() {
     /** Ссылки vless://, hy2://, sadnessvpn://, «Поделиться» и запуск из шторки/виджета. */
     private fun handleIntent(intent: Intent?) {
         when (intent?.action) {
-            Intent.ACTION_VIEW -> intent.dataString?.let { model.importText(it) }
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { model.importText(it) }
+            // Ссылку может открыть любой сайт или приложение — добавляем только после
+            // подтверждения: иначе чужая подписка получила бы HWID, а чужой сервер
+            // мог бы стать выбранным.
+            Intent.ACTION_VIEW -> intent.dataString?.let { model.offerImport(it) }
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { model.offerImport(it) }
             VpnToggle.ACTION_CONNECT -> if (model.vpn.value.status == Status.OFF) requestConnect()
             // Только в отладочной сборке: разовый запуск фонового обновления подписок для проверки.
             "com.sadness.vpn.DEBUG_RUN_WORK" -> if (com.sadness.vpn.BuildConfig.DEBUG) {
@@ -235,6 +238,8 @@ fun App(model: AppModel, batteryRestricted: Boolean, onConnect: () -> Unit, onFi
     }
     // Ссылка, открытая из Telegram, сразу показывает подписки.
     LaunchedEffect(ui.data.groups.size) { if (ui.data.groups.isNotEmpty() && ui.data.selected() == null) tab = 3 }
+
+    if (ui.importOffer.isNotEmpty()) ImportDialog(ui.importOffer, model)
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val config = androidx.compose.ui.platform.LocalConfiguration.current
@@ -379,4 +384,23 @@ private fun FloatingNav(tabs: List<Tab>, selected: Int, glass: Boolean = false, 
             }
         }
     }
+}
+
+/** Подтверждение ссылки, пришедшей из браузера, Telegram и т. п. */
+@Composable
+private fun ImportDialog(text: String, model: AppModel) {
+    val first = text.lines().first().trim()
+    val subscription = first.startsWith("http://") || first.startsWith("https://") || first.startsWith("sadnessvpn://")
+    val shown = first.substringBefore('#').let { if (it.length > 60) it.take(40) + "…" + it.takeLast(12) else it }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { model.dismissImport() },
+        containerColor = Palette.SurfaceSolid,
+        title = { androidx.compose.material3.Text(L.t(if (subscription) "Добавить подписку?" else "Добавить серверы?"), color = Palette.Text) },
+        text = {
+            androidx.compose.material3.Text(shown + "\n\n" + L.t("Добавляйте только ссылки от своего провайдера: через чужой сервер пойдёт весь ваш трафик."),
+                color = Palette.Text2)
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { model.acceptImport() }) { androidx.compose.material3.Text(L.t("Добавить")) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { model.dismissImport() }) { androidx.compose.material3.Text(L.t("Отмена")) } },
+    )
 }
