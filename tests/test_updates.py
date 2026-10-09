@@ -216,3 +216,31 @@ class UpdateTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class GithubRedirectTests(unittest.TestCase):
+    """GitHub отдаёт файлы релиза перенаправлением на свой CDN."""
+
+    def redirect(self, url):
+        from engine.updates import NoRedirect
+        import urllib.request
+        handler = NoRedirect()
+        request = urllib.request.Request('https://github.com/versadness/SadnessVPN/releases/latest/download/beta.json')
+        return handler.redirect_request(request, None, 302, 'Found', {}, url)
+
+    def test_github_cdn_is_allowed(self):
+        for url in ['https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sig=x',
+                    'https://github.com/versadness/SadnessVPN/releases/download/v3.4.3-beta/beta.json']:
+            self.assertIsNotNone(self.redirect(url))
+
+    def test_other_hosts_and_plain_http_are_refused(self):
+        for url in ['http://release-assets.githubusercontent.com/a', 'https://evil.test/a',
+                    'https://release-assets.githubusercontent.com.evil.test/a',
+                    'https://user:pw@github.com/a', 'https://github.com:8443/a']:
+            with self.assertRaises(ValueError):
+                self.redirect(url)
+
+    def test_client_trusts_only_github(self):
+        from engine import update_policy as policy
+        self.assertEqual(policy.ALLOWED_HOSTS, ('github.com',))
+        self.assertTrue(policy.MANIFEST_BASE.startswith('https://github.com/versadness/SadnessVPN/releases/'))

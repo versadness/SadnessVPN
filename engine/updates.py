@@ -15,7 +15,15 @@ from engine.update_manifest import MAX_MANIFEST,parse,verify,safe_url,select_pac
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs): raise ValueError('Перенаправление обновлений запрещено')
+    """Перенаправление — только по HTTPS на CDN GitHub (подписанные ссылки с query)."""
+    max_redirections = 3
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urlsplit(newurl)
+        if (parsed.scheme != 'https' or parsed.port not in (None, 443) or parsed.username or parsed.password
+                or parsed.hostname not in tuple(getattr(policy, 'REDIRECT_HOSTS', ())) + tuple(policy.ALLOWED_HOSTS)):
+            raise ValueError('Перенаправление обновлений запрещено')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def fetch(url):
