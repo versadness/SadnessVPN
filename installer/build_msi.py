@@ -126,9 +126,11 @@ def _short_name(name, used):
 def stale_electron_removals(db, directories, component):
     """RemoveFile-строки для того, что выведено из пакета Electron в 3.0.6.
 
-    RemoveFiles в стандартной последовательности выполняется перед InstallFiles,
-    поэтому маска *.pak безопасна: нужные ru.pak и en-US.pak ставятся заново из
-    пакета в той же транзакции.
+    Маски по каталогу locales здесь нет и быть не должно. Полный MSI после
+    RemoveFiles ставит ru.pak и en-US.pak заново, а патч (MSP) переустанавливает
+    только изменившиеся файлы: маска *.pak удаляла языки Electron, и окно после
+    обновления патчем падало (3.4.4 → 3.4.5). Лишние языки старше 3.0.6 у всех,
+    кто с тех пор обновлялся, уже удалены.
     """
     rows, nodes, shorts = [], {}, {}
 
@@ -141,10 +143,6 @@ def stale_electron_removals(db, directories, component):
                  [(logical, parent_logical, _short_name(path.name, used) + "|" + path.name)])
         nodes[path] = logical
         return logical
-
-    locales = directories.get(Path("electron/locales"))
-    if locales:
-        rows.append(("RemoveStaleLocales", component, "*.pak", locales.logical, 1))
 
     targets = []
     builds = directories.get(_KOFFI / "build" / "koffi")

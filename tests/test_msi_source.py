@@ -42,10 +42,11 @@ class StaleElectronRemovalTests(unittest.TestCase):
             rows = build_msi.stale_electron_removals(None, directories, "LAUNCHER")
         return rows, added
 
-    def test_locales_are_cleared_by_mask_before_install_restores_the_kept_ones(self):
+    def test_installed_locales_are_never_removed(self):
+        # Патч не ставит заново неизменённые ru.pak и en-US.pak: любая строка
+        # RemoveFile по каталогу locales оставила бы Electron без языков.
         rows, _ = self.rows()
-        locales = [r for r in rows if r[0] == "RemoveStaleLocales"]
-        self.assertEqual(locales, [("RemoveStaleLocales", "LAUNCHER", "*.pak", "D_LOCALES", 1)])
+        self.assertEqual([r for r in rows if r[3] == "D_LOCALES"], [])
 
     def test_every_foreign_koffi_platform_is_removed_and_win32_x64_is_kept(self):
         from installer import build_msi

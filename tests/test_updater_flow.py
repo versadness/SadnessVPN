@@ -73,6 +73,13 @@ class UpdaterFlowTests(unittest.TestCase):
         self.assertEqual(code,1);self.assertFalse(result['ok']);self.assertEqual(len(commands),1)
         self.assertIn('вручную',result['message'])
 
+    def test_msi_never_wildcard_removes_installed_electron_locales(self):
+        # Патч не переустанавливает неизменённые файлы: маска по locales
+        # оставила бы Electron без ru.pak и en-US.pak.
+        source=Path('installer/build_msi.py').read_text(encoding='utf-8')
+        self.assertNotIn('RemoveStaleLocales',source)
+        self.assertNotIn('"*.pak"',source)
+
     def test_recovery_cache_also_runs_when_installing_over_old_version(self):
         source=Path('installer/build_msi.py').read_text(encoding='utf-8')
         self.assertIn("('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH',6500)",source)
