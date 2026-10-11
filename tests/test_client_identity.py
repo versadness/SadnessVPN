@@ -46,7 +46,31 @@ class ClientIdentityTests(unittest.TestCase):
         self.assertEqual(headers["Device-Id"], "device-id")
         self.assertEqual(headers["X-Device-OS"], "Windows")
         self.assertEqual(headers["X-Ver-OS"], app_meta.windows_version())
-        self.assertEqual(headers["X-Device-Model"], "PC")
+        self.assertIn(headers["X-Device-Model"], ("Windows 10", "Windows 11"))
+
+    @mock.patch.object(app_meta.sys, "platform", "win32")
+    def test_windows_model_follows_the_build_number(self):
+        with mock.patch.object(app_meta.platform, "version", return_value="10.0.26200"):
+            self.assertEqual(app_meta.device_model(), "Windows 11")
+        with mock.patch.object(app_meta.platform, "version", return_value="10.0.19045"):
+            self.assertEqual(app_meta.device_model(), "Windows 10")
+
+    @mock.patch.object(app_meta.sys, "platform", "linux")
+    def test_linux_model_is_the_distribution_name(self):
+        cases = {
+            'NAME="Fedora Linux"\nVERSION_ID=41\nID=fedora\n': "Fedora Linux 41",
+            'NAME="Ubuntu"\nVERSION_ID="24.04"\n': "Ubuntu 24.04",
+            'NAME="Bazzite"\nID=bazzite\n': "Bazzite",
+            'NAME="Arch Linux"\nID=arch\n': "Arch Linux",
+            "": "Linux",
+        }
+        for text, expected in cases.items():
+            release = {}
+            for line in text.splitlines():
+                key, _, value = line.partition("=")
+                release[key] = value.strip('"')
+            with mock.patch.object(app_meta, "_linux_release", return_value=release if text else {}):
+                self.assertEqual(app_meta.device_model(), expected)
 
     def test_empty_hwid_is_not_sent(self):
         headers = app_meta.subscription_headers()

@@ -8,7 +8,7 @@ import sys
 
 APP_NAME = "Sadness VPN"
 APP_SLUG = "SadnessVPN"
-APP_VERSION = "3.4.3"
+APP_VERSION = "3.4.4"
 
 
 def windows_version() -> str:
@@ -44,6 +44,39 @@ def os_version() -> str:
     return platform.release().strip() or "unknown"
 
 
+def _linux_release(path: str = "/etc/os-release") -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        with open(path, encoding="utf-8") as stream:
+            for line in stream:
+                key, sep, value = line.strip().partition("=")
+                if sep and key:
+                    values[key] = value.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return values
+
+
+def device_model() -> str:
+    """Имя устройства для списка в панели подписок: «Windows 11», «Fedora Linux 41», «Bazzite».
+
+    Только система, без имени компьютера и модели железа.
+    """
+    if _os_name() == "windows":
+        try:
+            build = int(windows_version().split(".")[2])
+        except (IndexError, ValueError):
+            build = 0
+        # У Windows 11 номер сборки с 22000, а platform.release() на ней
+        # нередко всё ещё возвращает «10».
+        return "Windows 11" if build >= 22000 else "Windows 10"
+    release = _linux_release()
+    name = release.get("NAME") or release.get("ID", "").capitalize() or "Linux"
+    version = release.get("VERSION_ID", "")
+    label = f"{name} {version}".strip() if version and version not in name else name
+    return "".join(ch for ch in label if 32 <= ord(ch) < 127).strip()[:64] or "Linux"
+
+
 def subscription_user_agent() -> str:
     """Identify the real client; do not force a provider's Clash response template."""
     return (
@@ -64,7 +97,7 @@ def subscription_headers(hwid: str = "") -> dict[str, str]:
         "X-Platform-Version": os_version(),
         "X-Device-OS": name.capitalize(),
         "X-Ver-OS": os_version(),
-        "X-Device-Model": "PC",
+        "X-Device-Model": device_model(),
     }
     if hwid:
         headers.update({
