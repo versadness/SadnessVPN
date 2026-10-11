@@ -128,9 +128,13 @@ def main():
         extension='.msp' if data.get('patches',{}).get(previous)==package else '.msi'
         rollback_package=None
         if extension=='.msi':
-            # Full MSI rollback needs the previous full payload locally; the VPS
-            # may already have removed it. Never promise recovery without it.
-            rollback_package=recovery_package(protected,previous)
+            # Откат полным MSI возможен, только если пакет прежней версии сохранён
+            # локально. До 3.4.5 установщик поверх старой версии его не сохранял —
+            # тогда обновление ставится без автоматического отката, а не отменяется.
+            try:
+                rollback_package=recovery_package(protected,previous)
+            except (OSError,ValueError,KeyError):
+                rollback_package=None
         if data.get('full'):
             full_source=directory/(data['full']['sha256']+'.msi')
             try:
@@ -191,6 +195,9 @@ def main():
                 import re
                 if not re.fullmatch(r'\{[A-Fa-f0-9-]{36}\}',patch_id):raise ValueError('Неизвестный идентификатор патча')
                 rollback=['msiexec.exe','/package',policy.PRODUCT_CODE,'/uninstall',patch_id]
+            elif rollback_package is None:
+                raise ValueError('Новая версия не запустилась, а пакета прежней версии для отката нет. '
+                                 'Скачайте установщик с GitHub и установите его вручную.')
             else:
                 # Windows Installer cannot reliably downgrade a minor-updated
                 # component graph in place. Preserve the validated MSI cache and

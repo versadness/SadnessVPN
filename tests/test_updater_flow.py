@@ -17,7 +17,7 @@ from installer import updater_main as updater
 
 
 class UpdaterFlowTests(unittest.TestCase):
-    def run_case(self,ready=True,signature=True):
+    def run_case(self,ready=True,signature=True,recovery_missing=False):
         with tempfile.TemporaryDirectory() as d,ExitStack() as stack:
             root=Path(d);local=root/'local';protected=root/'protected';protected.mkdir()
             directory=local/'SadnessVPN/data/updates';directory.mkdir(parents=True)
@@ -40,7 +40,8 @@ class UpdaterFlowTests(unittest.TestCase):
             stack.enter_context(patch.object(updater,'verify_file'))
             stack.enter_context(patch.object(updater,'cache_full'))
             stack.enter_context(patch.object(updater,'stage_minor_msi',side_effect=lambda source,*_:source))
-            recovery=stack.enter_context(patch.object(updater,'recovery_package',return_value=old))
+            recovery=stack.enter_context(patch.object(updater,'recovery_package',
+                **({'side_effect':FileNotFoundError('recovery-2.0.19.json')} if recovery_missing else {'return_value':old})))
             stack.enter_context(patch('psutil.process_iter',return_value=[]))
             stack.enter_context(patch.object(updater,'installed_version',side_effect=['2.0.19','2.0.21','2.0.19']))
             execute=stack.enter_context(patch.object(updater.subprocess,'run',return_value=Mock(returncode=0)))
@@ -49,7 +50,7 @@ class UpdaterFlowTests(unittest.TestCase):
             def response(*args,**kwargs):return io.BytesIO(json.dumps(dict(version='2.0.21',ui_ready=ready)).encode())
             stack.enter_context(patch.object(updater.urllib.request,'urlopen',side_effect=response))
             code=updater.main()
-            result=json.loads((protected/'result.json').read_text())
+            result=json.loads((protected/'result.json').read_text(encoding='utf-8'))
             return code,result,execute.call_args_list,recovery.call_count
 
     def test_success_requires_ready_signal(self):
@@ -62,6 +63,19 @@ class UpdaterFlowTests(unittest.TestCase):
         self.assertIn('/x',commands[1].args[0]);self.assertIn('/i',commands[2].args[0]);self.assertEqual(count,1)
         # Удаление при откате помечено: задача автозапуска и служба не снимаются.
         self.assertIn('SADNESS_ROLLBACK=1',commands[1].args[0])
+
+    def test_update_installs_without_saved_previous_package(self):
+        code,result,commands,_=self.run_case(recovery_missing=True)
+        self.assertEqual(code,0);self.assertTrue(result['ok']);self.assertEqual(len(commands),1)
+
+    def test_no_previous_package_and_no_start_explains_manual_reinstall(self):
+        code,result,commands,_=self.run_case(ready=False,recovery_missing=True)
+        self.assertEqual(code,1);self.assertFalse(result['ok']);self.assertEqual(len(commands),1)
+        self.assertIn('вручную',result['message'])
+
+    def test_recovery_cache_also_runs_when_installing_over_old_version(self):
+        source=Path('installer/build_msi.py').read_text(encoding='utf-8')
+        self.assertIn("('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH',6500)",source)
 
     def test_bad_signature_never_starts_installer(self):
         code,result,commands,count=self.run_case(signature=False)

@@ -315,9 +315,11 @@ def main():
              [("RemoveLegacyXray", launcher_component, "xray.exe", legacy_bin, 1)]
              + stale_electron_removals(db, directories, launcher_component))
     # Commit action: cache the exact administrator-approved offline setup source.
-    # Never runs on patching, repair or removal; those paths retain their cache.
+    # Установка поверх прежней версии — это тоже REINSTALL (малое обновление),
+    # поэтому без патчей и удаления пакет сохраняется всегда: иначе встроенному
+    # обновлению нечем откатить следующую версию.
     add_data(db,'CustomAction',[('CacheRecoveryMsi',3602,updater_file,'--cache-installed "[OriginalDatabase]"')])
-    add_data(db,'InstallExecuteSequence',[('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH AND NOT REINSTALL',6500)])
+    add_data(db,'InstallExecuteSequence',[('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH',6500)])
     # Полное удаление снимает то, что приложение создало вне каталога установки:
     # задачу автозапуска и службу туннеля AmneziaWG. Deferred + no-impersonate
     # (1024+2048), результат игнорируется (64): удаление не должно срываться из-за
