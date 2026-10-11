@@ -75,6 +75,12 @@ class SubscriptionTest {
         val h = Subscription.headers(Subscription.ClientInfo("1.0.0", "14", "arm64"), "svpn-0123456789abcdef0123456789abcdef")
         assertEquals("SadnessVPN/v1.0.0 platform/android platform-version/14 arch/arm64", h["User-Agent"])
         assertEquals("Android", h["X-Device-OS"]); assertEquals("Phone", h["X-Device-Model"])
+        val named = Subscription.headers(Subscription.ClientInfo("1.0.0", "16", "arm64", "samsung SM-S928B"), "")
+        assertEquals("samsung SM-S928B", named["X-Device-Model"])
+        assertEquals("Xiaomi 2311DRK48G", Subscription.deviceModel("Xiaomi", "2311DRK48G"))
+        assertEquals("Pixel 8", Subscription.deviceModel("Google", "Pixel 8").removePrefix("Google "))
+        assertEquals("samsung SM-S928B", Subscription.deviceModel("samsung", "samsung SM-S928B"))
+        assertEquals("Phone", Subscription.deviceModel("", "\u0416\u0416"))
         assertEquals("svpn-0123456789abcdef0123456789abcdef", h["HWID"])
         assertTrue(Subscription.generateHwid().matches(Regex("svpn-[0-9a-f]{32}")))
     }

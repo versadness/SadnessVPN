@@ -25,7 +25,16 @@ object Subscription {
         return HWID_PREFIX + bytes.joinToString("") { "%02x".format(it) }
     }
 
-    data class ClientInfo(val version: String, val osVersion: String, val arch: String)
+    /** model — производитель и модель («samsung SM-S928B»): по ней провайдер показывает устройство в списке. */
+    data class ClientInfo(val version: String, val osVersion: String, val arch: String, val model: String = "Phone")
+
+    /** «Xiaomi» + «2311DRK48G» → «Xiaomi 2311DRK48G»; модель уже с производителем не дублируется. */
+    fun deviceModel(manufacturer: String, model: String): String {
+        val m = model.trim(); val brand = manufacturer.trim()
+        val full = if (brand.isEmpty() || m.lowercase().startsWith(brand.lowercase())) m else "$brand $m"
+        // В заголовок HTTP — только печатаемый ASCII.
+        return full.filter { it.code in 32..126 }.trim().take(64).ifEmpty { "Phone" }
+    }
 
     fun headers(client: ClientInfo, hwid: String): Map<String, String> {
         val result = linkedMapOf(
@@ -37,8 +46,9 @@ object Subscription {
             "X-Platform-Version" to client.osVersion,
             "X-Device-OS" to "Android",
             "X-Ver-OS" to client.osVersion,
-            // Модель телефона не отправляется — как и имя компьютера на десктопе.
-            "X-Device-Model" to "Phone",
+            // Модель — как у других клиентов (INCY, Happ): провайдер видит в списке
+            // устройств «samsung SM-S928B (16)», а не безликое «Phone».
+            "X-Device-Model" to client.model,
         )
         if (hwid.isNotEmpty()) {
             result["HWID"] = hwid; result["X-HWID"] = hwid; result["Device-Id"] = hwid

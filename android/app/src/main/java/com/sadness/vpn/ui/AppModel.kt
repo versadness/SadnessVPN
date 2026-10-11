@@ -76,6 +76,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         arch = when (Build.SUPPORTED_ABIS.firstOrNull()) {
             "arm64-v8a" -> "arm64"; "armeabi-v7a" -> "arm"; "x86_64" -> "amd64"; else -> "unknown"
         },
+        model = Subscription.deviceModel(Build.MANUFACTURER.orEmpty(), Build.MODEL.orEmpty()),
     )
 
     /**
