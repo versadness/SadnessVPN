@@ -224,6 +224,16 @@ private fun MainSettings(ui: UiState, model: AppModel, modifier: Modifier, onOpe
             Toggle(L.t("Мультиплексирование (mux)"), L.t("Несколько соединений в одном; не для HY2 и XHTTP"), s.mux) { v -> model.updateSettings { it.copy(mux = v) } }
             Divider()
             Toggle(L.t("Блокировать UDP"), L.t("Для серверов, где UDP не работает"), s.blockUdp) { v -> model.updateSettings { it.copy(blockUdp = v) } }
+            Divider()
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Text(L.t("Отпечаток TLS"), color = Palette.Text)
+                Spacer(Modifier.height(8.dp))
+                Segmented(listOf("firefox" to "Firefox", "edge" to "Edge", "chrome" to "Chrome", "provider" to L.t("Провайдер")), s.tlsFingerprint) { v ->
+                    model.updateSettings { it.copy(tlsFingerprint = v) }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(L.t("Каким браузером выглядит подключение для блокировок. «Провайдер» — как в подписке."), color = Palette.Text3, fontSize = 12.sp)
+            }
         }
 
         Section(Icons.Outlined.Palette, L.t("Внешний вид"))

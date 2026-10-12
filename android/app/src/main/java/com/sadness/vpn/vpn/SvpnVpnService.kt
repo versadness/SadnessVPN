@@ -167,12 +167,17 @@ class SvpnVpnService : VpnService() {
                 }
                 val route = currentRoute(core)
                 if (route != null && route != lastRoute) {
+                    val first = lastRoute.isEmpty()
                     lastRoute = route
                     val server = core.live[route]
                     val selectedId = VpnController.state.value.serverId
+                    val backup = server != null && server["ui_id"]?.toString() != selectedId
+                    // Ядро ушло на запасной: старые соединения висят на мёртвом сервере,
+                    // пока не истечёт таймаут. Закрываем их — стрим и браузер сразу
+                    // переподключаются через запасной.
+                    if (backup && !first) core.api.closeConnections()
                     VpnController.update {
-                        it.copy(routeRemark = server?.get("remark")?.toString().orEmpty(),
-                            onBackup = server != null && server["ui_id"]?.toString() != selectedId)
+                        it.copy(routeRemark = server?.get("remark")?.toString().orEmpty(), onBackup = backup)
                     }
                     updateNotification()
                 }
@@ -342,6 +347,7 @@ class SvpnVpnService : VpnService() {
                     lan = s.socksLan || s.shareWifi, noAuth = hotspot) else null,
                 routing = MihomoConfig.Routing(ruDirect = s.ruDirect, adblock = s.adblock, servicesVpn = s.servicesVpn, rules = s.rules),
                 checkProxy = check,
+                tlsFingerprint = s.tlsFingerprint,
             )
         }
 

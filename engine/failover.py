@@ -153,14 +153,19 @@ def apply_server_groups(config: dict, selected: dict, groups: list, failover: bo
     if backups:
         groups_config.append({
             "name": BACKUP_GROUP, "type": "url-test", "proxies": backups,
-            "url": HEALTH_URL, "interval": 60, "tolerance": 50, "timeout": 5000, "lazy": False,
+            # Запасные проверены заранее: в момент перехода ядро уже знает живой.
+            "url": HEALTH_URL, "interval": 30, "tolerance": 50, "timeout": 2000, "lazy": False,
         })
         groups_config.append({
             "name": MAIN_GROUP, "type": "fallback", "proxies": [MANUAL_GROUP, BACKUP_GROUP],
-            "url": HEALTH_URL, "interval": 30, "timeout": 5000, "lazy": False,
-            # Несколько неудачных соединений подряд — немедленная перепроверка,
+            # Каждые 5 секунд: сервер, который «завис» (соединение есть, ответа
+            # нет — так выглядит и блокировка DPI), неудачей соединения не
+            # считается и ловится только проверкой. С 30 с переход занимал
+            # 30–40 секунд и стрим успевал упасть; с 5 с — около 5 секунд.
+            "url": HEALTH_URL, "interval": 5, "timeout": 2000, "lazy": False,
+            # Два неудачных соединения подряд — немедленная перепроверка,
             # не дожидаясь интервала.
-            "max-failed-times": 3,
+            "max-failed-times": 2,
         })
     else:
         groups_config.append({"name": MAIN_GROUP, "type": "select", "proxies": [MANUAL_GROUP]})

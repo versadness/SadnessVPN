@@ -30,7 +30,7 @@ RESERVED_LOCAL_PORTS = {45678, CLASH_PORT_DEFAULT}
 TUNNEL_KEYS = (
     "kill_switch", "block_udp", "socks5_auth", "socks5_user", "socks5_pass",
     "mux", "fakedns", "preferred_ip", "dns_preset", "custom_dns",
-    "ping_type", "ping_url", "ping_timeout", "server_sort",
+    "ping_type", "ping_url", "ping_timeout", "server_sort", "tls_fingerprint",
 )
 
 # Настройки, удалённые вместе с sing-box. Значение выбрасывается при загрузке:
@@ -82,6 +82,7 @@ DEFAULT_SETTINGS = {
     "preferred_ip":     "ipv4",
     "dns_preset":       "cf_google",
     "custom_dns":       "",
+    "tls_fingerprint":  "firefox",
     "server_sort":      "default",
     "zapret_strategy":  "flowseal_general",
     # Игровой фильтр Zapret. По умолчанию выключен: включать перехват всего
@@ -163,6 +164,8 @@ def load_settings() -> dict:
             settings["dns_preset"] = "cf_google"
         if settings.get("ping_type") not in ("tcp", "icmp", "http_get", "http_head"):
             settings["ping_type"] = "tcp"
+        if settings.get("tls_fingerprint") not in ("firefox", "edge", "chrome", "provider"):
+            settings["tls_fingerprint"] = "firefox"
         favorites = settings.get("favorite_servers")
         if not isinstance(favorites, list):
             settings["favorite_servers"] = []
@@ -309,6 +312,10 @@ def normalize_tunnel_setting(key, value):
             "xbox", "xbox_dot", "comss", "comss_dot", "custom",
         ):
             raise ValueError("Invalid DNS preset")
+        return value
+    if key == "tls_fingerprint":
+        if value not in ("firefox", "edge", "chrome", "provider"):
+            raise ValueError("Invalid TLS fingerprint")
         return value
     if key == "ping_type":
         if value not in ("tcp", "icmp", "http_get", "http_head"):

@@ -1365,6 +1365,12 @@ def _publish_route(route):
     if backup:
         message = f"Сервер «{selected_label}» не отвечает — трафик переведён на запасной «{_route_label(name)}»"
         _log(message, "warn")
+        # Старые соединения висят на мёртвом сервере до таймаута — закрываем,
+        # чтобы приложения (стрим, браузер) сразу переподключились через запасной.
+        try:
+            _clash("DELETE", "/connections")
+        except OSError:
+            pass
     else:
         message = f"Трафик снова идёт через выбранный сервер «{_route_label(name)}»"
         _log(message, "ok")
@@ -1948,6 +1954,8 @@ def _connect_attempt(data, generation):
                 failover=_app_settings.get("auto_failover", True) is True,
                 mux=_app_settings.get("mux") is True,
             )
+            from engine.core_config import apply_tls_fingerprint
+            apply_tls_fingerprint(cfg, _app_settings.get("tls_fingerprint", "firefox"))
             backups = next((g["proxies"] for g in cfg["proxy-groups"]
                             if g["name"] == failover.BACKUP_GROUP), [])
         except ValueError as exc:

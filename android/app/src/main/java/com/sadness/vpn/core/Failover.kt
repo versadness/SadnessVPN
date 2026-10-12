@@ -123,7 +123,8 @@ object Failover {
             val candidates = home.map { proxyName(it) }.filter { it in live }.ifEmpty { listOf(mainName) }
             config["proxy-groups"] = mutableListOf<Any?>(
                 linkedMapOf("name" to MANUAL_GROUP, "type" to "url-test", "proxies" to candidates,
-                    "url" to HEALTH_URL, "interval" to 600, "tolerance" to 50, "timeout" to 5000, "lazy" to true),
+                    "url" to HEALTH_URL, "interval" to 300, "tolerance" to 50, "timeout" to 3000, "lazy" to true,
+                    "max-failed-times" to 2),
                 linkedMapOf("name" to MAIN_GROUP, "type" to "select", "proxies" to listOf(MANUAL_GROUP)),
             )
             return live
@@ -131,10 +132,17 @@ object Failover {
         val groupsConfig = mutableListOf<Any?>(linkedMapOf("name" to MANUAL_GROUP, "type" to "select", "proxies" to manual))
         val backups = if (failover) pickBackups(selected, groups, resolve = resolve).map { proxyName(it) } else emptyList()
         if (backups.isNotEmpty()) {
+            // Запасные проверяются заранее, даже пока не используются (lazy=false):
+            // иначе в момент переключения ядро не знает, какой из них жив, и может
+            // уйти на такой же мёртвый. Раз в 5 минут — несколько коротких запросов.
             groupsConfig += linkedMapOf("name" to BACKUP_GROUP, "type" to "url-test", "proxies" to backups,
-                "url" to HEALTH_URL, "interval" to 600, "tolerance" to 50, "timeout" to 5000, "lazy" to true)
+                "url" to HEALTH_URL, "interval" to 300, "tolerance" to 50, "timeout" to 3000, "lazy" to false)
+            // Выбранный сервер — каждые 15 с, но только пока есть трафик (lazy):
+            // «зависший» сервер (соединение есть, ответа нет — так выглядит и
+            // блокировка DPI) ловится только проверкой. В 1.5.0 было 180 с, и
+            // переход мог не случиться вовсе; с 15 с — около 10 секунд.
             groupsConfig += linkedMapOf("name" to MAIN_GROUP, "type" to "fallback", "proxies" to listOf(MANUAL_GROUP, BACKUP_GROUP),
-                "url" to HEALTH_URL, "interval" to 180, "timeout" to 5000, "lazy" to true, "max-failed-times" to 3)
+                "url" to HEALTH_URL, "interval" to 15, "timeout" to 3000, "lazy" to true, "max-failed-times" to 2)
         } else {
             groupsConfig += linkedMapOf("name" to MAIN_GROUP, "type" to "select", "proxies" to listOf(MANUAL_GROUP))
         }

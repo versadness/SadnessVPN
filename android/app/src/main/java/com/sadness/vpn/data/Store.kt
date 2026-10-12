@@ -76,6 +76,8 @@ data class Settings(
     val theme: String = "dark",
     /** Фон главного экрана: auto | ocean | sunset | neon | off. */
     val aurora: String = "auto",
+    /** Отпечаток TLS для всех TLS/REALITY-серверов: firefox, edge, chrome или provider (как в подписке). */
+    val tlsFingerprint: String = "firefox",
     val language: String = "ru",
     /** Предупреждение о фоновых ограничениях скрыто кнопкой «Позже». */
     val batteryDismissed: Boolean = false,
@@ -154,7 +156,7 @@ class Store(context: Context) {
                 "share_wifi" to shareWifi, "ru_direct" to ruDirect, "adblock" to adblock, "services_vpn" to servicesVpn,
                 "rules" to rules.map { linkedMapOf("type" to it.type, "value" to it.value, "action" to it.action) },
                 "auto_best" to autoBest, "favorites" to favorites.sorted(), "sort_mode" to sortMode, "hide_dead" to hideDead,
-                "theme" to theme, "aurora" to aurora, "language" to language, "battery_dismissed" to batteryDismissed,
+                "theme" to theme, "aurora" to aurora, "tls_fingerprint" to tlsFingerprint, "language" to language, "battery_dismissed" to batteryDismissed,
                 "bg_refresh" to bgRefresh, "bg_hours" to bgHours, "warn_expire" to warnExpire, "warn_traffic" to warnTraffic)
         },
     )
@@ -216,6 +218,7 @@ class Store(context: Context) {
                 sortMode = if (s["sort_mode"] == "ping") "ping" else "order",
                 hideDead = s["hide_dead"] as? Boolean ?: false,
                 aurora = s["aurora"]?.toString()?.takeIf { it in setOf("auto", "ocean", "sunset", "neon", "off") } ?: "auto",
+                tlsFingerprint = s["tls_fingerprint"]?.toString()?.takeIf { it in MihomoConfig.TLS_FINGERPRINTS } ?: "firefox",
                 theme = s["theme"]?.toString()?.takeIf { it in setOf("system", "dark", "light") } ?: "dark",
                 language = if (s["language"] == "en") "en" else "ru",
                 batteryDismissed = s["battery_dismissed"] as? Boolean ?: false,

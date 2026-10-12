@@ -160,6 +160,23 @@ object MihomoConfig {
         return proxy
     }
 
+    /** Каким браузером выглядит рукопожатие TLS; provider — как указано в подписке. */
+    val TLS_FINGERPRINTS = setOf("firefox", "edge", "chrome", "provider")
+
+    /**
+     * Один отпечаток для всех TLS/REALITY-серверов конфига, включая запасные.
+     * Hysteria 2 (QUIC), Shadowsocks и WireGuard браузерного отпечатка не имеют.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun applyTlsFingerprint(config: MutableMap<String, Any?>, choice: String) {
+        if (choice !in TLS_FINGERPRINTS || choice == "provider") return
+        for (item in (config["proxies"] as? List<Any?>).orEmpty()) {
+            val proxy = item as? MutableMap<String, Any?> ?: continue
+            val type = proxy["type"]
+            if (type == "trojan" || (type in setOf("vless", "vmess") && proxy["tls"] == true)) proxy["client-fingerprint"] = choice
+        }
+    }
+
     fun withMux(proxy: MutableMap<String, Any?>, mux: Boolean): MutableMap<String, Any?> {
         if (mux && proxy["type"] !in setOf("hysteria2", "wireguard") && proxy["network"] != "xhttp" && proxy["flow"] == null) {
             proxy["smux"] = linkedMapOf("enabled" to true, "protocol" to "smux", "max-connections" to 4)
@@ -177,6 +194,7 @@ object MihomoConfig {
         val socks: Socks? = null,
         val routing: Routing = Routing(),
         val checkProxy: CheckProxy? = null,
+        val tlsFingerprint: String = "firefox",
     )
 
     /** Маршруты: готовые наборы и свои правила. */

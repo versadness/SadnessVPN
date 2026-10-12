@@ -58,6 +58,7 @@ class Core private constructor(
             val secret = ByteArray(24).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
             val config = MihomoConfig.assemble(MihomoConfig.proxy(selected), settings, "127.0.0.1:$port", secret, tunFd)
             val live = Failover.applyServerGroups(config, selected, groups, failover = failover, mux = settings.mux, autoBest = autoBest)
+            MihomoConfig.applyTlsFingerprint(config, settings.tlsFingerprint)
             val configFile = File(dir, "config.json")
             configFile.writeText(Json.encode(config))
             configFile.setReadable(false, false); configFile.setReadable(true, true)

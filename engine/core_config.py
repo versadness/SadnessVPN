@@ -54,6 +54,28 @@ def ensure_supported(server):
     return server
 
 
+# Отпечаток TLS (uTLS) — каким браузером выглядит рукопожатие для DPI.
+# «provider» — как указано в подписке.
+TLS_FINGERPRINTS = ("firefox", "edge", "chrome", "provider")
+DEFAULT_TLS_FINGERPRINT = "firefox"
+
+
+def apply_tls_fingerprint(config, choice):
+    """Один отпечаток для всех TLS/REALITY-серверов конфига, включая запасные.
+
+    Hysteria 2 (QUIC), Shadowsocks и WireGuard браузерного отпечатка не имеют.
+    """
+    if choice not in TLS_FINGERPRINTS or choice == "provider":
+        return config
+    for proxy in config.get("proxies") or []:
+        if not isinstance(proxy, dict):
+            continue
+        kind = proxy.get("type")
+        if kind == "trojan" or (kind in ("vless", "vmess") and proxy.get("tls")):
+            proxy["client-fingerprint"] = choice
+    return config
+
+
 def _mihomo_proxy(server):
     proto = server.get("protocol", "vless")
     ensure_supported(server)

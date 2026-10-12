@@ -237,7 +237,7 @@ function syncSettings(){
   if(t.socks5_pass!==undefined)document.getElementById('s5pass').value=t.socks5_pass||'';
   if(t.ping_url)document.getElementById('pingUrl').value=t.ping_url;
   if(t.ping_timeout)document.getElementById('pingTimeout').value=t.ping_timeout;
-  segSet('segPing',t.ping_type||'tcp');segSet('segIp',t.preferred_ip||'auto');
+  segSet('segPing',t.ping_type||'tcp');segSet('segIp',t.preferred_ip||'auto');segSet('segFp',t.tls_fingerprint||'firefox');
   ST.srvSort=t.server_sort||'default';segSet('segSort',ST.srvSort);
   const sortMap={default:'По умолчанию',ping:'По пингу',name:'По имени'};
   document.getElementById('ddSortLbl').textContent=sortMap[ST.srvSort]||sortMap.default;
