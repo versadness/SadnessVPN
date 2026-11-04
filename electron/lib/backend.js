@@ -12,13 +12,65 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { app } = require('electron');
-const { PROJECT_ROOT } = require('./paths');
+const { PROJECT_ROOT, dataDir } = require('./paths');
 
 const HOST = '127.0.0.1';
 const PORT = 45678;
 
 let child = null;
 let stopping = false;
+
+/**
+ * Токен локального API. Бэкенд работает от администратора, поэтому без токена
+ * им могла бы управлять любая программа на ПК. Бэкенд создаёт токен сам и
+ * пишет в папку данных пользователя; оболочка читает его оттуда и
+ * подставляет в свои запросы и в запросы страницы (attachToSession).
+ */
+const TOKEN_HEADER = 'X-Sadness-Token';
+const TOKEN_COOKIE = 'sadness_token';
+let token = null;
+
+function tokenFile() {
+  return path.join(dataDir(), 'api-token');
+}
+
+function readToken() {
+  try {
+    const value = fs.readFileSync(tokenFile(), 'ascii').trim();
+    token = /^[A-Za-z0-9_-]{32,128}$/.test(value) ? value : null;
+  } catch (error) {
+    token = null;
+  }
+  return token;
+}
+
+function authHeaders() {
+  if (!token) readToken();
+  return token ? { [TOKEN_HEADER]: token } : {};
+}
+
+/**
+ * Страница и её WebSocket получают токен двумя путями: заголовком из
+ * webRequest и httpOnly-cookie (рукопожатие WebSocket гарантированно несёт
+ * cookie). Сторонние адреса токен не получают.
+ */
+async function attachToSession(session) {
+  const prefixes = [`http://${HOST}:${PORT}/`, `ws://${HOST}:${PORT}/`];
+  session.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (prefixes.some((prefix) => details.url.startsWith(prefix))) {
+      callback({ requestHeaders: { ...details.requestHeaders, ...authHeaders() } });
+      return;
+    }
+    callback({ requestHeaders: details.requestHeaders });
+  });
+  if (!token) readToken();
+  if (token) {
+    await session.cookies.set({
+      url: `http://${HOST}:${PORT}/`, name: TOKEN_COOKIE, value: token,
+      httpOnly: true, sameSite: 'strict', path: '/',
+    });
+  }
+}
 
 /**
  * Где живёт бэкенд.
@@ -114,6 +166,7 @@ async function start(onLog) {
           + `включая значок в области уведомлений, и повторите запуск.`,
       };
     }
+    readToken();
     return { ok: true, reused: true };
   }
 
@@ -125,6 +178,9 @@ async function start(onLog) {
   // Путь к самому приложению — для автозапуска на Linux (engine/autostart_linux.py).
   // У AppImage это файл .AppImage, а не временная точка монтирования.
   const appExec = process.platform === 'win32' ? '' : (process.env.APPIMAGE || process.execPath);
+  // Новый бэкенд — новый токен: старый файл мог остаться от прошлого запуска.
+  token = null;
+  try { fs.unlinkSync(tokenFile()); } catch (error) { /* файла нет */ }
   try {
     child = spawn(command.executable, command.args, {
       cwd: command.cwd,
@@ -134,6 +190,7 @@ async function start(onLog) {
         ...process.env,
         PYTHONUTF8: '1',
         PYTHONIOENCODING: 'utf-8',
+        SADNESS_API_TOKEN_FILE: tokenFile(),
         ...(app.isPackaged && appExec ? { SADNESS_APP_EXEC: appExec } : {}),
       },
     });
@@ -181,7 +238,7 @@ function watchShowRequests(onShow, onQuit) {
 
   const ask = () => new Promise((resolve) => {
     const request = http.get(
-      { host: HOST, port: PORT, path: '/api/shell/show-wait', timeout: 40000 },
+      { host: HOST, port: PORT, path: '/api/shell/show-wait', timeout: 40000, headers: authHeaders() },
       (response) => {
         let body = '';
         response.on('data', (chunk) => { body += chunk; });
@@ -224,7 +281,7 @@ function watchShowRequests(onShow, onQuit) {
 function request(method, requestPath, timeoutMs = 3000) {
   return new Promise((resolve) => {
     const req = http.request(
-      { host: HOST, port: PORT, path: requestPath, method, timeout: timeoutMs },
+      { host: HOST, port: PORT, path: requestPath, method, timeout: timeoutMs, headers: authHeaders() },
       (response) => {
         let body = '';
         response.on('data', (chunk) => { body += chunk; });
@@ -258,7 +315,7 @@ async function startupPreferences() {
 function requestShutdown(timeoutMs = 8000) {
   return new Promise((resolve) => {
     const request = http.request(
-      { host: HOST, port: PORT, path: '/api/shell/shutdown', method: 'POST', timeout: timeoutMs },
+      { host: HOST, port: PORT, path: '/api/shell/shutdown', method: 'POST', timeout: timeoutMs, headers: authHeaders() },
       (response) => {
         response.resume();
         response.on('end', () => resolve(response.statusCode === 200));
@@ -307,6 +364,6 @@ async function stop() {
 }
 
 module.exports = {
-  start, stop, requestShutdown, watchShowRequests, health, notifyReady, startupPreferences,
+  start, stop, requestShutdown, watchShowRequests, health, notifyReady, startupPreferences, attachToSession,
   HOST, PORT, baseUrl: `http://${HOST}:${PORT}`,
 };

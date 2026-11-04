@@ -15,6 +15,8 @@ import json
 from urllib.parse import urlencode
 from concurrent.futures import ThreadPoolExecutor
 
+from engine.core_config import controller_headers
+
 def tcp_ping(host: str, port: int, timeout: float = 3.0):
     try:
         t0 = time.perf_counter()
@@ -114,7 +116,7 @@ def tunnel_ping(test_url="https://www.gstatic.com/generate_204", timeout=3.0,
     conn = http.client.HTTPConnection("127.0.0.1", clash_port, timeout=timeout + 1)
     try:
         query = urlencode({"url": test_url, "timeout": int(timeout * 1000)})
-        conn.request("GET", "/proxies/proxy/delay?" + query)
+        conn.request("GET", "/proxies/proxy/delay?" + query, headers=controller_headers())
         response = conn.getresponse()
         body = response.read(4096)
         if response.status != 200:

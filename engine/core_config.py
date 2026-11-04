@@ -5,6 +5,8 @@
 сервер не поддерживается Mihomo, это отказ с объяснением, а не тихий переход
 на другое ядро — второго ядра не существует.
 """
+import secrets
+
 from engine.config import DNS_PRESETS, SMART_DNS_BOOTSTRAP
 from engine.transports import mihomo_xhttp
 
@@ -219,6 +221,21 @@ def host_has_global_ipv6() -> bool:
         return True
 
 
+# Clash API ядра работает от администратора. Без секрета им управляет любой
+# локальный процесс, а из-за открытого по умолчанию CORS — и любой сайт в
+# браузере: читает /connections (все открытые сайты), подменяет конфиг через
+# PUT /configs. Секрет свой на каждый запуск бэкенда и нигде не сохраняется.
+CONTROLLER_SECRET = secrets.token_urlsafe(24)
+# Пустой allow-origins у mihomo (rs/cors) означает «все источники», поэтому
+# разрешён только собственный интерфейс, который в API ядра и так не ходит.
+CONTROLLER_ORIGIN = "http://127.0.0.1:45678"
+
+
+def controller_headers() -> dict:
+    """Заголовок авторизации для запросов к Clash API работающего ядра."""
+    return {"Authorization": f"Bearer {CONTROLLER_SECRET}"}
+
+
 def build_mihomo_config(server, **settings):
     return assemble_config(_mihomo_proxy(server), **settings)
 
@@ -257,7 +274,8 @@ def assemble_config(proxy, socks_port=1080, http_port=8080, clash_port=9090,
     config = {
         "socks-port": socks_port, "port": http_port, "allow-lan": bool(settings.get("allow_lan")),
         "bind-address": "*" if settings.get("allow_lan") else "127.0.0.1",
-        "external-controller": f"127.0.0.1:{clash_port}", "mode": "rule", "log-level": "info",
+        "external-controller": f"127.0.0.1:{clash_port}", "secret": CONTROLLER_SECRET,
+        "external-controller-cors": {"allow-origins": [CONTROLLER_ORIGIN], "allow-private-network": False}, "mode": "rule", "log-level": "info",
         "ipv6": tun_ipv6, "find-process-mode": "always", "geo-auto-update": False,
         "profile": {"store-selected": False, "store-fake-ip": False},
         "tun": {"enable": True, "device": TUN_DEVICE, "stack": "system",

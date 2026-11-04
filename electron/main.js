@@ -196,6 +196,7 @@ async function bootstrap() {
   // Лаунчер активирует уже запущенное окно через бэкенд. Второй экземпляр
   // Electron (app.on('second-instance')) остаётся запасным путём.
   backend.watchShowRequests(showWindow, () => { quitting = true; app.quit(); });
+  await backend.attachToSession(mainWindow.webContents.session);
   await mainWindow.loadURL(`${backend.baseUrl}/?desktop=1&shell=electron`);
 
   tray.create({

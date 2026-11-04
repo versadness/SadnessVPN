@@ -6,6 +6,7 @@ import ctypes.wintypes
 import ipaddress
 import copy
 import hashlib
+import hmac
 import io
 import subprocess
 import threading
@@ -29,7 +30,7 @@ from flask_sock import Sock
 from PIL import Image, UnidentifiedImageError
 
 from engine.mihomo import MihomoManager, MIHOMO_VERSION
-from engine.core_config import build_proxy_config, ensure_supported
+from engine.core_config import build_proxy_config, controller_headers, ensure_supported
 from engine.route_info import observed_app_routes, observed_rule_routes
 from engine.connection_health import blocked_message
 from engine.amneziawg import AmneziaWGManager
@@ -94,7 +95,7 @@ def _wait_clash_ready(timeout: float = 8.0, cancelled=None, alive=None) -> bool:
             return False
         try:
             c = http.client.HTTPConnection("127.0.0.1", _clash_port, timeout=1.0)
-            c.request("GET", "/version")
+            c.request("GET", "/version", headers=controller_headers())
             r = c.getresponse()
             r.read()
             c.close()
@@ -132,7 +133,7 @@ def _traffic_loop(attempt, stop_event):
             if conn is None:
                 conn = http.client.HTTPConnection(CLASH_HOST, CLASH_PORT, timeout=2.0)
 
-            conn.request("GET", "/connections")
+            conn.request("GET", "/connections", headers=controller_headers())
             resp = conn.getresponse()
 
             if resp.status == 200:
@@ -255,6 +256,21 @@ sock = Sock(app)
 
 SERVER_INSTANCE_ID = secrets.token_urlsafe(24)
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+# Токен локального API. Бэкенд работает от администратора, а проверка адреса
+# не отличает оболочку от любой другой программы или другого пользователя
+# Windows на этом ПК. Токен создаётся при запуске из Electron (run) и лежит в
+# папке данных пользователя; None — запуск без оболочки (разработка, тесты).
+_API_TOKEN: str | None = None
+_TOKEN_HEADER = "X-Sadness-Token"
+_TOKEN_COOKIE = "sadness_token"
+# Без токена — только безвредное, что нужно лаунчеру и updater:
+# опознать экземпляр, показать окно, узнать статус и закрыть простаивающее
+# приложение перед восстановлением. Страница сама по себе данных не содержит.
+_TOKEN_EXEMPT = {
+    ("GET", "/"), ("GET", "/api/health"), ("GET", "/api/updates/state"),
+    ("POST", "/api/shell/show"), ("POST", "/api/updates/close-for-recovery"),
+}
+_TOKEN_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 # Порт Clash API текущей сессии; пересчитывается при каждом подключении.
 _clash_port = _CLASH_PORT_DEFAULT
 _stopping = False
@@ -291,6 +307,50 @@ def _protect_local_api():
             or origin_port != port
         ):
             return jsonify({"ok": False, "error": "Недоверенный источник запроса"}), 403
+
+    if _API_TOKEN and not _token_exempt():
+        supplied = request.headers.get(_TOKEN_HEADER) or request.cookies.get(_TOKEN_COOKIE) or ""
+        if not hmac.compare_digest(supplied.encode("utf-8", "surrogateescape"), _API_TOKEN.encode("ascii")):
+            return jsonify({"ok": False, "error": "Нет доступа к локальному API"}), 401
+
+
+def _token_exempt() -> bool:
+    if (request.method, request.path) in _TOKEN_EXEMPT:
+        return True
+    return request.method == "GET" and request.path.startswith("/static/")
+
+
+def _valid_token(value: str) -> bool:
+    return 32 <= len(value) <= 128 and set(value) <= _TOKEN_CHARS
+
+
+def _init_api_token():
+    """Включить токен, если оболочка передала путь к его файлу.
+
+    Существующий файл переиспользуется: так переподключившаяся оболочка
+    знает токен уже работающего бэкенда. Новый запуск оболочки удаляет файл
+    заранее и получает свежий токен.
+    """
+    global _API_TOKEN
+    path = os.environ.get("SADNESS_API_TOKEN_FILE")
+    if not path:
+        journal.warning("Локальный API работает без токена: бэкенд запущен не из оболочки")
+        return
+    token = None
+    try:
+        existing = Path(path).read_text(encoding="ascii").strip()
+        if _valid_token(existing):
+            token = existing
+    except (OSError, UnicodeError):
+        pass
+    if token is None:
+        token = secrets.token_urlsafe(32)
+        temporary = path + ".tmp"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="ascii") as stream:
+            stream.write(token)
+        os.replace(temporary, path)
+    _API_TOKEN = token
 
 
 @app.after_request
@@ -912,6 +972,8 @@ def verify_routing_with_core(candidate) -> tuple:
     # TUN и Clash API не поднимаются: проверяется только сама конфигурация.
     config["tun"]["enable"] = False
     config.pop("external-controller", None)
+    config.pop("external-controller-cors", None)
+    config.pop("secret", None)
     ok, message = vpn_engine.validate(config)
     if ok:
         return True, ""
@@ -1315,8 +1377,10 @@ def _clash(method, path, body=None, timeout=6.0):
     conn = http.client.HTTPConnection("127.0.0.1", _clash_port, timeout=timeout)
     try:
         payload = json.dumps(body).encode() if body is not None else None
-        conn.request(method, path, body=payload,
-                     headers={"Content-Type": "application/json"} if payload else {})
+        headers = controller_headers()
+        if payload:
+            headers["Content-Type"] = "application/json"
+        conn.request(method, path, body=payload, headers=headers)
         response = conn.getresponse()
         raw = response.read(65536)
         try:
@@ -2141,6 +2205,7 @@ app.register_blueprint(_apps_routes.bp)
 
 
 def run(host="127.0.0.1", port=45678):
+    _init_api_token()
     threading.Thread(target=_tg_proxy_routes.autostart, daemon=True,
                      name="tg-proxy-autostart").start()
     _startup_subscriptions_ready.clear()
