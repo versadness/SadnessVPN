@@ -47,8 +47,13 @@ def api_rename_group():
         return jsonify(ok=False, error="Название должно содержать от 1 до 160 символов"), 400
     for g in profile_state.groups:
         if g["id"] == gid:
+            previous = g["name"]
             g["name"] = name
-            profile_state.save_proxy_groups()
+            try:
+                profile_state.save_proxy_groups()
+            except OSError:
+                g["name"] = previous
+                return jsonify(ok=False, error="Не удалось сохранить название группы"), 500
             _broadcast_groups()
             return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Не найдено"})
@@ -113,10 +118,6 @@ def api_select():
                 state = _live_switch_state()
                 if state not in ("off", "live"):
                     return jsonify(ok=False, error=state), 409
-                if state == "live":
-                    ok, error = _switch_live_server(srvs[idx])
-                    if not ok:
-                        return jsonify(ok=False, error=error), 409
                 previous_settings = copy.deepcopy(_app_settings)
                 _app_settings["selected_group"] = gid
                 _app_settings["selected_index"] = idx
@@ -125,6 +126,17 @@ def api_select():
                     _app_settings.clear()
                     _app_settings.update(previous_settings)
                     return jsonify(ok=False, error="Не удалось сохранить выбранный сервер"), 500
+                # Persist the selection before changing the real traffic path.
+                # A disk failure must not leave the UI on the previous server
+                # while the core is already forwarding through the new one.
+                if state == "live":
+                    ok, error = _switch_live_server(srvs[idx])
+                    if not ok:
+                        _app_settings.clear()
+                        _app_settings.update(previous_settings)
+                        if not _save_settings(_app_settings):
+                            return jsonify(ok=False, error=error + ". Не удалось восстановить сохранённый выбор сервера"), 500
+                        return jsonify(ok=False, error=error), 409
                 return jsonify({"ok": True, "live": state == "live"})
     return jsonify({"ok": False, "error": "Неверный индекс"})
 

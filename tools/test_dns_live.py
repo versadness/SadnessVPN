@@ -24,10 +24,7 @@ ANSWER = "192.0.2.123"
 QUERY = bytes.fromhex("123401000001000000000000") + b"\x05probe\x07example\x00\x00\x01\x00\x01"
 
 
-def free_port():
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
+from tools.loopback_ports import free_port
 
 
 def main():

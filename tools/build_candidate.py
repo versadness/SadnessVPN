@@ -27,6 +27,7 @@ def main():
         # -t . импортирует tests как пакет: tests/__init__.py подменяет каталог
         # данных, и сборка не трогает профиль разработчика в ./data.
         [sys.executable,'-m','unittest','discover','-s','tests','-t','.','-q'],
+        ['node','--test','tests/electron-audit.test.cjs'],
         [sys.executable,'tools/test_rule_config_live.py'],
         [sys.executable,'tools/build_version_history.py'],
         [sys.executable,'-m','PyInstaller','--noconfirm','--workpath','build/pyinstaller-updater-'+APP_VERSION,'--distpath','dist/updater','SadnessUpdater.spec'],

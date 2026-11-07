@@ -181,8 +181,13 @@ if ($Base.Count -eq 0) {
     foreach ($b in $Base) {
         Invoke-Step "Патч из образа $b -> $Version" @('tools/test_patch_admin.py', '--base', $b, '--new', $Version)
     }
-    foreach ($b in $Base) {
-        Invoke-Step "Реальная установка и откат $b -> $Version" @('tools/test_installer_roundtrip.py', '--base', $b, '--new', $Version)
+    # Реальный тест возможен только от той версии, что установлена сейчас:
+    # после него стоит уже новая версия, а папка отчёта у версии одна.
+    $installedNow = (& $Python -c "import sys; sys.path.insert(0,'.'); from installer.updater_main import installed_version; print(installed_version())" | Select-Object -Last 1)
+    if ($Base -contains $installedNow) {
+        Invoke-Step "Реальная установка и откат $installedNow -> $Version" @('tools/test_installer_roundtrip.py', '--base', $installedNow, '--new', $Version)
+    } else {
+        Write-Host "Реальный тест пропущен: установлена $installedNow, а не одна из базовых версий ($($Base -join ', '))." -ForegroundColor Yellow
     }
 }
 

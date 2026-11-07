@@ -19,6 +19,7 @@ const PORT = 45678;
 
 let child = null;
 let stopping = false;
+let attached = false;
 
 /**
  * Токен локального API. Бэкенд работает от администратора, поэтому без токена
@@ -137,13 +138,15 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForHealth(timeoutMs = 25000) {
+async function waitForHealth(timeoutMs = 25000, aborted = () => false) {
   const deadline = Date.now() + timeoutMs;
   // Холодный старт PyInstaller занимает секунды, поэтому опрос замедляется:
   // фиксированные 150 мс давали до 166 запросов на один запуск.
   let delay = 150;
   while (Date.now() < deadline) {
+    if (aborted()) return false;
     if (await health()) return true;
+    if (aborted()) return false;
     await wait(delay);
     delay = Math.min(delay * 2, 600);
   }
@@ -167,6 +170,7 @@ async function start(onLog) {
       };
     }
     readToken();
+    attached = true;
     return { ok: true, reused: true };
   }
 
@@ -209,6 +213,13 @@ async function start(onLog) {
   relay(child.stderr, 'error');
 
   let exitInfo = null;
+  // spawn() also reports failures asynchronously; a try/catch alone cannot
+  // catch EACCES and an unhandled 'error' would crash the Electron process.
+  child.on('error', (error) => {
+    exitInfo = { error: error.message };
+    child = null;
+    if (typeof onLog === 'function') onLog('error', `Backend: ${error.message}`);
+  });
   child.on('exit', (code, signal) => {
     exitInfo = { code, signal };
     child = null;
@@ -217,12 +228,16 @@ async function start(onLog) {
     }
   });
 
-  if (await waitForHealth()) return { ok: true };
+  if (await waitForHealth(25000, () => exitInfo !== null)) {
+    attached = true;
+    return { ok: true };
+  }
 
   return {
     ok: false,
     error: exitInfo
-      ? `Backend завершился с кодом ${exitInfo.code}. Проверьте, что установлены зависимости из requirements.txt.`
+      ? (exitInfo.error ? `Не удалось запустить backend: ${exitInfo.error}`
+        : `Backend завершился с кодом ${exitInfo.code}. Проверьте, что установлены зависимости из requirements.txt.`)
       : 'Backend не ответил на 127.0.0.1:45678 за 25 секунд. Возможно, порт занят предыдущей версией Sadness VPN.',
   };
 }
@@ -329,6 +344,9 @@ function requestShutdown(timeoutMs = 8000) {
 
 async function stop() {
   stopping = true;
+  // A rejected launch (including a different version already running) never
+  // attached to that backend and must not shut down its active VPN session.
+  if (!attached && !child) return;
   // Убить процесс сразу нельзя: в системе останутся поднятый TUN-интерфейс
   // и правила маршрутизации, а пользователь потеряет сеть до перезагрузки.
   const graceful = await requestShutdown();

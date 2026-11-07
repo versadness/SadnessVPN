@@ -2,7 +2,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert/strict');
 const {chromium}=require('C:/Users/Sadness/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const root=path.resolve(__dirname,'..');
 (async()=>{
- const browser=await chromium.launch({headless:true,executablePath:'C:/Users/Sadness/AppData/Local/ms-playwright/chromium-1228/chrome-win64/chrome.exe'});
+ const browser=await chromium.launch({headless:true,executablePath:process.env.SADNESS_TEST_CHROMIUM || undefined});
  try{
   const page=await browser.newPage({viewport:{width:980,height:700}}),errors=[],calls=[];
   let updateState={status:'unconfigured',version:'2.0.20',message:'Сервер обновлений ещё не настроен'};

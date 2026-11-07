@@ -71,7 +71,7 @@ class UpdateManager:
             if self.state['status'] in {'checking','downloading','installing'}:return self.snapshot()
             if automatic:self.startup_checked=True
             if channel is not None:
-                if channel not in {'beta','stable'}:raise ValueError('Неизвестный канал обновлений')
+                if not isinstance(channel,str) or channel not in {'beta','stable'}:raise ValueError('Неизвестный канал обновлений')
                 self.state['channel']=channel
                 self.directory.mkdir(parents=True,exist_ok=True)
                 atomic_write_json(str(self.directory/'preferences.json'),{'channel':channel})

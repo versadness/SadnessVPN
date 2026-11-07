@@ -1452,11 +1452,14 @@ def _switch_live_server(server):
         status, _ = _clash("PUT", f"/proxies/{failover.MANUAL_GROUP}", {"name": name})
         if status not in (200, 204):
             return False, f"Ядро не переключило сервер (код {status})"
-        # Старые соединения шли через прежний сервер — закрываем, чтобы
-        # трафик сразу пошёл через новый. Приложения переподключаются сами.
-        _clash("DELETE", "/connections")
     except OSError as exc:
         return False, f"Ядро не отвечает: {exc}"
+    # PUT already committed the switch. A cleanup timeout cannot turn that
+    # success into a rejection: selection and UI must follow the actual core.
+    try:
+        _clash("DELETE", "/connections")
+    except OSError:
+        _log("Сервер переключён, но закрыть прежние соединения не удалось", "warn")
     global _conn_server
     _conn_server = server.get("remark", "")
     _route_state.update(name=name, backup=False)

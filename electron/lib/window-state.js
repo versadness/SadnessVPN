@@ -30,9 +30,16 @@ function load() {
   } catch (error) {
     return { ...DEFAULT };
   }
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return { ...DEFAULT };
+  const dimension = (value, minimum, fallback) => {
+    if (typeof value !== 'number' && typeof value !== 'string') return fallback;
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 && number <= 32768
+      ? Math.max(minimum, Math.round(number)) : fallback;
+  };
   const state = {
-    width: Math.max(860, Number(saved.width) || DEFAULT.width),
-    height: Math.max(620, Number(saved.height) || DEFAULT.height),
+    width: dimension(saved.width, 860, DEFAULT.width),
+    height: dimension(saved.height, 620, DEFAULT.height),
     maximized: saved.maximized === true,
   };
   if (visibleOnSomeDisplay({ x: saved.x, y: saved.y, width: state.width, height: state.height })) {

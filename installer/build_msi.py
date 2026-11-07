@@ -316,8 +316,12 @@ def main():
     # Установка поверх прежней версии — это тоже REINSTALL (малое обновление),
     # поэтому без патчей и удаления пакет сохраняется всегда: иначе встроенному
     # обновлению нечем откатить следующую версию.
-    add_data(db,'CustomAction',[('CacheRecoveryMsi',3602,updater_file,'--cache-installed "[OriginalDatabase]"')])
-    add_data(db,'InstallExecuteSequence',[('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH',6500)])
+    # При удалении патча [OriginalDatabase] — это исходный MSI, с которого когда-то
+    # ставили программу (например 3.4.5), и его версия не совпадает с откатываемой:
+    # кэшировать нечего (NOT MSIPATCHREMOVE). Результат игнорируется (+64 = 3666):
+    # запасная копия — только страховка, её сбой не должен срывать установку или откат.
+    add_data(db,'CustomAction',[('CacheRecoveryMsi',3666,updater_file,'--cache-installed "[OriginalDatabase]"')])
+    add_data(db,'InstallExecuteSequence',[('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH AND NOT MSIPATCHREMOVE',6500)])
     # Полное удаление снимает то, что приложение создало вне каталога установки:
     # задачу автозапуска и службу туннеля AmneziaWG. Deferred + no-impersonate
     # (1024+2048), результат игнорируется (64): удаление не должно срываться из-за

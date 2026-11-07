@@ -92,7 +92,13 @@ def _decompress(body, encoding):
             with gzip.GzipFile(fileobj=io.BytesIO(body)) as handle:
                 data = handle.read(MAX_BYTES + 1)
         elif encoding == "deflate":
-            data = zlib.decompressobj().decompress(body, MAX_BYTES + 1)
+            decoder = zlib.decompressobj()
+            data = decoder.decompress(body, MAX_BYTES + 1)
+            # decompress() also returns partial output for truncated streams.
+            # Accepting it could silently replace a subscription with only its
+            # first servers. Keep the size-limit error for oversized streams.
+            if len(data) <= MAX_BYTES and not decoder.eof:
+                raise zlib.error("Incomplete deflate stream")
         else:
             return body
     except (OSError, zlib.error, EOFError):

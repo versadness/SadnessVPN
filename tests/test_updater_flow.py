@@ -82,7 +82,12 @@ class UpdaterFlowTests(unittest.TestCase):
 
     def test_recovery_cache_also_runs_when_installing_over_old_version(self):
         source=Path('installer/build_msi.py').read_text(encoding='utf-8')
-        self.assertIn("('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH',6500)",source)
+        self.assertIn("('CacheRecoveryMsi','NOT REMOVE AND NOT PATCH AND NOT MSIPATCHREMOVE',6500)",source)
+
+    def test_recovery_cache_never_breaks_patch_removal(self):
+        # Сбой запасной копии не должен срывать откат патча (3.4.7 -> 3.4.8 падал с 1603).
+        source=Path('installer/build_msi.py').read_text(encoding='utf-8')
+        self.assertIn("('CacheRecoveryMsi',3666,",source)
 
     def test_bad_signature_never_starts_installer(self):
         code,result,commands,count=self.run_case(signature=False)

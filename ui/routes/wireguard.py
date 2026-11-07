@@ -38,8 +38,13 @@ def api_wg_rename_group():
         return jsonify(ok=False, error="Название должно содержать от 1 до 160 символов"), 400
     for g in profile_state.wg_groups:
         if g["id"] == gid:
+            previous = g["name"]
             g["name"] = name
-            profile_state.save_wireguard_groups()
+            try:
+                profile_state.save_wireguard_groups()
+            except OSError:
+                g["name"] = previous
+                return jsonify(ok=False, error="Не удалось сохранить название группы"), 500
             _broadcast_wg_groups()
             return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Не найдено"})

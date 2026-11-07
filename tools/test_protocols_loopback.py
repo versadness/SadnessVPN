@@ -48,10 +48,7 @@ class Handler(http_server.BaseHTTPRequestHandler):
         pass
 
 
-def free_port():
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
+from tools.loopback_ports import free_port
 
 
 def write_certificate(folder: Path):

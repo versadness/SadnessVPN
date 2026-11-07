@@ -86,7 +86,10 @@ def api_appearance_upload(kind):
     if not extension:
         return jsonify({"ok": False, "error": "Поддерживаются PNG, JPEG и WebP"})
     os.makedirs(app_state.PROFILE_DIR, exist_ok=True)
-    filename = kind + extension
+    # Never overwrite the previous image before its replacement is committed
+    # in settings. A failed settings write must preserve both old references
+    # and old bytes, including uploads of the same format.
+    filename = kind + "-" + secrets.token_hex(8) + extension
     target = os.path.join(app_state.PROFILE_DIR, filename)
     temporary = target + "." + secrets.token_hex(6) + ".tmp"
     previous_name = settings.get(key, "")
@@ -99,18 +102,24 @@ def api_appearance_upload(kind):
         settings[key] = filename
         if not app_state.save_settings(settings):
             raise OSError("Не удалось сохранить настройки оформления")
-        if previous_name and previous_name != filename:
-            previous = os.path.join(app_state.PROFILE_DIR, os.path.basename(previous_name))
-            if os.path.isfile(previous):
-                os.remove(previous)
     except Exception as exc:
         settings[key] = previous_name
+        for unused in (temporary, target):
+            try:
+                if os.path.exists(unused):
+                    os.remove(unused)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": str(exc)})
+    # Settings already committed: failing to remove an old/locked image must
+    # not report failure or roll the in-memory settings back out of sync.
+    if previous_name and previous_name != filename:
+        previous = os.path.join(app_state.PROFILE_DIR, os.path.basename(previous_name))
         try:
-            if os.path.exists(temporary):
-                os.remove(temporary)
+            if os.path.isfile(previous):
+                os.remove(previous)
         except OSError:
             pass
-        return jsonify({"ok": False, "error": str(exc)})
     url = f"/api/appearance/{kind}?v={int(time.time() * 1000)}"
     # Имя сохранённого файла отдаётся явно: интерфейс не должен выводить его
     # из адреса картинки.

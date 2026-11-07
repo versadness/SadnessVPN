@@ -21,17 +21,31 @@ def api_apps_get():
     return jsonify(profile_state.apps_config)
 
 
+def _commit_apps(candidate):
+    try:
+        save_apps(candidate)
+    except OSError:
+        response = jsonify(ok=False, error="Не удалось сохранить маршрутизацию")
+        response.status_code = 500
+        return response
+    profile_state.apps_config.clear()
+    profile_state.apps_config.update(candidate)
+    _broadcast({"type": "apps_config", "config": profile_state.apps_config})
+    return jsonify(ok=True)
+
+
 @bp.route("/api/apps/mode", methods=["POST"])
 def api_apps_mode():
     data = request.get_json(silent=True) or {}
     mode = data.get("mode", "all")
     if mode not in ("all", "whitelist", "blacklist"):
         return jsonify({"ok": False, "error": "Неверный режим"})
-    profile_state.apps_config["mode"] = mode
-    save_apps(profile_state.apps_config)
-    _broadcast({"type": "apps_config", "config": profile_state.apps_config})
-    _log(f"Режим маршрутизации: {mode}", "info")
-    return jsonify({"ok": True})
+    candidate = copy.deepcopy(profile_state.apps_config)
+    candidate["mode"] = mode
+    response = _commit_apps(candidate)
+    if response.status_code == 200:
+        _log(f"Режим маршрутизации: {mode}", "info")
+    return response
 
 
 @bp.route("/api/apps/add", methods=["POST"])
@@ -55,10 +69,9 @@ def api_apps_add():
     for a in profile_state.apps_config["apps"]:
         if a["exe"].lower() == exe.lower():
             return jsonify({"ok": False, "error": "Уже добавлено"})
-    profile_state.apps_config["apps"].append({"name": name, "exe": exe, "path": path, "enabled": True})
-    save_apps(profile_state.apps_config)
-    _broadcast({"type": "apps_config", "config": profile_state.apps_config})
-    return jsonify({"ok": True})
+    candidate = copy.deepcopy(profile_state.apps_config)
+    candidate["apps"].append({"name": name, "exe": exe, "path": path, "enabled": True})
+    return _commit_apps(candidate)
 
 
 @bp.route("/api/apps/rename", methods=["POST"])
@@ -74,12 +87,11 @@ def api_apps_rename():
         return jsonify({"ok": False, "error": "Имя правила не может быть пустым"})
     if len(exe) > 260 or len(name) > 256:
         return jsonify({"ok": False, "error": "Слишком длинное имя правила"})
-    for app_rule in profile_state.apps_config.get("apps", []):
+    candidate = copy.deepcopy(profile_state.apps_config)
+    for app_rule in candidate.get("apps", []):
         if app_rule.get("exe", "").lower() == exe.lower():
             app_rule["name"] = name
-            save_apps(profile_state.apps_config)
-            _broadcast({"type": "apps_config", "config": profile_state.apps_config})
-            return jsonify({"ok": True})
+            return _commit_apps(candidate)
     return jsonify({"ok": False, "error": "Правило не найдено"})
 
 
@@ -88,12 +100,11 @@ def api_apps_remove():
     data   = request.get_json(silent=True) or {}
     exe    = data.get("exe", "").strip()
     before = len(profile_state.apps_config["apps"])
-    profile_state.apps_config["apps"] = [a for a in profile_state.apps_config["apps"] if a["exe"].lower() != exe.lower()]
-    if len(profile_state.apps_config["apps"]) == before:
+    candidate = copy.deepcopy(profile_state.apps_config)
+    candidate["apps"] = [a for a in candidate["apps"] if a["exe"].lower() != exe.lower()]
+    if len(candidate["apps"]) == before:
         return jsonify({"ok": False, "error": "Не найдено"})
-    save_apps(profile_state.apps_config)
-    _broadcast({"type": "apps_config", "config": profile_state.apps_config})
-    return jsonify({"ok": True})
+    return _commit_apps(candidate)
 
 
 @bp.route("/api/apps/toggle", methods=["POST"])
@@ -101,12 +112,11 @@ def api_apps_toggle():
     data    = request.get_json(silent=True) or {}
     exe     = data.get("exe", "").strip()
     enabled = data.get("enabled", True)
-    for a in profile_state.apps_config["apps"]:
+    candidate = copy.deepcopy(profile_state.apps_config)
+    for a in candidate["apps"]:
         if a["exe"].lower() == exe.lower():
             a["enabled"] = bool(enabled)
-            save_apps(profile_state.apps_config)
-            _broadcast({"type": "apps_config", "config": profile_state.apps_config})
-            return jsonify({"ok": True})
+            return _commit_apps(candidate)
     return jsonify({"ok": False, "error": "Не найдено"})
 
 

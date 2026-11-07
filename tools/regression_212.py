@@ -4,7 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 scratch = tempfile.TemporaryDirectory(prefix='sadness-subscriptions-')
@@ -24,7 +24,10 @@ class InlineThread:
 
 class SubscriptionIntegration(unittest.TestCase):
     def setUp(self):
-        profile_state.groups = [{'id':'g', 'name':'Custom name', 'url':'https://example.test/private', 'servers':[{'ui_id':'old','remark':'Old'}]}]
+        profile_state.groups = [{'id':'g', 'name':'Custom name', 'url':'https://example.test/private', 'servers':[{
+            'ui_id':'old', 'remark':'Old', 'protocol':'ss', 'host':'198.51.100.7',
+            'port':8388, 'method':'aes-128-gcm', 'password':'local-test-only',
+        }]}]
         profile_state.wg_groups = []
         s._connection = ConnectionCoordinator()
         s._stopping = False
@@ -35,7 +38,9 @@ class SubscriptionIntegration(unittest.TestCase):
         s._app_settings['hwid'] = 'existing-identifier'
         self.client = s.app.test_client()
         self.events = []
-        self.patches = [patch.object(s.threading,'Thread',InlineThread), patch.object(s,'_broadcast',self.events.append)]
+        # Replace only the server's threading reference. Mutating the shared
+        # threading module also breaks subprocess' reader threads on Windows.
+        self.patches = [patch.object(s,'threading',Mock(wraps=s.threading, Thread=InlineThread)), patch.object(s,'_broadcast',self.events.append)]
         for p in self.patches: p.start()
 
     def tearDown(self):

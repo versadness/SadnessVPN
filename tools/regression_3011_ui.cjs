@@ -60,7 +60,7 @@ const STATE = {
 (async () => {
   const browser = await chromium.launch({
     headless: true,
-    executablePath: 'C:/Users/Sadness/AppData/Local/ms-playwright/chromium-1228/chrome-win64/chrome.exe',
+    executablePath: process.env.SADNESS_TEST_CHROMIUM || undefined,
   });
   let failed = null;
   try {

@@ -197,6 +197,25 @@ class LiveSwitchTests(unittest.TestCase):
         self.assertEqual(server._connection.state, "on")
         self.assertTrue(any("без переподключения" in m for _, m in self.logs))
 
+    def test_failed_selection_save_never_changes_the_live_server(self):
+        with mock.patch.object(server, '_save_settings', return_value=False):
+            response = self.select('cloud', 0)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(self.manual_now, 'srv-de-t')
+        self.assertFalse(any(call[0] == 'PUT' for call in self.calls))
+        self.assertEqual(server._app_settings['selected_group'], 'rw')
+
+    def test_old_connection_cleanup_error_does_not_reject_a_successful_switch(self):
+        def clash(method, path, body=None, timeout=6.0):
+            if method == 'DELETE':
+                raise OSError('cleanup timeout')
+            return self.fake_clash(method, path, body, timeout)
+        with mock.patch.object(server, '_clash', side_effect=clash):
+            response = self.select('cloud', 0)
+        self.assertTrue(response.get_json()['ok'])
+        self.assertEqual(self.manual_now, 'srv-de-c')
+        self.assertEqual(server._app_settings['selected_group'], 'cloud')
+
     def test_server_missing_from_the_running_core_asks_to_reconnect(self):
         profile_state.groups[1]["servers"].append(node("🇩🇪 Новый", "198.51.100.8", "de-new"))
         response = self.select("cloud", 2)

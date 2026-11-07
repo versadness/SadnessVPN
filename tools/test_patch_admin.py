@@ -21,7 +21,10 @@ def main():
     from engine.update_manifest import version
     version(args.base);version(args.new)
     folder=ROOT/'build'/f'admin-patch-test-{args.base}-to-{args.new}'
-    folder.mkdir(exist_ok=False)
+    # Папка — только результат прошлого прогона этого же теста (-Resume).
+    if folder.exists():
+        import shutil;shutil.rmtree(folder)
+    folder.mkdir()
     base=ROOT/'dist'/f'SadnessVPN-{args.base}-Setup-x64.msi'
     patch=ROOT/'dist'/f'SadnessVPN-{args.base}-to-{args.new}-Beta-Update-x64.msp'
     expected=ROOT/'build'/f'patch-{args.base}-to-{args.new}'/'updated'/'Sadness VPN'

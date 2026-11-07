@@ -116,10 +116,17 @@ class MihomoManager:
     # -- Порты ----------------------------------------------------------------
 
     def _port_free(self, port: int) -> bool:
-        """True, если порт свободен (никто не слушает)."""
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.5)
-            return s.connect_ex(("127.0.0.1", port)) != 0
+        """True, если TCP-слушатель действительно может занять порт.
+
+        Отказ connect() не означает, что bind() разрешён: в Windows порт
+        может быть зарезервирован системой, хотя никто на нём не слушает.
+        """
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
 
     def _wait_port_free(self, port: int, timeout: float = 4.0) -> bool:
         end = time.time() + timeout

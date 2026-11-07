@@ -55,28 +55,28 @@ class WallpaperApiTests(unittest.TestCase):
         body = response.get_json()
         self.assertTrue(body["ok"], body)
         # Интерфейс получает настоящее имя файла, а не выводит его из адреса.
-        self.assertEqual(body["file"], "wallpaper.png")
-        self.assertEqual(self.events[-1]["file"], "wallpaper.png")
+        self.assertRegex(body["file"], r"^wallpaper-[0-9a-f]{16}\.png$")
+        self.assertEqual(self.events[-1]["file"], body["file"])
         served = self.client.get(body["url"], base_url=BASE)
         self.assertEqual(served.status_code, 200)
         self.assertEqual(served.headers["Cache-Control"], "no-store")
         self.assertTrue(served.data.startswith(b"\x89PNG"))
         # Перезапуск: настройки читаются с диска заново.
-        self.assertEqual(app_state.load_settings()["wallpaper_file"], "wallpaper.png")
+        self.assertEqual(app_state.load_settings()["wallpaper_file"], body["file"])
 
     def test_replacement_removes_the_old_file_and_bad_upload_keeps_it(self):
         self.upload(image_bytes("PNG"))
         body = self.upload(image_bytes("JPEG"), "photo.jpg").get_json()
-        self.assertEqual(body["file"], "wallpaper.jpg")
+        self.assertRegex(body["file"], r"^wallpaper-[0-9a-f]{16}\.jpg$")
         profile = Path(app_state.PROFILE_DIR)
-        self.assertEqual(sorted(p.name for p in profile.iterdir()), ["wallpaper.jpg"])
+        self.assertEqual(sorted(p.name for p in profile.iterdir()), [body["file"]])
         broken = self.upload(b"\x89PNG\r\n\x1a\nnot really a png")
         self.assertFalse(broken.get_json()["ok"])
         oversized = self.upload(b"\xff\xd8\xff" + b"0" * (8 * 1024 * 1024 + 1), "big.jpg")
         self.assertFalse(oversized.get_json()["ok"])
         self.assertIn("слишком большое", oversized.get_json()["error"])
         # Прежний рабочий фон остаётся.
-        self.assertEqual(app_state.app_settings["wallpaper_file"], "wallpaper.jpg")
+        self.assertEqual(app_state.app_settings["wallpaper_file"], body["file"])
         with self.client.get("/api/appearance/wallpaper", base_url=BASE) as served:
             self.assertEqual(served.status_code, 200)
 
@@ -87,6 +87,26 @@ class WallpaperApiTests(unittest.TestCase):
         with self.client.get("/api/appearance/wallpaper", base_url=BASE) as served:
             self.assertEqual(served.status_code, 404)
         self.assertEqual(app_state.load_settings()["wallpaper_file"], "")
+
+    def test_failed_settings_save_preserves_previous_wallpaper_bytes(self):
+        original = image_bytes("PNG", color=(255, 0, 0))
+        self.assertTrue(self.upload(original).get_json()["ok"])
+        previous_name = app_state.app_settings["wallpaper_file"]
+        with mock.patch.object(app_state, "save_settings", return_value=False):
+            result = self.upload(image_bytes("PNG", color=(0, 255, 0))).get_json()
+        self.assertFalse(result["ok"])
+        self.assertEqual(app_state.app_settings["wallpaper_file"], previous_name)
+        self.assertEqual(app_state.load_settings()["wallpaper_file"], previous_name)
+        self.assertEqual((Path(app_state.PROFILE_DIR) / previous_name).read_bytes(), original)
+        self.assertEqual([p.name for p in Path(app_state.PROFILE_DIR).iterdir()], [previous_name])
+
+    def test_old_wallpaper_cleanup_failure_does_not_undo_a_committed_upload(self):
+        self.upload(image_bytes("PNG"))
+        with mock.patch("ui.routes.appearance.os.remove", side_effect=PermissionError("busy")):
+            result = self.upload(image_bytes("JPEG"), "new.jpg").get_json()
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(app_state.app_settings["wallpaper_file"], result["file"])
+        self.assertEqual(app_state.load_settings()["wallpaper_file"], result["file"])
 
 
 class WallpaperVisibilityTests(unittest.TestCase):

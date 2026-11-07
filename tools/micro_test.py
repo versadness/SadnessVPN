@@ -22,7 +22,9 @@ def main():
     for name,expected in report['artifacts'].items():
         if Path(name).name!=name or digest(args.candidate/name)!=expected:raise ValueError('Candidate changed; previous tests no longer apply')
     checks={
-        'unit_tests':[sys.executable,'-m','unittest','discover','-s','tests','-q'],
+        # Import tests/__init__.py before discovery so the developer profile
+        # stays isolated, just as it does during build_candidate.py.
+        'unit_tests':[sys.executable,'-m','unittest','discover','-s','tests','-t','.','-q'],
         'core_config_matrix':[sys.executable,'tools/test_core_config_live.py'],
         'core_dns_live':[sys.executable,'tools/test_dns_live.py'],
         'xhttp_loopback':[sys.executable,'tools/test_xhttp_loopback.py'],
@@ -36,8 +38,14 @@ def main():
     if not node:
         bundled=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe'
         if bundled.is_file():node=str(bundled)
-    if node:checks['ui_regression']=[node,'tools/regression_220_ui.cjs']
-    else:report['automated']['ui_regression']=False
+    if node:
+        checks['electron_unit_tests']=[node,'--test','tests/electron-audit.test.cjs']
+        checks['ui_regression']=[node,'tools/regression_220_ui.cjs']
+        checks['ui_regression_routing']=[node,'tools/regression_3011_ui.cjs']
+    else:
+        report['automated']['electron_unit_tests']=False
+        report['automated']['ui_regression']=False
+        report['automated']['ui_regression_routing']=False
     for name,command in checks.items():
         log=args.candidate/(name+'.log')
         with log.open('w',encoding='utf-8') as stream:result=subprocess.run(command,cwd=ROOT,stdout=stream,stderr=subprocess.STDOUT)
