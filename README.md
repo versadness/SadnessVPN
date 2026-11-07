@@ -9,13 +9,17 @@
 ![Windows x64](https://img.shields.io/badge/platform-Windows_10%2F11_x64-0078D4)
 ![Linux x86_64](https://img.shields.io/badge/platform-Linux_x86__64-FCC624)
 ![Android 8+](https://img.shields.io/badge/platform-Android_8%2B-3DDC84)
-![Release: 3.4.7 Beta](https://img.shields.io/badge/release-3.4.7_Beta-8b5cf6)
+![Release: 3.4.9 Beta](https://img.shields.io/badge/release-3.4.9_Beta-8b5cf6)
 
 VPN-клиент для Windows, Linux и Android с подписками, TUN, маршрутизацией отдельных приложений через разные серверы и стеклянным интерфейсом Electron.
 
-## Скачать 3.4.7 Beta
+## Скачать 3.4.9 Beta
 
-### [Скачать Setup.exe 3.4.7 для Windows x64 · около 167 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.7-beta/SadnessVPN-3.4.7-Setup-x64.exe)
+### [Скачать Setup.exe 3.4.9 для Windows x64 · около 167 МиБ](https://github.com/versadness/SadnessVPN/releases/download/v3.4.9-beta/SadnessVPN-3.4.9-Setup-x64.exe)
+
+[Полный MSI](https://github.com/versadness/SadnessVPN/releases/download/v3.4.9-beta/SadnessVPN-3.4.9-Setup-x64.msi) · [Контрольные суммы](https://github.com/versadness/SadnessVPN/releases/download/v3.4.9-beta/SHA256SUMS.txt) · [Отчёт проверок](https://github.com/versadness/SadnessVPN/releases/download/v3.4.9-beta/verification-3.4.9.json)
+
+Обновление Windows до 3.4.9 доступно для ручной установки. Автоматический канал приложения пока остаётся на предыдущем выпуске.
 
 ### Linux x86_64 (Beta) · 3.4.7
 
@@ -35,11 +39,22 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 
 Подписки, WireGuard и AmneziaWG, российские сайты напрямую, блокировка рекламы, лучший сервер, раздача по Wi-Fi, кнопка в шторке, живой фон главного экрана, трафик по приложениям, встроенный Telegram-прокси, резервная копия, Android TV и обновление внутри приложения; root не нужен. [Описание Android-версии](https://github.com/versadness/SadnessVPN/releases/tag/android-v1.5.4-beta)
 
-[Описание версии 3.4.7](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.7-beta) · [Описание 3.4.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
+[Описание версии 3.4.9](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.9-beta) · [Описание 3.4.0](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.0-beta) · [Все версии](https://github.com/versadness/SadnessVPN/releases)
 
-Файл **`SadnessVPN-3.4.7-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется. Пакеты Linux тоже самодостаточны.
+Файл **`SadnessVPN-3.4.9-Setup-x64.exe`** — однофайловый установщик с иконкой приложения и полным MSI внутри. Python, Electron и VPN-ядра уже включены; WebView2 отдельно скачивать не требуется. Пакеты Linux тоже самодостаточны.
 
 Архивы **Source code** на странице релиза — снимки репозитория дистрибутивов, а не установщики клиента.
+
+## Что нового в 3.4.9
+
+- **Устойчивый запуск:** исправлены завершение работающего VPN при запуске другой версии, ошибки фонового процесса и обработка повреждённых настроек окна.
+- **Сохранность данных:** оборванная сжатая подписка не заменяет список серверов; ошибки записи маршрутов, названий групп и оформления обрабатываются без потери прежнего состояния в исправленных сценариях.
+- **Смена сервера без переподключения:** исправлено расхождение выбранного сервера и фактического направления трафика при ошибках сохранения и очистки соединений.
+- **Порты Windows:** улучшено определение занятых и зарезервированных портов.
+- **Защита API из 3.4.8:** управление ядром требует секрет, локальный API — токен приложения.
+- Проверены 590 Python-тестов, 7 тестов Electron и пять MSP-патчей; обновление 3.4.8 → 3.4.9 установлено с проверкой сохранности профиля.
+
+Полные [заметки выпуска](https://github.com/versadness/SadnessVPN/releases/tag/v3.4.9-beta) и [аудит с оставшимися замечаниями](https://github.com/versadness/SadnessVPN/blob/codex/release-3.4.9/docs/AUDIT-2026-11-07.md).
 
 ## Что нового в 3.4.7
 
@@ -211,7 +226,7 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 
 1. Используйте Windows 10/11 x64.
 2. Отключите VPN и полностью закройте клиент, включая значок в трее.
-3. Скачайте `SadnessVPN-3.4.7-Setup-x64.exe` только из Assets официального релиза.
+3. Скачайте `SadnessVPN-3.4.9-Setup-x64.exe` только из Assets официального релиза.
 4. Запустите файл и подтвердите системный запрос, если доверяете источнику.
 5. После установки запускайте Sadness VPN через созданный ярлык.
 
@@ -243,7 +258,7 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 
 | Файл | Размер, байт | SHA256 |
 |---|---|---|
-| `SadnessVPN-3.4.7-Setup-x64.exe` (версия **3.4.7.0**) | 174 675 479 | `b823d94daa18342a34f5a1e8b491fd0aef6d3cf58b818404d073fc4cb605ad5d` |
+| `SadnessVPN-3.4.9-Setup-x64.exe` (версия **3.4.9.0**) | 174 741 015 | `7ec840c2b21a56e12dbf166d9e7e4ed8aa7f0b90cc63d0698f7f7f2de88789a3` |
 | `SadnessVPN-3.4.7-linux-x86_64.AppImage` | 152 199 056 | `d6fbf50998608885f0de004cea62835680eaf306f78c001e7acf999bd2be9ff4` |
 | `SadnessVPN-3.4.7-linux-amd64.deb` | 108 140 378 | `ed6f5434c7d37597d9aa764fed1296d58e4983842c892be5fc20f16b3e86dcfb` |
 | `SadnessVPN-3.4.7-linux-x86_64.rpm` | 107 984 781 | `1edcb6a1714ee1467cf1bcd884efcbd0daeca48a316c8a671baa14754db5e102` |
@@ -254,7 +269,7 @@ VPN-клиент для Windows, Linux и Android с подписками, TUN, 
 Проверка в PowerShell:
 
 ```powershell
-Get-FileHash -LiteralPath '.\SadnessVPN-3.4.7-Setup-x64.exe' -Algorithm SHA256
+Get-FileHash -LiteralPath '.\SadnessVPN-3.4.9-Setup-x64.exe' -Algorithm SHA256
 ```
 
 На Linux: `sha256sum <файл>`.
